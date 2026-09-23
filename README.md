@@ -87,6 +87,18 @@ persists only `samples/anonymized/vehicle-detail.schema.json`; no account
 summary schema, raw payload, vehicle ID, or count is stored. If no valid
 vehicle is present, it makes no detail request and reports a categorized error.
 
+For the bounded routes-list probe, use:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\routes_list_prompt_gui.py
+```
+
+It selects a vehicle in memory, performs one Geo `GET /v1/routes` with only
+`vehicleId` and `limit=1`, and writes only
+`samples/anonymized/routes-list.schema.json`. It does not follow cursors,
+request route detail, persist IDs/counts/raw payloads, or print signed URLs.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and
