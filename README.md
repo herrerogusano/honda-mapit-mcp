@@ -103,6 +103,11 @@ fail-closed native Credential Manager backend. The GUI first tries the saved
 refresh token, falls back to the masked form if unavailable/rejected, saves
 only a new refresh token after successful manual login, and provides
 `Forget saved session`.
+Failures are shown only as stable categories such as `discovery_failed`,
+`authentication_rejected`/`authentication_failed`, or
+`credential_store_failed`; exception text, response bodies, and URLs are never
+shown. A native Credential Manager size/backend failure is fail-closed and has
+no file-storage fallback.
 
 ## CI and environments
 

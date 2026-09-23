@@ -6,12 +6,20 @@ import sys
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Protocol
 
-from .auth import CognitoAuthenticator, CognitoHTTPError, MapitSession
+from .auth import CognitoAuthenticator, CognitoHTTPError, MapitSession, UnsupportedCognitoChallenge
 from .config import MapitConfig, RuntimeConfig, fetch_public_runtime_config
 
 
 class RefreshTokenStoreError(RuntimeError):
     """A refresh-token store is unavailable or not the approved backend."""
+
+
+class SessionManagerError(RuntimeError):
+    """Safe public category for GUI/session orchestration failures."""
+
+    def __init__(self, category: str) -> None:
+        self.category = category
+        super().__init__(category)
 
 
 class RefreshTokenStore(Protocol):
@@ -108,6 +116,7 @@ class SessionManager:
         self.store = store
         self.discover = discover
         self.authenticator_factory = authenticator_factory
+        self.last_error_category: str | None = None
 
     def _discover_config(self, *, email: str | None = None, password: str | None = None) -> MapitConfig:
         config = replace(self.base_config, email=email, password=password)
@@ -115,19 +124,34 @@ class SessionManager:
         return config.with_runtime(runtime)
 
     def login_manual(self, email: str, password: str) -> ManagedSession:
-        config = self._discover_config(email=email, password=password)
-        session = self.authenticator_factory(config).authenticate()
+        self.last_error_category = None
+        try:
+            config = self._discover_config(email=email, password=password)
+        except Exception:
+            self.last_error_category = "discovery_failed"
+            raise SessionManagerError(self.last_error_category) from None
+        try:
+            session = self.authenticator_factory(config).authenticate()
+        except Exception as exc:
+            self.last_error_category = self._auth_error_category(exc)
+            raise SessionManagerError(self.last_error_category) from None
         if self.store is not None and session.refresh_token:
-            self.store.save(session.refresh_token)
+            try:
+                self.store.save(session.refresh_token)
+            except Exception:
+                self.last_error_category = "credential_store_failed"
+                raise SessionManagerError(self.last_error_category) from None
         self._bind_refresh_persistence(session)
         return ManagedSession(config, session)
 
     def login_saved(self) -> ManagedSession | None:
+        self.last_error_category = None
         if self.store is None:
             return None
         try:
             refresh_token = self.store.load()
         except Exception:
+            self.last_error_category = "credential_store_failed"
             return None
         if not refresh_token:
             return None
@@ -136,17 +160,26 @@ class SessionManager:
         except Exception:
             # Discovery is public and transient; never destroy a usable token
             # merely because the frontend or a bundle is unavailable.
+            self.last_error_category = "discovery_failed"
             return None
         try:
             session = self.authenticator_factory(config).authenticate_with_refresh_token(refresh_token)
         except Exception as exc:
+            category = self._auth_error_category(exc)
             if self._is_invalid_saved_token_error(exc):
-                self._safe_delete()
+                deleted = self._safe_delete()
+                self.last_error_category = category if deleted else "credential_store_failed"
+            else:
+                # Preserve the token across transient/network/parser failures
+                # and unsupported challenges. Only an explicit Cognito HTTP
+                # rejection makes the saved token irrecoverable.
+                self.last_error_category = category
             return None
         if session.refresh_token and session.refresh_token != refresh_token:
             try:
                 self.store.save(session.refresh_token)
             except Exception:
+                self.last_error_category = "credential_store_failed"
                 return None
         self._bind_refresh_persistence(session)
         return ManagedSession(config, session)
@@ -156,8 +189,16 @@ class SessionManager:
         return self._safe_delete()
 
     @staticmethod
+    def _auth_error_category(exc: BaseException) -> str:
+        if isinstance(exc, UnsupportedCognitoChallenge):
+            return "authentication_rejected"
+        if isinstance(exc, CognitoHTTPError) and 400 <= exc.status < 500:
+            return "authentication_rejected"
+        return "authentication_failed"
+
+    @staticmethod
     def _is_invalid_saved_token_error(exc: BaseException) -> bool:
-        """Only forget a token when the auth service clearly rejected it."""
+        """Only an explicit Cognito HTTP 4xx may invalidate a saved token."""
         return isinstance(exc, CognitoHTTPError) and 400 <= exc.status < 500
 
     def _bind_refresh_persistence(self, session: MapitSession) -> None:
@@ -170,7 +211,10 @@ class SessionManager:
             callback(current)
             rotated = current.refresh_token
             if rotated and rotated != previous:
-                self.store.save(rotated)
+                try:
+                    self.store.save(rotated)
+                except Exception:
+                    raise SessionManagerError("credential_store_failed") from None
 
         session._refresh_callback = refresh_and_persist
 

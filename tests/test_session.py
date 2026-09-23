@@ -3,11 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from mapit.auth import CognitoHTTPError, MapitSession, TemporaryCredentials
+from mapit.auth import CognitoHTTPError, MapitSession, TemporaryCredentials, UnsupportedCognitoChallenge
 from mapit.config import MapitConfig, RuntimeConfig
 from mapit.session import (
     RefreshTokenStoreError,
     SessionManager,
+    SessionManagerError,
     WindowsKeyringRefreshTokenStore,
 )
 
@@ -112,6 +113,50 @@ def test_manual_login_saves_only_refresh_token():
     assert store.saved == ["manual-refresh"]
 
 
+def test_manual_discovery_failure_exposes_only_public_category():
+    def failing_discovery(url, timeout):
+        raise RuntimeError("secret response body and https://private.example.invalid")
+
+    manager = SessionManager(
+        base_config=MapitConfig(),
+        discover=failing_discovery,
+        authenticator_factory=FakeAuthenticator,
+    )
+    with pytest.raises(SessionManagerError) as caught:
+        manager.login_manual("person@example.test", "password-secret")
+    assert caught.value.category == "discovery_failed"
+    assert str(caught.value) == "discovery_failed"
+    assert "private.example" not in str(caught.value)
+
+
+def test_manual_authentication_rejection_exposes_only_public_category():
+    class RejectingAuthenticator(FakeAuthenticator):
+        def authenticate(self):
+            raise CognitoHTTPError(400)
+
+    manager = SessionManager(
+        base_config=MapitConfig(),
+        discover=lambda url, timeout: RuntimeConfig(region="eu-west-1"),
+        authenticator_factory=RejectingAuthenticator,
+    )
+    with pytest.raises(SessionManagerError) as caught:
+        manager.login_manual("person@example.test", "password-secret")
+    assert caught.value.category == "authentication_rejected"
+    assert str(caught.value) == "authentication_rejected"
+
+
+def test_manual_keyring_failure_exposes_credential_store_category():
+    class FailingSaveStore(MemoryStore):
+        def save(self, value):
+            raise OSError("Credential Manager size limit; refresh token not persisted")
+
+    manager = _manager(FailingSaveStore())
+    with pytest.raises(SessionManagerError) as caught:
+        manager.login_manual("person@example.test", "password-secret")
+    assert caught.value.category == "credential_store_failed"
+    assert str(caught.value) == "credential_store_failed"
+
+
 def test_saved_login_refreshes_and_persists_rotated_token():
     store = MemoryStore("old-refresh")
     context = _manager(store).login_saved()
@@ -134,6 +179,7 @@ def test_saved_login_does_not_delete_token_when_discovery_is_unavailable():
     )
     assert manager.login_saved() is None
     assert store.deleted == 0 and store.value == "still-usable"
+    assert manager.last_error_category == "discovery_failed"
 
 
 def test_refresh_rotation_after_login_updates_saved_token():
@@ -172,6 +218,7 @@ def test_rotated_saved_token_save_failure_does_not_delete_previous_value():
     manager = _manager(store)
     assert manager.login_saved() is None
     assert store.deleted == 0 and store.value == "old-refresh"
+    assert manager.last_error_category == "credential_store_failed"
 
 
 def test_forget_saved_session_reports_delete_failure():
@@ -200,6 +247,24 @@ def test_rejected_saved_login_deletes_and_returns_fallback_state():
     assert store.deleted == 1 and store.value is None
 
 
+def test_saved_login_preserves_token_for_unsupported_challenge():
+    store = MemoryStore("challenge-refresh")
+
+    class ChallengeAuthenticator(FakeAuthenticator):
+        def authenticate_with_refresh_token(self, token):
+            raise UnsupportedCognitoChallenge("NEW_PASSWORD_REQUIRED")
+
+    manager = SessionManager(
+        base_config=MapitConfig(),
+        store=store,
+        discover=lambda url, timeout: RuntimeConfig(region="eu-west-1"),
+        authenticator_factory=ChallengeAuthenticator,
+    )
+    assert manager.login_saved() is None
+    assert store.deleted == 0 and store.value == "challenge-refresh"
+    assert manager.last_error_category == "authentication_rejected"
+
+
 def test_no_valid_saved_session_means_no_future_data_client_call():
     store = MemoryStore("bad-refresh")
     data_client_calls = []
@@ -219,3 +284,5 @@ def test_no_valid_saved_session_means_no_future_data_client_call():
         data_client_calls.append(context)
     assert context is None
     assert data_client_calls == []
+    assert store.deleted == 0 and store.value == "bad-refresh"
+    assert manager.last_error_category == "authentication_failed"

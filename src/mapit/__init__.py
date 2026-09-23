@@ -10,7 +10,7 @@ from .auth import (
 )
 from .client import MapitClient, MapitHTTPError
 from .config import MapitConfig, RuntimeConfig, discover_runtime_config
-from .session import ManagedSession, RefreshTokenStore, SessionManager, WindowsKeyringRefreshTokenStore
+from .session import ManagedSession, RefreshTokenStore, SessionManager, SessionManagerError, WindowsKeyringRefreshTokenStore
 
 __all__ = [
     "CognitoAuthenticator",
@@ -26,6 +26,7 @@ __all__ = [
     "ManagedSession",
     "RefreshTokenStore",
     "SessionManager",
+    "SessionManagerError",
     "WindowsKeyringRefreshTokenStore",
     "discover_runtime_config",
 ]

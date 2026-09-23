@@ -23,7 +23,7 @@ from mapit.anonymizer import schema_only  # noqa: E402
 from mapit.auth import CognitoAuthenticator, MapitSession  # noqa: E402
 from mapit.client import MapitClient  # noqa: E402
 from mapit.config import MapitConfig, RuntimeConfig, fetch_public_runtime_config  # noqa: E402
-from mapit.session import ManagedSession, SessionManager, WindowsKeyringRefreshTokenStore  # noqa: E402
+from mapit.session import ManagedSession, SessionManager, SessionManagerError, WindowsKeyringRefreshTokenStore  # noqa: E402
 
 try:  # Support package imports in tests and direct script execution.
     from scripts.account_summary_prompt_gui import atomic_write_schema  # noqa: E402
@@ -81,6 +81,8 @@ def perform_routes_list_with_session(
         atomic_write_schema(schema, Path(save_path))
         fields = schema.get("fields", {}) if schema.get("type") == "object" else {}
         return {"success": True, "region": region, "path": str(Path(save_path)), "top_level_keys": list(fields.keys())}
+    except SessionManagerError as exc:
+        return safe_error_summary(region=region, category=exc.category)
     except Exception as exc:
         category = "routes_list_request_failed" if vehicle_id is not None else "account_summary_request_failed"
         return safe_error_summary(region=region, category=category)
@@ -181,11 +183,19 @@ if tk is not None:
             try:
                 context = self.manager.login_saved()
                 if context is None:
-                    self._results.put({"_saved_missing": True})
+                    self._results.put(
+                        {
+                            "_saved_missing": True,
+                            "_category": self.manager.last_error_category,
+                        }
+                    )
                     return
                 result = perform_routes_list_with_session(context.config, context.session)
             except Exception:
-                result = safe_error_summary(region="eu-west-1", category="authentication_failed")
+                result = safe_error_summary(
+                    region="eu-west-1",
+                    category=self.manager.last_error_category or "authentication_failed",
+                )
             self._results.put(result)
 
         def _on_authenticate(self) -> None:
@@ -209,7 +219,10 @@ if tk is not None:
                 context = self.manager.login_manual(email, password)
                 result = perform_routes_list_with_session(context.config, context.session)
             except Exception:
-                result = safe_error_summary(region="eu-west-1", category="authentication_failed")
+                result = safe_error_summary(
+                    region="eu-west-1",
+                    category=self.manager.last_error_category or "authentication_failed",
+                )
             finally:
                 email = ""
                 password = ""
@@ -224,8 +237,19 @@ if tk is not None:
                 self.root.after(100, self._poll_results)
                 return
             if result.pop("_saved_missing", False):
-                self.status_var.set("No saved session; enter credentials")
-                self.result_var.set("")
+                category = result.pop("_category", None)
+                if category:
+                    self.status_var.set(f"Failed: {category}")
+                    self.result_var.set(
+                        json.dumps(
+                            safe_error_summary(region="eu-west-1", category=category),
+                            indent=2,
+                            sort_keys=True,
+                        )
+                    )
+                else:
+                    self.status_var.set("No saved session; enter credentials")
+                    self.result_var.set("")
             else:
                 self.status_var.set("Complete" if result.get("success") else "Failed")
                 self.result_var.set(json.dumps(result, indent=2, sort_keys=True))
@@ -237,7 +261,7 @@ if tk is not None:
             if self.manager.forget_saved_session():
                 self.status_var.set("Saved session forgotten")
             else:
-                self.status_var.set("Could not forget saved session")
+                self.status_var.set("Failed: credential_store_failed")
             self.result_var.set("")
 
         def close(self) -> None:

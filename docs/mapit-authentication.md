@@ -188,6 +188,10 @@ Linux no instala ni importa `keyring`. `WindowsKeyringRefreshTokenStore`
 acepta exclusivamente el backend `keyring.backends.Windows.WinVaultKeyring`,
 usa servicio/cuenta constantes (`mapit-client`/`refresh-token`) y hace
 `save`/`load`/`delete` idempotentes sin fallback a archivos.
+Una excepción del backend nativo al guardar (incluido un límite de tamaño o
+una Credential Manager no disponible) se clasifica como
+`credential_store_failed`: no se reintenta en otro backend ni se escribe un
+archivo; la interfaz vuelve al login manual y no inicia llamadas de datos.
 
 ### Lifecycle implementado
 

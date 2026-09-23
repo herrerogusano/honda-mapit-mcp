@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from mapit.auth import MapitSession, TemporaryCredentials
 from mapit.config import MapitConfig, RuntimeConfig
+from mapit.session import SessionManagerError
 from scripts.routes_list_prompt_gui import perform_routes_list_probe, perform_routes_list_with_session
 
 
@@ -151,3 +152,35 @@ def test_routes_probe_never_calls_data_client_without_a_session(tmp_path):
         save_path=tmp_path / "routes.schema.json",
     )
     assert result == {"success": False, "region": "eu-west-1", "error": "authentication_failed"}
+
+
+def test_routes_probe_surfaces_refresh_store_failure_before_data_call(tmp_path):
+    session = _session()
+    data_calls = []
+
+    def failed_refresh(current):
+        raise SessionManagerError("credential_store_failed")
+
+    session._refresh_callback = failed_refresh
+
+    class Client:
+        def __init__(self, config, current):
+            self.session = current
+
+        def get_core(self, path):
+            self.session.refresh_if_needed(force=True)
+            data_calls.append(("core", path))
+            return {"vehicles": []}
+
+        def get_geo(self, path, *, params):
+            data_calls.append(("geo", path, params))
+            raise AssertionError("Geo must not be reached after store failure")
+
+    result = perform_routes_list_with_session(
+        MapitConfig(),
+        session,
+        client_factory=Client,
+        save_path=tmp_path / "routes.schema.json",
+    )
+    assert result == {"success": False, "region": "eu-west-1", "error": "credential_store_failed"}
+    assert data_calls == []
