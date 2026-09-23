@@ -151,6 +151,13 @@ de excepciones. Los errores se convierten en categorías seguras y producen un
 código de salida distinto de cero; un challenge Cognito no soportado se
 categoriza sin exponer su `Session`.
 
+Como alternativa local, `scripts/auth_prompt_gui.py` ofrece una ventana
+Tkinter sin autocomplete: tanto email como contraseña se muestran enmascarados,
+se limpian al iniciar y nunca se escriben en `.env` ni en archivos. La red y
+la autenticación se ejecutan en un hilo daemon; la cola y `after` reservan las
+actualizaciones de widgets para el hilo principal. El resultado visible usa el
+mismo resumen redactado y el cierre de la ventana no persiste los valores.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.

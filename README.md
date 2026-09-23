@@ -47,6 +47,17 @@ availability booleans). It never prints email, IDs, tokens, AWS keys, headers,
 or exception payloads. It restores any pre-existing environment variables when
 it exits and does not persist credentials.
 
+On a desktop with Tk available, the equivalent local GUI keeps both fields
+masked and clears them as soon as authentication starts:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\auth_prompt_gui.py
+```
+
+The GUI performs the same redacted probe in a daemon worker and updates its
+widgets only on the Tk main thread. Closing the window does not persist input.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and
