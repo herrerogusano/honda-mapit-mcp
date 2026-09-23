@@ -27,8 +27,8 @@ and manual WebSocket investigation.
   application network blocked across Python 3.11-3.13, and has no MAPIT secrets
   or live MAPIT access. GitHub
   `dev`/`prod` are project environments only; the current private plan returned
-  HTTP 422 for protection-rule/branch-policy configuration, so no enforcement
-  is claimed.
+  HTTP 422 for Environment protection and HTTP 403 for branch protection, so no
+  platform enforcement is claimed.
 
 ## Active Constraints
 

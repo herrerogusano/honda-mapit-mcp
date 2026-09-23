@@ -33,8 +33,13 @@ Actions are referenced by immutable commit SHA in `.github/workflows/ci.yml`.
 ## Protection-rule limitation
 
 The repository's current private GitHub plan does not allow configuring the
-desired Environment protection rules or branch policies (GitHub returned HTTP
-422). The `dev`/`prod` Environment names may exist, but they are not presented
-as enforced approvals or deployment gates. Until the plan supports those
-rules, promotion remains a repository workflow/convention enforced through
-review and the CI checks above, not an asserted platform guarantee.
+desired Environment protection rules or deployment branch policies (GitHub
+returned HTTP 422). It also rejected branch protection for `develop` and `main`
+with HTTP 403 and requires GitHub Pro or a public repository. The `dev`/`prod`
+Environment names exist, but they are not presented as enforced approvals or
+deployment gates.
+
+Until the plan supports those rules, promotion remains a repository convention
+verified by the CI checks above, not an asserted platform guarantee. Do not push
+feature work directly to `develop` or production work directly to `main`; use
+pull requests even though GitHub cannot currently enforce that policy.
