@@ -158,6 +158,22 @@ la autenticación se ejecutan en un hilo daemon; la cola y `after` reservan las
 actualizaciones de widgets para el hilo principal. El resultado visible usa el
 mismo resumen redactado y el cierre de la ventana no persiste los valores.
 
+## Probe `account-summary` schema-only
+
+La GUI `scripts/account_summary_prompt_gui.py` reutiliza discovery y Cognito,
+y después hace exactamente un `GET /v1/account-summary` mediante el cliente
+read-only (salvo el único recovery controlado de 401/403). Convierte la
+respuesta inmediatamente a un esquema recursivo que conserva únicamente
+nombres de campos, tipos, nullabilidad y forma; descarta valores, longitudes,
+conteos y ejemplos. Las claves dinámicas que parecen email, UUID, token o ID
+largo se sustituyen por marcadores neutros.
+
+El esquema se guarda atómicamente en
+`samples/anonymized/account-summary.schema.json`. La UI solo muestra éxito o
+error categorizado, claves top-level ya seguras y la ruta. Este probe no
+ejecuta escrituras ni otros endpoints y no se ha ejecutado contra MAPIT en la
+suite/CI.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.
@@ -168,6 +184,9 @@ mismo resumen redactado y el cierre de la ventana no persiste los valores.
 
 ## Preguntas abiertas
 
-- Confirmar, con una cuenta de prueba autorizada por el propietario, si el tenant actual requiere `USER_PASSWORD_AUTH`, SRP o un challenge adicional; esta investigación no inició sesión.
+- El 2026-09-23, el propietario completó el probe local autorizado con resultado
+  `Complete`: el flujo `USER_PASSWORD_AUTH` observado fue aceptado, el Identity
+  Pool entregó credenciales temporales y no apareció un challenge adicional.
+  No se conservaron tokens, credenciales, identificadores ni datos de cuenta.
 - Definir almacenamiento de refresh token para el cliente del proyecto sin exponer secretos.
 - Resolver la divergencia del websocket actual frente al fallback legado; está documentada en `docs/mapit-endpoints-discovered.md`.

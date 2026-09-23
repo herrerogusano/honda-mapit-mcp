@@ -58,6 +58,20 @@ py scripts\auth_prompt_gui.py
 The GUI performs the same redacted probe in a daemon worker and updates its
 widgets only on the Tk main thread. Closing the window does not persist input.
 
+To make the first authorized, read-only account-summary inspection, use the
+schema-only GUI:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\account_summary_prompt_gui.py
+```
+
+It authenticates, performs exactly one `GET /v1/account-summary` (apart from
+the client's single controlled 401/403 recovery), immediately discards the
+response values, and atomically writes only the recursive schema to
+`samples/anonymized/account-summary.schema.json`. The UI shows only success or
+categorized failure, safe top-level keys, and the output path.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and

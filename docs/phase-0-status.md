@@ -19,7 +19,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`29 passed`).
+  closed. Offline tests pass (`34 passed`).
 - On 2026-09-23, public frontend discovery was verified without credentials:
   HTML/bundle discovery returned the three Cognito identifiers only as redacted
   `<discovered>` placeholders and the expected Core/Geo hosts.
@@ -30,9 +30,15 @@ and manual WebSocket investigation.
   HTTP 422 for Environment protection and HTTP 403 for branch protection, so no
   platform enforcement is claimed.
 - A manual Windows authentication probe is available with secure prompts and
-  redacted categorized output; it was not run against MAPIT in this task.
+  redacted categorized output. On 2026-09-23 the owner completed it successfully:
+  User Pool authentication, Identity Pool exchange, and temporary credentials
+  were confirmed without persisting any secret or account identifier.
 - A Tkinter GUI alternative is available for local desktops; its non-UI probe
   logic is tested offline, while the GUI itself is not opened in CI.
+- The read-only `account-summary` GUI probe is implemented with immediate
+  schema-only conversion and atomic output to
+  `samples/anonymized/account-summary.schema.json`; no live account-summary
+  call has been made in this task.
 
 ## Active Constraints
 
@@ -52,8 +58,8 @@ and manual WebSocket investigation.
 
 ## Open Questions
 
-- Whether the authorized account requires a Cognito challenge beyond the
-  currently observed password and refresh flows.
+- Refresh behavior against the authorized account has not yet been exercised
+  near token expiry, although the initial password flow required no challenge.
 - Exact live token/header contract accepted by the API and WebSocket.
 - Current endpoint inventory and route-history pagination/filter behavior.
 - Whether a repository remote and preferred CI provider should be configured.
