@@ -47,6 +47,14 @@ class SessionRefreshError(RuntimeError):
     """A session needed refresh but no safe refresh callback was available."""
 
 
+class CognitoHTTPError(RuntimeError):
+    """A Cognito endpoint returned an HTTP error without exposing its body."""
+
+    def __init__(self, status: int) -> None:
+        self.status = int(status)
+        super().__init__(f"Cognito request failed with HTTP {self.status}")
+
+
 @dataclass
 class TemporaryCredentials:
     access_key_id: str = field(repr=False)
@@ -119,17 +127,24 @@ class CognitoAuthenticator:
 
     login = authenticate
 
-    def refresh_session(self, session: MapitSession) -> None:
-        if not session.refresh_token:
-            raise ValueError("session has no refresh token")
+    def authenticate_with_refresh_token(self, refresh_token: str) -> MapitSession:
+        """Resume with REFRESH_TOKEN_AUTH, then exchange the new IdToken."""
+        if not refresh_token:
+            raise ValueError("refresh token is required")
+        self._require_pool_config()
         response = self._call_user_pool("InitiateAuth", {
             "AuthFlow": "REFRESH_TOKEN_AUTH",
             "ClientId": self.config.user_pool_client_id,
-            "AuthParameters": {"REFRESH_TOKEN": session.refresh_token},
+            "AuthParameters": {"REFRESH_TOKEN": refresh_token},
             "ClientMetadata": {},
         })
         self._raise_if_challenge(response)
-        updated = self._session_from_auth(response.get("AuthenticationResult", {}), refresh_token_required=False, prior_refresh_token=session.refresh_token)
+        return self._session_from_auth(response.get("AuthenticationResult", {}), refresh_token_required=False, prior_refresh_token=refresh_token)
+
+    def refresh_session(self, session: MapitSession) -> None:
+        if not session.refresh_token:
+            raise ValueError("session has no refresh token")
+        updated = self.authenticate_with_refresh_token(session.refresh_token)
         session.id_token = updated.id_token
         session.access_token = updated.access_token
         session.refresh_token = updated.refresh_token
@@ -202,4 +217,4 @@ class CognitoAuthenticator:
             with urllib.request.urlopen(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - endpoint is fixed by region.
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Cognito request failed with HTTP {exc.code}") from exc
+            raise CognitoHTTPError(exc.code) from None

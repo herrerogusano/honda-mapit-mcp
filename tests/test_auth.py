@@ -85,6 +85,27 @@ def test_cognito_challenge_fails_closed_without_identity_exchange():
     assert len(calls) == 1
 
 
+def test_authenticate_with_refresh_token_preserves_token_when_not_rotated():
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    refreshed = token(int((now + timedelta(hours=1)).timestamp()))
+    calls = []
+
+    def transport(url, headers, payload):
+        calls.append((url, headers, payload))
+        target = headers["X-Amz-Target"]
+        if target.endswith("InitiateAuth"):
+            return {"AuthenticationResult": {"IdToken": refreshed, "AccessToken": "access-new", "ExpiresIn": 3600}}
+        if target.endswith("GetId"):
+            return {"IdentityId": "eu-west-1:identity-test"}
+        return {"Credentials": {"AccessKeyId": "AKIA_TEST", "SecretKey": "secret-test", "SessionToken": "session-test", "Expiration": (now + timedelta(hours=1)).isoformat()}}
+
+    config = MapitConfig(region="eu-west-1", user_pool_id="eu-west-1_TEST", user_pool_client_id="client-test", identity_pool_id="eu-west-1:identity-test")
+    auth = CognitoAuthenticator(config, transport=transport, clock=lambda: now)
+    session = auth.authenticate_with_refresh_token("refresh-old")
+    assert session.refresh_token == "refresh-old"
+    assert calls[0][2]["AuthFlow"] == "REFRESH_TOKEN_AUTH"
+
+
 def test_expired_session_without_refresh_callback_fails_closed():
     now = datetime.now(timezone.utc)
     current = MapitSession(

@@ -2,6 +2,7 @@
 
 from .auth import (
     CognitoAuthenticator,
+    CognitoHTTPError,
     MapitSession,
     SessionRefreshError,
     TemporaryCredentials,
@@ -9,9 +10,11 @@ from .auth import (
 )
 from .client import MapitClient, MapitHTTPError
 from .config import MapitConfig, RuntimeConfig, discover_runtime_config
+from .session import ManagedSession, RefreshTokenStore, SessionManager, WindowsKeyringRefreshTokenStore
 
 __all__ = [
     "CognitoAuthenticator",
+    "CognitoHTTPError",
     "MapitClient",
     "MapitConfig",
     "MapitHTTPError",
@@ -20,5 +23,9 @@ __all__ = [
     "RuntimeConfig",
     "TemporaryCredentials",
     "UnsupportedCognitoChallenge",
+    "ManagedSession",
+    "RefreshTokenStore",
+    "SessionManager",
+    "WindowsKeyringRefreshTokenStore",
     "discover_runtime_config",
 ]

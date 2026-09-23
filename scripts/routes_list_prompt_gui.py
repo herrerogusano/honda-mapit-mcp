@@ -23,6 +23,7 @@ from mapit.anonymizer import schema_only  # noqa: E402
 from mapit.auth import CognitoAuthenticator, MapitSession  # noqa: E402
 from mapit.client import MapitClient  # noqa: E402
 from mapit.config import MapitConfig, RuntimeConfig, fetch_public_runtime_config  # noqa: E402
+from mapit.session import ManagedSession, SessionManager, WindowsKeyringRefreshTokenStore  # noqa: E402
 
 try:  # Support package imports in tests and direct script execution.
     from scripts.account_summary_prompt_gui import atomic_write_schema  # noqa: E402
@@ -53,6 +54,42 @@ def _select_vehicle_id(summary: Any) -> str | None:
     return fallback
 
 
+def perform_routes_list_with_session(
+    config: MapitConfig,
+    session: MapitSession,
+    *,
+    client_factory: Callable[[MapitConfig, MapitSession], Any] = MapitClient,
+    save_path: Path = DEFAULT_SCHEMA_PATH,
+) -> dict[str, Any]:
+    """Run only the bounded routes request using an already valid session."""
+    region = config.region
+    if not isinstance(session, MapitSession):
+        return safe_error_summary(region=region, category="authentication_failed")
+    summary_payload: Any = None
+    routes_payload: Any = None
+    vehicle_id: str | None = None
+    try:
+        client = client_factory(config, session)
+        summary_payload = client.get_core("/v1/account-summary")
+        vehicle_id = _select_vehicle_id(summary_payload)
+        summary_payload = None
+        if vehicle_id is None:
+            return safe_error_summary(region=region, category="routes_list_missing_vehicle")
+        routes_payload = client.get_geo("/v1/routes", params={"vehicleId": vehicle_id, "limit": 1})
+        schema = schema_only(routes_payload)
+        routes_payload = None
+        atomic_write_schema(schema, Path(save_path))
+        fields = schema.get("fields", {}) if schema.get("type") == "object" else {}
+        return {"success": True, "region": region, "path": str(Path(save_path)), "top_level_keys": list(fields.keys())}
+    except Exception as exc:
+        category = "routes_list_request_failed" if vehicle_id is not None else "account_summary_request_failed"
+        return safe_error_summary(region=region, category=category)
+    finally:
+        summary_payload = None
+        routes_payload = None
+        vehicle_id = None
+
+
 def perform_routes_list_probe(
     email: str,
     password: str,
@@ -78,27 +115,7 @@ def perform_routes_list_probe(
         region = config.region
         stage = "authentication"
         session = authenticator_factory(config).authenticate()
-        client = client_factory(config, session)
-
-        stage = "account_summary_request"
-        summary_payload = client.get_core("/v1/account-summary")
-        vehicle_id = _select_vehicle_id(summary_payload)
-        summary_payload = None
-        if vehicle_id is None:
-            return safe_error_summary(region=region, category="routes_list_missing_vehicle")
-
-        stage = "routes_list_request"
-        routes_payload = client.get_geo("/v1/routes", params={"vehicleId": vehicle_id, "limit": 1})
-        schema = schema_only(routes_payload)
-        routes_payload = None
-        atomic_write_schema(schema, Path(save_path))
-        fields = schema.get("fields", {}) if schema.get("type") == "object" else {}
-        return {
-            "success": True,
-            "region": region,
-            "path": str(Path(save_path)),
-            "top_level_keys": list(fields.keys()),
-        }
+        return perform_routes_list_with_session(config, session, client_factory=client_factory, save_path=save_path)
     except Exception as exc:
         if stage == "account_summary_request":
             category = "account_summary_request_failed"
@@ -119,6 +136,12 @@ def perform_routes_list_probe(
 
 if tk is not None:
 
+    def _local_store():
+        try:
+            return WindowsKeyringRefreshTokenStore()
+        except Exception:
+            return None
+
     class RoutesListPromptApp:
         def __init__(self, root: Any | None = None) -> None:
             self.root = root or tk.Tk()
@@ -127,6 +150,7 @@ if tk is not None:
             self._closing = False
             self._results: queue.Queue[dict[str, Any]] = queue.Queue()
             self._worker_thread: threading.Thread | None = None
+            self.manager = SessionManager(store=_local_store())
 
             frame = tk.Frame(self.root, padx=16, pady=16)
             frame.grid(row=0, column=0, sticky="nsew")
@@ -136,15 +160,33 @@ if tk is not None:
             tk.Entry(frame, textvariable=self.email_var, show="*", width=42).grid(row=0, column=1, sticky="ew", pady=(0, 6))
             tk.Label(frame, text="Password").grid(row=1, column=0, sticky="w", pady=(0, 6))
             tk.Entry(frame, textvariable=self.password_var, show="*", width=42).grid(row=1, column=1, sticky="ew", pady=(0, 6))
-            self.authenticate_button = tk.Button(frame, text="Authenticate + read routes", command=self._on_authenticate)
+            self.authenticate_button = tk.Button(frame, text="Authenticate + read routes", command=self._on_authenticate, state="disabled")
             self.authenticate_button.grid(row=2, column=0, pady=(8, 0), sticky="w")
             tk.Button(frame, text="Close", command=self.close).grid(row=2, column=1, pady=(8, 0), sticky="e")
+            tk.Button(frame, text="Forget saved session", command=self._forget_saved).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
             self.status_var = tk.StringVar(value="Ready")
-            tk.Label(frame, textvariable=self.status_var, anchor="w").grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+            tk.Label(frame, textvariable=self.status_var, anchor="w").grid(row=4, column=0, columnspan=2, sticky="ew", pady=(12, 0))
             self.result_var = tk.StringVar()
-            tk.Label(frame, textvariable=self.result_var, justify="left", anchor="w").grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+            tk.Label(frame, textvariable=self.result_var, justify="left", anchor="w").grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
             self.root.protocol("WM_DELETE_WINDOW", self.close)
+            self.root.after(0, self._start_saved_session)
             self.root.after(100, self._poll_results)
+
+        def _start_saved_session(self) -> None:
+            self.status_var.set("Checking saved session…")
+            self._worker_thread = threading.Thread(target=self._saved_worker, daemon=True)
+            self._worker_thread.start()
+
+        def _saved_worker(self) -> None:
+            try:
+                context = self.manager.login_saved()
+                if context is None:
+                    self._results.put({"_saved_missing": True})
+                    return
+                result = perform_routes_list_with_session(context.config, context.session)
+            except Exception:
+                result = safe_error_summary(region="eu-west-1", category="authentication_failed")
+            self._results.put(result)
 
         def _on_authenticate(self) -> None:
             if self._worker_thread is not None and self._worker_thread.is_alive():
@@ -164,9 +206,10 @@ if tk is not None:
 
         def _worker(self, email: str, password: str) -> None:
             try:
-                result = perform_routes_list_probe(email, password)
+                context = self.manager.login_manual(email, password)
+                result = perform_routes_list_with_session(context.config, context.session)
             except Exception:
-                result = safe_error_summary(region="eu-west-1", category="routes_list_request_failed")
+                result = safe_error_summary(region="eu-west-1", category="authentication_failed")
             finally:
                 email = ""
                 password = ""
@@ -180,11 +223,22 @@ if tk is not None:
             except queue.Empty:
                 self.root.after(100, self._poll_results)
                 return
-            self.status_var.set("Complete" if result.get("success") else "Failed")
-            self.result_var.set(json.dumps(result, indent=2, sort_keys=True))
+            if result.pop("_saved_missing", False):
+                self.status_var.set("No saved session; enter credentials")
+                self.result_var.set("")
+            else:
+                self.status_var.set("Complete" if result.get("success") else "Failed")
+                self.result_var.set(json.dumps(result, indent=2, sort_keys=True))
             self.authenticate_button.configure(state="normal")
             self._worker_thread = None
             self.root.after(100, self._poll_results)
+
+        def _forget_saved(self) -> None:
+            if self.manager.forget_saved_session():
+                self.status_var.set("Saved session forgotten")
+            else:
+                self.status_var.set("Could not forget saved session")
+            self.result_var.set("")
 
         def close(self) -> None:
             if self._closing:
@@ -212,4 +266,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -2,8 +2,8 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from mapit.auth import MapitSession, TemporaryCredentials
-from mapit.config import RuntimeConfig
-from scripts.routes_list_prompt_gui import perform_routes_list_probe
+from mapit.config import MapitConfig, RuntimeConfig
+from scripts.routes_list_prompt_gui import perform_routes_list_probe, perform_routes_list_with_session
 
 
 def _session():
@@ -138,3 +138,16 @@ def test_routes_probe_failure_is_categorized_without_payload_or_id(tmp_path):
     assert result == {"success": False, "region": "eu-west-1", "error": "routes_list_request_failed"}
     assert "vehicle-secret" not in json.dumps(result)
 
+
+def test_routes_probe_never_calls_data_client_without_a_session(tmp_path):
+    class ExplodingClient:
+        def __init__(self, config, session):
+            raise AssertionError("data client must not be created without a session")
+
+    result = perform_routes_list_with_session(
+        MapitConfig(),
+        None,  # type: ignore[arg-type]
+        client_factory=ExplodingClient,
+        save_path=tmp_path / "routes.schema.json",
+    )
+    assert result == {"success": False, "region": "eu-west-1", "error": "authentication_failed"}

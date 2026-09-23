@@ -13,14 +13,16 @@ and manual WebSocket investigation.
 - Persistent Researcher, Implementer, and Tester roles have been established.
 - Initial research into the two reference repositories and the current MAPIT
   frontend is documented.
-- MAPIT credentials were entered only into local in-memory GUI probes; they were
-  not logged, persisted, committed, or sent through chat.
+- MAPIT passwords were entered only into local in-memory GUI probes; they were
+  not logged, persisted, committed, or sent through chat. The only optional
+  persistent secret is a Cognito refresh token in the current Windows user's
+  native Credential Manager.
 - Minimal standalone Python scaffold is implemented with typed configuration,
   public runtime discovery, Cognito session handling, SigV4 GET signing, and a
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`43 passed`).
+  closed. Offline tests pass (`55 passed`).
 - On 2026-09-23, public frontend discovery was verified without credentials:
   HTML/bundle discovery returned the three Cognito identifiers only as redacted
   `<discovered>` placeholders and the expected Core/Geo hosts.
@@ -51,6 +53,10 @@ and manual WebSocket investigation.
 - The bounded routes-list GUI probe is implemented but not executed live: it
   performs only `vehicleId` plus `limit=1`, follows no cursor, and persists only
   a value-free schema at `samples/anonymized/routes-list.schema.json`.
+- Refresh-token persistence is implemented as an optional Windows-only,
+  fail-closed native keyring backend. The routes GUI attempts a saved refresh
+  session first, falls back to masked manual login, and exposes explicit forget;
+  no vault or live-data call is used by CI.
 
 ## Active Constraints
 
@@ -74,5 +80,5 @@ and manual WebSocket investigation.
 - Current endpoint inventory and route-history pagination/filter behavior.
 - Whether other account states trigger Cognito challenges not seen in the
   successful initial login.
-- The final persistence policy for refresh tokens; this scaffold keeps session
-  state in memory and does not persist secrets.
+- Live confirmation that the real app client accepts saved-token resumption;
+  the password and all short-lived session/AWS credentials remain memory-only.
