@@ -38,6 +38,21 @@ confirms response structures only; it does not infer purchase, transfer,
 maintenance, alert-delivery, or other write capabilities. Odometer and VIN were
 observed as nullable in the sample. See `mapit-data-inventory.md`.
 
+An authorized read of `GET /v1/vehicles/{vehicleId}` also produced only
+`samples/anonymized/vehicle-detail.schema.json`. Its top-level object contains
+non-null fields for account/dealer/device references, vehicle identity and
+registration, branch/model/product plan, usage (`km`), lifecycle timestamps,
+legacy detail, two alert-named booleans, products, and a substantially nested
+subscription object. The subscription includes account/vehicle references and
+a Stripe-shaped object with scalar, nullable, array, and nested object fields;
+the fixture records structure and nullability only, never values. The detail
+overlaps the account-summary vehicle on identity/device/product/registration/
+subscription fields but also has fields absent from that summary, while the
+summary has capabilities/dealerData/flags/notificationSettings and lifecycle
+fields absent from the detail sample. These differences are schema evidence
+only and do not establish any capability or payment/alert operation. See
+`mapit-data-inventory.md` for the field-level inventory.
+
 ## Routes, Route Detail, and Historical Data
 
 The frontend exposes vehicle route listing with `limit`, calendar/date range, and
@@ -66,7 +81,9 @@ scope for Phase 0 execution.
 
 - Cognito challenges for the authorized account.
 - Live acceptance of the observed signing/header contract.
-- Full account, vehicle, route, route-detail, and realtime schemas.
+- Full account, vehicle, route, route-detail, and realtime schemas; the account
+  and vehicle-detail probes currently establish only one-account schema-only
+  samples.
 - Whether all account-summary substructures and nullable fields are stable
   across accounts; the current account-summary evidence is schema-only for one
   authorized account.

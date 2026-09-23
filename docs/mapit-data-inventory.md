@@ -136,7 +136,7 @@ frontend defaults if that distinction matters. Unknown server fields may exist;
 the first probe must not persist them merely because the frontend currently
 strips them during validation.
 
-## Vehicle detail inventory (public reference only)
+## Vehicle detail inventory (authorized schema-only)
 
 The public Python clients also issue the following Core read after obtaining a
 vehicle from `account-summary`:
@@ -147,16 +147,51 @@ GET https://core.prod.mapit.me/v1/vehicles/{vehicleId}
 
 | Object | Endpoint/source | Fields/shape observed | Status | Handling |
 |---|---|---|---|---|
-| `vehicle_detail` | d3vv3 and citylife4 clients | Raw JSON object returned without client-side schema validation | `OBSERVED_PUBLIC_CLIENT` | Keep unknown fields; retain only anonymized schema metadata |
-| `model` | d3vv3 entity consumer | Read as a possible model field from detail, with summary vehicle as fallback | `OBSERVED_CONSUMER` | Redact; not live-confirmed |
-| `vin` | d3vv3 entity consumer | Read as a possible VIN field from detail, with summary vehicle as fallback | `OBSERVED_CONSUMER` | Always redact; not live-confirmed |
+| `vehicle_detail` | authorized read; schema in `samples/anonymized/vehicle-detail.schema.json` | Non-null JSON object; top-level fields listed below | `CONFIRMED_SCHEMA_ONLY` | Keep only field names, types, nullability and nesting |
+| `model` / `vin` | detail schema and d3vv3 consumer | Non-null strings in this schema-only sample | `CONFIRMED_SCHEMA_ONLY` | Always redact values; no semantics inferred |
+| `products` | detail schema | Non-null array whose items are non-null strings | `CONFIRMED_SCHEMA_ONLY` | Retain type only |
+
+The authorized schema-only fixture records these non-null top-level fields:
+`account` (object), `branch` (string), `canAccessAccidentAlert` (boolean),
+`canAccessFallAlert` (boolean), `createdAt` (string), `crmMotoId` (string),
+`dealer` (object), `demoBike` (boolean), `device` (object), `firebaseKey`
+(string), `id` (string), `km` (number), `legacy` (object), `model` (string),
+`productPlanName` (string), `products` (array of strings), `registration`
+(object), `registrationNumber` (string), `saleDate` (string), `subscription`
+(object), `updatedAt` (string), and `vin` (string).
+
+Nested shape recorded by the fixture:
+
+- `account.id`, `dealer.id`, and `device.id` are non-null strings.
+- `registration.id` and `registration.subtype` are non-null strings.
+- `legacy.id` is a non-null number; `legacy.detail` contains non-null numeric
+  fields `AnyRiskInsurance`, `DemoBike`, `Financing`, `HondaConnect`,
+  `HondaPlus`, `HondaPlusGo`, and `Insurance`, plus non-null string fields
+  `Model`, `Plate`, `SaleDate`, and `Vin`.
+- `subscription` contains non-null `account.id`, `vehicle.id`,
+  `vehicle.registrationNumber`, lifecycle/status strings and booleans, and a
+  nested `stripeObject`. The latter includes scalar, nullable-null, array, and
+  object fields including `automatic_tax`, `billing_mode`,
+  `cancellation_details`, `invoice_settings`, `items`, `managed_payments`,
+  `metadata`, `payment_settings`, `plan`, and `trial_settings`. The complete
+  field/type/nullability enumeration is the JSON fixture; no values are stored.
+
+Compared with the `account-summary` vehicle schema, the observed overlap is
+`id`, `branch`, `device`, `firebaseKey`, `km`, `model`, `products`,
+`registrationNumber`, `saleDate`, `subscription`, and `vin`. Detail-only
+top-level fields include `account`, `dealer`, `createdAt`, `updatedAt`,
+`crmMotoId`, `demoBike`, `productPlanName`, `registration`, `legacy`, and the
+two `canAccess...Alert` booleans. Summary-only fields include `capabilities`,
+`dealerData`, `flags`, `notificationSettings`, `pending`, `cancelled`, `name`,
+`product`, `registrationId`, `registrationCompletedAt`, `transferable`,
+`dealerId`, `legacyId`, and `legacyDealerId`. The two `subscription` shapes
+also differ: summary exposes a small state object, while detail contains
+account/vehicle references and the deeper Stripe-shaped object above.
 
 The current public frontend does not call this Core detail path; its current
-`/v1/vehicles/` match is the Geo route-detail path. Therefore no public schema
-fixture establishes whether detail repeats the summary vehicle, adds telemetry
-or registration fields, or returns a different envelope. The summary schema
-already contains broad vehicle/device/dealer/capability/alert structures, so a
-detail response must not be treated as a safer or smaller copy.
+`/v1/vehicles/` match is the Geo route-detail path. The fixture therefore
+confirms structure for one authorized read only, not a universal contract,
+semantics, capabilities, units, or stable cross-account nullability.
 
 For the first authorized probe, one read of the first usable
 `account-summary.vehicles[*].id` is sufficient for schema discovery. Choose a

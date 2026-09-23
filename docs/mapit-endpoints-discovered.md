@@ -1,6 +1,8 @@
 # Mapit: endpoints descubiertos
 
-Estado de investigación: 2026-09-23. Todos los endpoints de datos de esta nota son descubrimientos de código público; no se probaron con credenciales y no se invocó ninguna operación de escritura.
+Estado de investigación: 2026-09-23. Los contratos se descubrieron en código
+público; los probes autorizados de lectura conservaron solo schemas anónimos y
+no se invocó ninguna operación de escritura.
 
 ## Hosts
 
@@ -21,7 +23,7 @@ Los valores entre llaves son identificadores del usuario/tenant y se mantienen c
 | Método | Endpoint | Fuente | Estado |
 |---|---|---|---|
 | `GET` | `https://core.prod.mapit.me/v1/account-summary` | bundle actual (`bG`), d3vv3, citylife4; authorized schema-only probe | **CONFIRMED**: HTTP 200 read completed; only anonymized schema retained |
-| `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4 | **OBSERVED_PUBLIC_CLIENT**: host/path observado; no probado en vivo y no aparece como llamada en el bundle frontend actual |
+| `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4; probe autorizado schema-only | **CONFIRMED_SCHEMA_ONLY**: lectura autorizada completada; no se retuvieron valores |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}` | d3vv3/citylife4; el frontend además admite filtros | principal para listado |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual | filtros opcionales observados; confirmar combinaciones |
 | `GET` | `https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true` | bundle actual | detalle actual del frontend |
@@ -61,15 +63,37 @@ match de `/v1/vehicles/` corresponde a la ruta Geo
 respaldado por clientes públicos históricos/alternativos, no por una captura del
 frontend actual.
 
-La forma completa de la respuesta de detalle no está documentada ni aparece en
-fixtures públicos. Los clientes devuelven el JSON sin validarlo; el único
-consumo explícito encontrado es `model` y `vin` en la información del dispositivo
-de d3vv3. No debe asumirse que el detalle es idéntico al elemento de
-`account-summary`: este último ya contiene identidad, registro, suscripción,
-capacidades, dealer, alertas y estado del dispositivo, mientras que el detalle
-podría solapar o ampliar esa información. La comparación de claves solo debe
-hacerse después de una respuesta autorizada y conservar únicamente el esquema
-anonimizado.
+El probe autorizado produjo `samples/anonymized/vehicle-detail.schema.json`:
+un objeto no nulo con campos `account`, `branch`,
+`canAccessAccidentAlert`, `canAccessFallAlert`, `createdAt`, `crmMotoId`,
+`dealer`, `demoBike`, `device`, `firebaseKey`, `id`, `km`, `legacy`, `model`,
+`productPlanName`, `products`, `registration`, `registrationNumber`,
+`saleDate`, `subscription`, `updatedAt` y `vin`. En el fixture todos esos
+campos son no nulos; `products` es un array no nulo de strings. Las estructuras
+anidadas mínimas son `account.id`, `dealer.id`, `device.id` y
+`registration.{id,subtype}`, todos strings no nulos; `legacy` contiene `id`
+number y `detail` con campos numéricos y string legacy; y `subscription` tiene
+campos de cuenta, ciclo/estado, identificadores y un `stripeObject` anidado.
+
+El detalle se solapa con el vehículo de `account-summary` en `id`, `branch`,
+`device`, `firebaseKey`, `km`, `model`, `products`, `registrationNumber`,
+`saleDate`, `subscription` y `vin`, pero no debe asumirse equivalencia de
+forma. El detalle añade `account`, `dealer`, `createdAt`, `updatedAt`,
+`crmMotoId`, `demoBike`, `productPlanName`, `registration`, `legacy` y dos
+campos booleanos denominados `canAccess...Alert`; el resumen contiene en su
+lugar (o además) `capabilities`, `dealerData`, `flags`,
+`notificationSettings`, `pending`, `cancelled`, `name`, `product`,
+`registrationId`, `registrationCompletedAt`, `transferable` e identificadores
+legacy separados. Estos nombres y tipos no demuestran ninguna capacidad de
+acción o entrega de alertas.
+
+La estructura de `subscription` del detalle es más profunda en el fixture:
+incluye `account`, `vehicle`, fechas, estado, identificadores CRM/Stripe y
+`stripeObject`, que a su vez contiene objetos de facturación, `items`,
+`metadata`, `plan`, `payment_settings` y `trial_settings`, además de campos
+escalares, arrays y campos explícitamente nulos. Es estructura observada
+únicamente; no se infieren operaciones de pago. El fixture no conserva valores,
+por lo que tampoco establece semántica, unidades o estabilidad entre cuentas.
 
 Para el primer probe de descubrimiento basta una sola lectura del primer
 vehículo válido. El probe debe detenerse después de esa lectura, no recorrer

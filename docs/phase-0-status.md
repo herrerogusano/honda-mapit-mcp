@@ -41,10 +41,13 @@ and manual WebSocket investigation.
   `samples/anonymized/account-summary.schema.json`. On 2026-09-23 the owner ran
   it successfully; the live SigV4/header contract was accepted and only the
   value-free schema was retained.
-- The vehicle-detail GUI probe is implemented but not executed live: it selects
-  the first eligible vehicle in memory, URL-encodes one detail path segment,
-  persists only a value-free detail schema, and has no fixture until the probe
-  is authorized and run.
+- The vehicle-detail GUI probe was completed successfully on 2026-09-23. It
+  selected the first eligible vehicle in memory, URL-encoded one detail path
+  segment, and retained only the value-free schema at
+  `samples/anonymized/vehicle-detail.schema.json`. The dedicated response adds
+  substantially richer subscription/Stripe and legacy-detail structure than
+  `account-summary`; this is structural evidence only, not evidence of write
+  capabilities.
 
 ## Active Constraints
 
@@ -56,10 +59,9 @@ and manual WebSocket investigation.
 
 ## Next Steps
 
-1. Compare the confirmed account-summary vehicle schema with the dedicated
-   vehicle-detail endpoint.
-2. Investigate route-list pagination and filters using evidence-led probes.
-3. Investigate route detail and then the current account-level WebSocket.
+1. Investigate route-list pagination and filters using evidence-led probes.
+2. Investigate route detail.
+3. Investigate the current account-level WebSocket.
 
 ## Open Questions
 
