@@ -34,5 +34,17 @@ py scripts\discover_frontend.py
 For a future authorized manual probe, set `MAPIT_EMAIL` and `MAPIT_PASSWORD` in
 the process environment or use a local secret loader. `.env.example` documents
 the accepted names, but the library deliberately does not parse `.env` files or
-persist credentials. See `docs/phase-0-status.md` and the research notes for the
-current findings and open questions.
+persist credentials.
+
+## CI and environments
+
+Promotion is `feature/* -> develop -> main`; `develop` is dev integration and
+`main` is production. CI runs on pull requests and pushes to those two branches
+across Python 3.11–3.13. It has no MAPIT secrets, blocks application network
+access while tests run, and rejects credential variables if injected. Package
+installation still uses the normal Python package index. See
+`docs/environments-and-ci.md` for the GitHub plan limitation around protection
+rules and the distinction between project environments and MAPIT endpoints.
+
+See `docs/phase-0-status.md` and the research notes for current findings and
+open questions.

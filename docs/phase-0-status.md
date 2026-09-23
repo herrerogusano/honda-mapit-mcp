@@ -23,6 +23,12 @@ and manual WebSocket investigation.
 - On 2026-09-23, public frontend discovery was verified without credentials:
   HTML/bundle discovery returned the three Cognito identifiers only as redacted
   `<discovered>` placeholders and the expected Core/Geo hosts.
+- CI is documented for `feature/* -> develop -> main`, runs tests with
+  application network blocked across Python 3.11-3.13, and has no MAPIT secrets
+  or live MAPIT access. GitHub
+  `dev`/`prod` are project environments only; the current private plan returned
+  HTTP 422 for protection-rule/branch-policy configuration, so no enforcement
+  is claimed.
 
 ## Active Constraints
 
