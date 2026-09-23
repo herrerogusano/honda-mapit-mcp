@@ -1,0 +1,93 @@
+"""Read-only, allowlisted MAPIT Core/Geo HTTP client."""
+
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping
+from urllib.parse import quote, urlparse
+
+from .auth import MapitSession
+from .config import MapitConfig
+from .signing import SigV4Signer, canonical_uri
+
+
+class MapitHTTPError(RuntimeError):
+    def __init__(self, status: int, url: str, message: str = "MAPIT request failed") -> None:
+        super().__init__(f"{message}: HTTP {status}")
+        self.status = status
+        self.url = url
+
+
+Transport = Callable[[str, str, Mapping[str, str]], Any]
+
+
+@dataclass
+class MapitClient:
+    config: MapitConfig
+    session: MapitSession
+    transport: Transport | None = None
+    signer: SigV4Signer | None = None
+
+    def __post_init__(self) -> None:
+        if self.signer is None:
+            self.signer = SigV4Signer(region=self.config.region)
+        self._allowed_hosts = {urlparse(self.config.core_api_url).netloc.lower(), urlparse(self.config.geo_api_url).netloc.lower()}
+        self._base_urls = {
+            "core": self.config.core_api_url.rstrip("/"),
+            "geo": self.config.geo_api_url.rstrip("/"),
+        }
+
+    def get(self, url_or_path: str, *, params: Mapping[str, Any] | None = None) -> Any:
+        url = self._resolve_url(url_or_path, params=params)
+        recovered = False
+        while True:
+            self.session.refresh_if_needed()
+            headers = self.signer.sign_get(url, self.session.credentials, self.session.id_token)
+            try:
+                return self._send_get(url, headers)
+            except MapitHTTPError as exc:
+                if exc.status not in (401, 403) or recovered:
+                    raise
+                recovered = True
+                self.session.refresh_if_needed(force=True)
+
+    def get_core(self, path: str, *, params: Mapping[str, Any] | None = None) -> Any:
+        return self.get(self._base_urls["core"] + "/" + path.lstrip("/"), params=params)
+
+    def get_geo(self, path: str, *, params: Mapping[str, Any] | None = None) -> Any:
+        return self.get(self._base_urls["geo"] + "/" + path.lstrip("/"), params=params)
+
+    def _resolve_url(self, value: str, *, params: Mapping[str, Any] | None) -> str:
+        parsed = urlparse(value)
+        if not parsed.scheme:
+            raise ValueError("get() requires an absolute HTTPS Core/Geo URL")
+        if parsed.scheme != "https" or parsed.username or parsed.password or parsed.netloc.lower() not in self._allowed_hosts:
+            raise ValueError("URL is outside the HTTPS Core/Geo allowlist")
+        canonical_uri(parsed.path)
+        if params:
+            query = "&".join(
+                f"{quote(str(key), safe='-_.~')}={quote(str(item), safe='-_.~')}"
+                for key, value in params.items()
+                for item in (value if isinstance(value, (list, tuple)) else [value])
+            )
+            value += ("&" if parsed.query else "?") + query
+        return value
+
+    def _send_get(self, url: str, headers: Mapping[str, str]) -> Any:
+        if self.transport:
+            try:
+                return self.transport("GET", url, headers)
+            except MapitHTTPError:
+                raise
+        request = urllib.request.Request(url, headers=dict(headers), method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - URL is allowlisted before this call.
+                raw = response.read()
+                if not raw:
+                    return None
+                return json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise MapitHTTPError(exc.code, url) from exc
