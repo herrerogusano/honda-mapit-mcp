@@ -134,6 +134,23 @@ No se observó un header `Authorization: Bearer` para la API Mapit. Un cliente n
 
 Para este proyecto, la opción segura es persistir solo refresh token cifrado/gestionado por el runtime elegido; no persistir contraseñas, access keys, secret keys ni tokens completos en texto plano.
 
+## Probe manual seguro
+
+El repositorio incluye `scripts/run_auth_probe.ps1` para una prueba interactiva
+autorizada en Windows. Solicita email y contraseña con `Read-Host
+-AsSecureString`, convierte cada valor únicamente en memoria para el proceso
+hijo `scripts/probe_auth.py`, y libera ambos BSTR en `finally`. También restaura
+los valores previos de `MAPIT_EMAIL`, `MAPIT_PASSWORD` y `PYTHONPATH` si
+existían.
+
+El probe ejecuta discovery público y el flujo Cognito documentado, pero nunca
+realiza probes de cuenta ni llamadas de datos. Su salida es un JSON reducido
+con `success`, región, expiraciones ISO y booleanos de disponibilidad. No
+imprime email, identificadores, tokens, credenciales AWS, headers ni payloads
+de excepciones. Los errores se convierten en categorías seguras y producen un
+código de salida distinto de cero; un challenge Cognito no soportado se
+categoriza sin exponer su `Session`.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.

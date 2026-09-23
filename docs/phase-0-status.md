@@ -19,7 +19,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`22 passed`).
+  closed. Offline tests pass (`26 passed`).
 - On 2026-09-23, public frontend discovery was verified without credentials:
   HTML/bundle discovery returned the three Cognito identifiers only as redacted
   `<discovered>` placeholders and the expected Core/Geo hosts.
@@ -29,6 +29,8 @@ and manual WebSocket investigation.
   `dev`/`prod` are project environments only; the current private plan returned
   HTTP 422 for Environment protection and HTTP 403 for branch protection, so no
   platform enforcement is claimed.
+- A manual Windows authentication probe is available with secure prompts and
+  redacted categorized output; it was not run against MAPIT in this task.
 
 ## Active Constraints
 

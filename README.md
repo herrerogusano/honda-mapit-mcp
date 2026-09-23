@@ -34,7 +34,18 @@ py scripts\discover_frontend.py
 For a future authorized manual probe, set `MAPIT_EMAIL` and `MAPIT_PASSWORD` in
 the process environment or use a local secret loader. `.env.example` documents
 the accepted names, but the library deliberately does not parse `.env` files or
-persist credentials.
+persist credentials. For an interactive Windows probe, prefer the secure
+wrapper, which prompts for both values without echoing them:
+
+```powershell
+.\scripts\run_auth_probe.ps1
+```
+
+The probe performs public discovery and Cognito authentication only, then
+prints a redacted JSON summary (success, region, expiration timestamps, and
+availability booleans). It never prints email, IDs, tokens, AWS keys, headers,
+or exception payloads. It restores any pre-existing environment variables when
+it exits and does not persist credentials.
 
 ## CI and environments
 
