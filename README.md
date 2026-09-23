@@ -72,6 +72,21 @@ response values, and atomically writes only the recursive schema to
 `samples/anonymized/account-summary.schema.json`. The UI shows only success or
 categorized failure, safe top-level keys, and the output path.
 
+For the next authorized read-only step, the vehicle-detail GUI selects the
+first in-memory vehicle whose `id` is a non-empty string and whose `device` is
+not null:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\vehicle_detail_prompt_gui.py
+```
+
+It performs the account-summary GET, then exactly one
+`GET /v1/vehicles/{encodedId}` with the ID encoded as one path segment. It
+persists only `samples/anonymized/vehicle-detail.schema.json`; no account
+summary schema, raw payload, vehicle ID, or count is stored. If no valid
+vehicle is present, it makes no detail request and reports a categorized error.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and

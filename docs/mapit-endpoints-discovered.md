@@ -21,7 +21,7 @@ Los valores entre llaves son identificadores del usuario/tenant y se mantienen c
 | Método | Endpoint | Fuente | Estado |
 |---|---|---|---|
 | `GET` | `https://core.prod.mapit.me/v1/account-summary` | bundle actual (`bG`), d3vv3, citylife4; authorized schema-only probe | **CONFIRMED**: HTTP 200 read completed; only anonymized schema retained |
-| `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4 | observado en clientes; no aparece en el fragmento principal actual |
+| `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4 | **OBSERVED_PUBLIC_CLIENT**: host/path observado; no probado en vivo y no aparece como llamada en el bundle frontend actual |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}` | d3vv3/citylife4; el frontend además admite filtros | principal para listado |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual | filtros opcionales observados; confirmar combinaciones |
 | `GET` | `https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true` | bundle actual | detalle actual del frontend |
@@ -35,6 +35,57 @@ anónimo (`samples/anonymized/account-summary.schema.json`), sin valores,
 conteos ni identificadores. El listado de rutas usa una colección `data`; los
 detalles de rutas contienen `geoJSON`, marcas temporales y métricas. Los
 esquemas de rutas y demás endpoints siguen pendientes de fixtures autorizados.
+
+## Detalle de vehículo: contrato público y primer probe
+
+Los dos clientes Home Assistant públicos construyen la lectura de detalle como:
+
+```text
+GET https://core.prod.mapit.me/v1/vehicles/{vehicleId}
+```
+
+No se observa query string ni body. El valor de `vehicleId` procede del campo
+`id` de cada elemento de `vehicles` devuelto por `GET /v1/account-summary`;
+ningún cliente público deriva el identificador desde el VIN, la matrícula, el
+dispositivo o un identificador legado. El cliente d3vv3 usa `vehicle["id"]` y
+el cliente citylife4 omite entradas sin un `id` utilizable. Para una primera
+lectura debe seleccionarse el primer `id` no vacío de tipo string (y,
+preferiblemente, de una entrada con `device` no nulo, como hace el filtro del
+frontend actual). No se debe adivinar ni fabricar un identificador cuando la
+colección no contiene un candidato.
+
+El bundle frontend público vigente no llama a este endpoint Core: usa el objeto
+de vehículo ya obtenido en `account-summary` para la vista principal. Su único
+match de `/v1/vehicles/` corresponde a la ruta Geo
+`/v1/vehicles/{vehicleId}/routes/{routeId}`. Por tanto, el detalle Core está
+respaldado por clientes públicos históricos/alternativos, no por una captura del
+frontend actual.
+
+La forma completa de la respuesta de detalle no está documentada ni aparece en
+fixtures públicos. Los clientes devuelven el JSON sin validarlo; el único
+consumo explícito encontrado es `model` y `vin` en la información del dispositivo
+de d3vv3. No debe asumirse que el detalle es idéntico al elemento de
+`account-summary`: este último ya contiene identidad, registro, suscripción,
+capacidades, dealer, alertas y estado del dispositivo, mientras que el detalle
+podría solapar o ampliar esa información. La comparación de claves solo debe
+hacerse después de una respuesta autorizada y conservar únicamente el esquema
+anonimizado.
+
+Para el primer probe de descubrimiento basta una sola lectura del primer
+vehículo válido. El probe debe detenerse después de esa lectura, no recorrer
+todos los vehículos y no encadenar rutas ni WebSocket. Debe reutilizar el GET
+SigV4 existente, URL-encodear el segmento de path, aceptar campos desconocidos
+y registrar solo nombres, tipos, nullabilidad y nesting. IDs de cuenta, vehículo,
+dispositivo, legado, Firebase y dealer, VIN, IMEI, matrícula, nombre/modelo,
+contactos/direcciones, coordenadas, timestamps, estado de dispositivo,
+suscripción/pagos y cualquier cabecera o URL firmada se consideran sensibles y
+deben eliminarse o sustituirse antes de persistir.
+
+Este estado no confirma que el endpoint siga habilitado para todos los tenants,
+ni su respuesta HTTP para vehículos pendientes/cancelados o sin dispositivo:
+no se realizó una llamada protegida. Tampoco se ha confirmado si el backend
+requiere algún escape adicional del identificador más allá de la codificación
+normal del segmento URL.
 
 ## Operación de escritura descubierta (no ejecutada)
 

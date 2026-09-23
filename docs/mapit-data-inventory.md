@@ -136,6 +136,39 @@ frontend defaults if that distinction matters. Unknown server fields may exist;
 the first probe must not persist them merely because the frontend currently
 strips them during validation.
 
+## Vehicle detail inventory (public reference only)
+
+The public Python clients also issue the following Core read after obtaining a
+vehicle from `account-summary`:
+
+```text
+GET https://core.prod.mapit.me/v1/vehicles/{vehicleId}
+```
+
+| Object | Endpoint/source | Fields/shape observed | Status | Handling |
+|---|---|---|---|---|
+| `vehicle_detail` | d3vv3 and citylife4 clients | Raw JSON object returned without client-side schema validation | `OBSERVED_PUBLIC_CLIENT` | Keep unknown fields; retain only anonymized schema metadata |
+| `model` | d3vv3 entity consumer | Read as a possible model field from detail, with summary vehicle as fallback | `OBSERVED_CONSUMER` | Redact; not live-confirmed |
+| `vin` | d3vv3 entity consumer | Read as a possible VIN field from detail, with summary vehicle as fallback | `OBSERVED_CONSUMER` | Always redact; not live-confirmed |
+
+The current public frontend does not call this Core detail path; its current
+`/v1/vehicles/` match is the Geo route-detail path. Therefore no public schema
+fixture establishes whether detail repeats the summary vehicle, adds telemetry
+or registration fields, or returns a different envelope. The summary schema
+already contains broad vehicle/device/dealer/capability/alert structures, so a
+detail response must not be treated as a safer or smaller copy.
+
+For the first authorized probe, one read of the first usable
+`account-summary.vehicles[*].id` is sufficient for schema discovery. Choose a
+non-empty string ID (prefer an entry whose `device` is non-null, matching the
+frontend's usable-vehicle filter); do not derive or guess an ID. URL-encode the
+path segment, perform no query/body mutation, and stop after that one GET. If no
+candidate exists, return a structured no-candidate result instead of calling the
+endpoint. Persist only anonymized field names, types, nullability and nesting.
+Treat all identities, VIN/IMEI/registration, model/name, dealer/contact/address,
+coordinates/timestamps/device state, subscription/payment fields and signed
+request material as sensitive.
+
 ## Probe requirements (read-only)
 
 The Implementer should add a narrow `account-summary` read after authentication

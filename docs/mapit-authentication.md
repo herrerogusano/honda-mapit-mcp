@@ -174,6 +174,22 @@ error categorizado, claves top-level ya seguras y la ruta. Este probe no
 ejecuta escrituras ni otros endpoints y no se ha ejecutado contra MAPIT en la
 suite/CI.
 
+## Probe de detalle de vehículo
+
+`scripts/vehicle_detail_prompt_gui.py` es el siguiente paso read-only. Tras
+discovery y Cognito, solicita `GET /v1/account-summary` y selecciona solamente
+en memoria el primer elemento de `vehicles` cuyo `id` sea una cadena no vacía y
+cuyo `device` no sea nulo. El ID se codifica estrictamente como un único
+segmento URL y se realiza exactamente un `GET /v1/vehicles/{encodedId}`; si no
+hay vehículo válido, no se llama al endpoint de detalle.
+
+La respuesta de detalle se convierte inmediatamente con el mismo
+`schema_only`, y solo se escribe atómicamente
+`samples/anonymized/vehicle-detail.schema.json`. No se guarda el schema del
+account-summary, payload crudo, ID ni conteo. La interfaz muestra únicamente
+estado, claves top-level seguras y ruta. No se ha ejecutado este probe contra
+MAPIT ni se ha inventado un fixture de schema.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.

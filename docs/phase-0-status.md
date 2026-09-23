@@ -20,7 +20,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`35 passed`).
+  closed. Offline tests pass (`38 passed`).
 - On 2026-09-23, public frontend discovery was verified without credentials:
   HTML/bundle discovery returned the three Cognito identifiers only as redacted
   `<discovered>` placeholders and the expected Core/Geo hosts.
@@ -41,6 +41,10 @@ and manual WebSocket investigation.
   `samples/anonymized/account-summary.schema.json`. On 2026-09-23 the owner ran
   it successfully; the live SigV4/header contract was accepted and only the
   value-free schema was retained.
+- The vehicle-detail GUI probe is implemented but not executed live: it selects
+  the first eligible vehicle in memory, URL-encodes one detail path segment,
+  persists only a value-free detail schema, and has no fixture until the probe
+  is authorized and run.
 
 ## Active Constraints
 
