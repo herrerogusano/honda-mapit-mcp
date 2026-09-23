@@ -8,7 +8,9 @@ not a declaration that Phase 0 is complete.
 Public evidence supports Cognito `USER_PASSWORD_AUTH`, `REFRESH_TOKEN_AUTH`,
 Identity Pool `GetId`/`GetCredentialsForIdentity`, and temporary AWS credentials.
 The local client implements this flow in memory and fails closed on unsupported
-Cognito challenges. Live account validation remains pending.
+Cognito challenges. An authorized authentication run accepted
+`USER_PASSWORD_AUTH` without an additional challenge; no tokens or credentials
+were retained.
 
 ## Runtime Configuration
 
@@ -26,8 +28,15 @@ GET.
 
 ## Vehicle Data
 
-Pending an authorized `account-summary` and vehicle-detail read. The inventory
-template is in `mapit-data-inventory.md`.
+An authorized read-only `GET /v1/account-summary` completed successfully. The
+probe retained only `samples/anonymized/account-summary.schema.json`: field
+names, types, and observed nullability, with no values, counts, identifiers, or
+raw payload. The response schema confirms account identity/preferences,
+payment-method and Stripe structure, regional product catalog, vehicle
+capabilities, dealer data, alert settings, and detailed device state. This
+confirms response structures only; it does not infer purchase, transfer,
+maintenance, alert-delivery, or other write capabilities. Odometer and VIN were
+observed as nullable in the sample. See `mapit-data-inventory.md`.
 
 ## Routes, Route Detail, and Historical Data
 
@@ -58,6 +67,11 @@ scope for Phase 0 execution.
 - Cognito challenges for the authorized account.
 - Live acceptance of the observed signing/header contract.
 - Full account, vehicle, route, route-detail, and realtime schemas.
+- Whether all account-summary substructures and nullable fields are stable
+  across accounts; the current account-summary evidence is schema-only for one
+  authorized account.
+- Semantics and read/write endpoints, if any, behind payment, catalog,
+  capability, dealer, notification, and alert-setting structures.
 - Route pagination, history depth, date semantics, and units.
 - Read-only endpoints for zones, alerts/events, maintenance, and appointments.
 

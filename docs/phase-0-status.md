@@ -13,13 +13,14 @@ and manual WebSocket investigation.
 - Persistent Researcher, Implementer, and Tester roles have been established.
 - Initial research into the two reference repositories and the current MAPIT
   frontend is documented.
-- No MAPIT credentials have been used and no live account requests have run.
+- MAPIT credentials were entered only into local in-memory GUI probes; they were
+  not logged, persisted, committed, or sent through chat.
 - Minimal standalone Python scaffold is implemented with typed configuration,
   public runtime discovery, Cognito session handling, SigV4 GET signing, and a
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`34 passed`).
+  closed. Offline tests pass (`35 passed`).
 - On 2026-09-23, public frontend discovery was verified without credentials:
   HTML/bundle discovery returned the three Cognito identifiers only as redacted
   `<discovered>` placeholders and the expected Core/Geo hosts.
@@ -37,8 +38,9 @@ and manual WebSocket investigation.
   logic is tested offline, while the GUI itself is not opened in CI.
 - The read-only `account-summary` GUI probe is implemented with immediate
   schema-only conversion and atomic output to
-  `samples/anonymized/account-summary.schema.json`; no live account-summary
-  call has been made in this task.
+  `samples/anonymized/account-summary.schema.json`. On 2026-09-23 the owner ran
+  it successfully; the live SigV4/header contract was accepted and only the
+  value-free schema was retained.
 
 ## Active Constraints
 
@@ -50,20 +52,18 @@ and manual WebSocket investigation.
 
 ## Next Steps
 
-1. Use an authorized local account to run the first manual authentication and
-   `account-summary` probe without persisting raw output.
-2. Inventory the anonymized vehicle fields returned by that account.
-3. Investigate route-list pagination and filters using evidence-led probes.
-4. Investigate route detail and then the current account-level WebSocket.
+1. Compare the confirmed account-summary vehicle schema with the dedicated
+   vehicle-detail endpoint.
+2. Investigate route-list pagination and filters using evidence-led probes.
+3. Investigate route detail and then the current account-level WebSocket.
 
 ## Open Questions
 
 - Refresh behavior against the authorized account has not yet been exercised
   near token expiry, although the initial password flow required no challenge.
-- Exact live token/header contract accepted by the API and WebSocket.
+- Exact live token/subprotocol contract accepted by the WebSocket.
 - Current endpoint inventory and route-history pagination/filter behavior.
-- Whether a repository remote and preferred CI provider should be configured.
-- The exact Cognito challenge behavior for an authorized test account; the
-  scaffold currently covers `USER_PASSWORD_AUTH` and `REFRESH_TOKEN_AUTH` only.
+- Whether other account states trigger Cognito challenges not seen in the
+  successful initial login.
 - The final persistence policy for refresh tokens; this scaffold keeps session
   state in memory and does not persist secrets.

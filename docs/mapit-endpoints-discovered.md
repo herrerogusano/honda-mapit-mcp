@@ -20,7 +20,7 @@ Los valores entre llaves son identificadores del usuario/tenant y se mantienen c
 
 | Método | Endpoint | Fuente | Estado |
 |---|---|---|---|
-| `GET` | `https://core.prod.mapit.me/v1/account-summary` | bundle actual (`bG`), d3vv3, citylife4 | principal actual |
+| `GET` | `https://core.prod.mapit.me/v1/account-summary` | bundle actual (`bG`), d3vv3, citylife4; authorized schema-only probe | **CONFIRMED**: HTTP 200 read completed; only anonymized schema retained |
 | `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4 | observado en clientes; no aparece en el fragmento principal actual |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}` | d3vv3/citylife4; el frontend además admite filtros | principal para listado |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual | filtros opcionales observados; confirmar combinaciones |
@@ -28,7 +28,13 @@ Los valores entre llaves son identificadores del usuario/tenant y se mantienen c
 | `GET` | `https://geo.prod.mapit.me/v1/routes/{routeId}` | d3vv3 y citylife4 | ruta de detalle legado; no asumir que sustituye a la actual |
 | `GET` | `https://geo.prod.mapit.me/v1/reverse-geocoding/{lat}/{lng}?lang={language}` | bundle actual | geocodificación inversa |
 
-Las respuestas observadas por los clientes Python se interpretan de forma general: `account-summary` devuelve un objeto con `account` y `vehicles`; el listado de rutas usa una colección `data`; los detalles de rutas contienen `geoJSON`, marcas temporales y métricas. Los esquemas completos deben validarse con fixtures autorizados antes de congelarlos.
+La lectura autorizada de `account-summary` confirmó una respuesta con `account`,
+`vehicles` y estructuras adicionales de pagos/catálogo, capacidades, dealer,
+alert settings y estado detallado del dispositivo. Solo se retuvo el schema
+anónimo (`samples/anonymized/account-summary.schema.json`), sin valores,
+conteos ni identificadores. El listado de rutas usa una colección `data`; los
+detalles de rutas contienen `geoJSON`, marcas temporales y métricas. Los
+esquemas de rutas y demás endpoints siguen pendientes de fixtures autorizados.
 
 ## Operación de escritura descubierta (no ejecutada)
 

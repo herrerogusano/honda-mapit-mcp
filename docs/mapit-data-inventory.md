@@ -1,18 +1,90 @@
 # MAPIT Data Inventory
 
-Status: schema discovery has started from public code; no account payload has
-been captured yet. Examples below are placeholders, not real account data.
+Status: an authorized read-only probe produced a schema-only anonymized sample
+for `account-summary`. No values, counts, raw payload, headers, tokens, or
+identifiers were retained. Examples below are placeholders, not real account
+data.
 
 | Field | Endpoint/source | Type | Anonymized example | Meaning | Nullable | Historical/current | Status |
 |---|---|---:|---|---|---|---|---|
-| `account` | `GET /v1/account-summary` | object | `{...}` | Account summary container | unknown | current | FOUND_IN_CODE |
-| `vehicles` | `GET /v1/account-summary` | array | `[{...}]` | Vehicles associated with the account | unknown | current | FOUND_IN_CODE |
+| `account` | `GET /v1/account-summary` | object | `{...}` | Account and preference/payment containers | non-null in schema sample | current | CONFIRMED_SCHEMA_ONLY |
+| `vehicles` | `GET /v1/account-summary` | array | `[{...}]` | Vehicle/device/dealer/capability containers | non-null in schema sample | current | CONFIRMED_SCHEMA_ONLY |
 | `id` / `deviceId` | current WebSocket bundle | string | `DEVICE_ID_1` | Device identity in a state message | unknown | current | FOUND_IN_FRONTEND |
 | `status` | current WebSocket bundle | unknown | `STATE_REDACTED` | Device state | unknown | current | FOUND_IN_FRONTEND |
 | `battery` | current WebSocket bundle | number | `73` | Suspected tracker battery value | unknown | current | FOUND_IN_FRONTEND |
 | `lat` / `lng` | current WebSocket bundle | number | `LAT_REDACTED` / `LNG_REDACTED` | Device coordinates | unknown | current | FOUND_IN_FRONTEND |
 | `hdop` | current WebSocket bundle | number | `1.2` | Suspected GPS dilution/accuracy metric | unknown | current | FOUND_IN_FRONTEND |
 | `lastTs` / `lastCoordTs` | current WebSocket bundle | unknown | `TIMESTAMP_REDACTED` | State/coordinate timestamps | unknown | current | FOUND_IN_FRONTEND |
+
+## Authorized schema-only result
+
+The file `samples/anonymized/account-summary.schema.json` records field names,
+container types, and observed nullability only. It does not record a vehicle
+count or any field value. The following structures are therefore
+`CONFIRMED_SCHEMA_ONLY` for this authorized account-summary response; they do
+not by themselves prove that every account returns the same shape.
+
+### Account
+
+Observed non-null fields include `id`, `email`, `firstName`, `lastName`,
+`phone`, `dob`, `document` (`number`, `type`), and `address` (street, number,
+locality, region, country, postal code). Also present are `ownedVehicles` (ID
+references), `pendingOnboardingMilestones`, `preferences` (`locale`,
+`timezone`, `theme`, `marketingConsent`), `review` (`shown`, with `happy` and
+`score` observed as null), and `subscriptionBalanceDays`.
+
+Payment-related structure exists but is not evidence of a payment operation:
+`paymentMethods` contains an ID, default flag, type, and `info` with card
+brand, expiry month/year, funding, and last four digits. The account also
+contains `stripeId`, `stripePublishableKey`, and `stripeTenant`. These fields
+must never be persisted in a probe sample, even when only their structure is
+being inventoried.
+
+### Product catalog
+
+`productCatalog` contains `MapitDevice` and `Subscription`, each with regional
+`prices` for `ES`, `PT`, and `US`; each regional entry has `amount` and
+`currency`. This confirms catalog-price structure only. No price or currency
+value was retained and no purchase/write capability is inferred.
+
+### Vehicle-level structures
+
+Observed vehicle fields include identity and registration (`id`, `name`,
+`model`, `registrationNumber`, `vin`, `registrationId`, `legacyId`,
+`legacyDealerId`, `firebaseKey`), lifecycle (`pending`, `cancelled`,
+`registrationCompletedAt`, `saleDate`, `transferable`), usage (`km`),
+`branch`, `product`, `products`, and `subscription` (`id`, `autoRenew`,
+`cancelled`, `retryingRenewal`).
+
+Capability flags are present for `deviceTransfer` (dealer/other/private
+transfer and `supported`), `finance`, `hondaPlus`, and `maintenance`. These
+are capability metadata only; no corresponding action endpoint was called or
+confirmed.
+
+`dealerData` includes dealer name, IDs, shop address, contact point, email,
+telephone, and opening hours. S3 logo/header keys were observed as null in the
+schema sample. Dealer and branch fields are location/business-sensitive and
+must be redacted before persistence.
+
+`flags` exposes access booleans for accident, fall, hibernation, and ignition-on
+alerts. `notificationSettings` contains alert booleans, critical variants,
+sound, an ID, and movement-alert schedules (`days`, `startTime`, `endTime`).
+These confirm the presence of alert-setting state, not alert delivery or
+mutation support.
+
+### Device state
+
+`device` includes `id`, `imei`, `model`, and `deadSim`. Its `state` includes
+`battery`, battery-connection status/timestamp, communications-check request
+fields, creation/update metadata, `detectedCan`, device/state IDs, `hdop`,
+`lastBuzzTs`, `lastCoordTs`, `lastTs`, `lat`, `lng`, `location`, `prevStatus`,
+`speed`, `status`, `version`, and `voltage`.
+
+The schema sample observed `data`, communications-check request IDs/timestamps,
+`odometer`, and `vin` as null. This records nullability in that sample only;
+it does not establish that odometer or VIN are always null. Coordinates,
+location encodings, timestamps, IDs, IMEI, VIN, and creator/updater fields are
+high-sensitivity data and must be removed or replaced before persistence.
 
 ## `account-summary` contract (frontend evidence)
 
