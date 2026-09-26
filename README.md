@@ -108,6 +108,9 @@ Failures are shown only as stable categories such as `discovery_failed`,
 `credential_store_failed`; exception text, response bodies, and URLs are never
 shown. A native Credential Manager size/backend failure is fail-closed and has
 no file-storage fallback.
+The Windows store uses a bounded UTF-8-fragmented `mapit-refresh-v1` manifest
+with up to eight 1024-byte chunks and an alternate staging bank; legacy
+single-entry data is migrated only after the new set is verified.
 
 ## CI and environments
 

@@ -193,10 +193,80 @@ una Credential Manager no disponible) se clasifica como
 `credential_store_failed`: no se reintenta en otro backend ni se escribe un
 archivo; la interfaz vuelve al login manual y no inicia llamadas de datos.
 
-### Lifecycle implementado
+### Límite real y formato fragmentado v1 implementado
 
-1. **Load:** al iniciar, leer solo el refresh token desde Credential Manager.
-   Si falta, el vault falla, el backend no es el esperado o el token no puede
+La prueba local reproducible del host actual mostró que `keyring`/WinVault
+falla al guardar un refresh token de 1300 caracteres y acepta 1280. Esto es
+consistente con el límite de Win32 para `CredentialBlob`: Microsoft documenta
+`CRED_MAX_CREDENTIAL_BLOB_SIZE` como `5*512 = 2560` bytes para una credencial
+genérica, no como una garantía de que todas las capas (Unicode, `keyring` y el
+vault concreto) acepten ese tamaño ([CREDENTIALA](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentiala)).
+La observación del host es evidencia operativa local, no un límite universal de
+Windows; el diseño debe usar un margen conservador y medir bytes, no asumir que
+caracteres y bytes son equivalentes.
+
+La implementación usa ahora el formato fragmentado `mapit-refresh-v1`, que
+mantiene el único secreto dentro del mismo Credential Manager, sin cambiar de
+almacén. Un fallo de tamaño o de backend sigue clasificándose como
+`credential_store_failed`:
+
+- Cada fragmento publicado usa un nombre constante sin PII:
+  `mapit-refresh-v1-chunk-0000` hasta `mapit-refresh-v1-chunk-0007`; la
+  implementación dispone además de un banco alterno de staging con el prefijo
+  `mapit-refresh-v1-alt-chunk-`. El manifiesto usa
+  `mapit-refresh-v1-manifest`; el identificador lógico del servicio y el
+  username de `keyring` también son constantes. Ningún target, comentario o
+  username incluye email, account ID, tenant, vehículo o hash de identidad.
+- Codificar el token como UTF-8 y partir por bytes en chunks de **1024 bytes**;
+  nunca cortar una secuencia UTF-8. Este margen queda por debajo del límite
+  Win32 y del límite de 1280 caracteres observado. Cada chunk debe tener entre
+  1 y 1024 bytes.
+- Aceptar como máximo **8 chunks / 8192 bytes** de token. `count` fuera de
+  `1..8`, token vacío o token mayor que ese máximo produce fallo cerrado y GUI;
+  no se crean más de ocho slots por banco ni se trunca el secreto. El máximo
+  es una política local estricta, no una afirmación sobre el tamaño permitido
+  por Cognito.
+- El manifiesto no contiene el token. Su representación canónica incluye solo
+  `format`, `version=1`, `count`, `chunk_bytes=1024` y `sha256` del token
+  UTF-8. Debe caber holgadamente en una credencial y validarse con comparación
+  constante cuando proceda. El hash detecta mezcla/corrupción, pero no sustituye
+  la protección del vault ni autentica frente al mismo usuario que pueda
+  modificar todos los blobs.
+- La escritura prepara la sustitución en el banco alterno, limpia sus ocho
+  slots, escribe los chunks y valida el hash antes de publicar; **el manifiesto
+  visible se escribe siempre al final**. El banco publicado anterior permanece
+  intacto hasta verificar el nuevo conjunto. Si falla el staging o la publicación,
+  se restaura el manifiesto anterior y se limpian los slots alternos best-effort,
+  sin emitir el secreto. Un crash puede dejar blobs huérfanos en el banco no
+  publicado, pero no son utilizables; el siguiente `save`/`delete` los limpia.
+- La carga exige manifiesto válido, versión conocida, `count`/`chunk_bytes`
+  dentro de límites, exactamente los chunks esperados del banco que coincide,
+  ausencia de slots extra en ese banco, límites de bytes por chunk, UTF-8 válido
+  y hash coincidente. Falta,
+  corrupción, payload parcial, slots extra o backend que redondee/trunque
+  provoca rechazo del conjunto completo y fallback GUI; nunca se devuelve un
+  token parcial ni se intenta adivinar el formato.
+- `delete` intenta borrar de forma idempotente el manifiesto, los ocho slots de
+  ambos bancos y la entrada legacy. La ausencia se considera éxito; un error parcial se
+  categoriza sin cuerpo ni secreto y se reintenta en la próxima operación. Se
+  elimina el manifiesto primero para que un resto no sea cargable.
+
+La entrada legacy de una sola credencial (`mapit-client` / `refresh-token`,
+según la convención actual) se lee únicamente para migración. Si no existe un
+manifiesto v1 pero el legacy es válido y está dentro del máximo, se divide en
+memoria, se escribe y relee el formato v1, y **solo después** se borra el
+legacy. Si la migración o su verificación falla, se conserva el legacy para no
+destruir la única sesión, se informa una categoría segura y se cae a GUI; no se
+ejecuta una llamada de datos. Si coexisten ambos formatos, v1 tiene precedencia
+y el legacy se borra best-effort después de validar v1. El legacy malformado o
+fuera de límites se trata como corrupción y no se usa.
+
+### Lifecycle actual y requisitos de migración
+
+1. **Load:** la implementación v1 lee y valida primero el manifiesto y sus
+   chunks según las reglas anteriores. Si falta, intenta migrar la única
+   entrada legacy solo después de verificar el nuevo conjunto. Si falta todo,
+   el vault falla, el backend no es el esperado o el token no puede
    recuperarse, no se intenta una llamada protegida: abrir el flujo GUI.
 2. **Refresh:** usar `REFRESH_TOKEN_AUTH` con el app client configurado, sin
    volver a enviar contraseña. Cognito documenta que `InitiateAuth` acepta
@@ -218,13 +288,13 @@ archivo; la interfaz vuelve al login manual y no inicia llamadas de datos.
    no clasificadas fallan cerrados, pero no destruyen un token potencialmente
    válido. Un challenge no soportado también termina *fail-closed* y pasa a GUI,
    sin exponer `Session` ni parámetros.
-5. **Save:** tras un login GUI exitoso, guardar únicamente el refresh token
-   devuelto, si el usuario ha habilitado persistencia local. Si no hay refresh
-   token, no guardar nada. La contraseña se descarta inmediatamente después de
-   `USER_PASSWORD_AUTH`.
-6. **Delete:** exponer borrado explícito/logout y ejecutarlo también al detectar
-   revocación o cambio de cuenta. El borrado debe ser idempotente y no revelar
-   si existía una entrada.
+5. **Save:** tras un login GUI exitoso, la implementación guarda únicamente el
+   refresh token fragmentado y escribe el manifiesto al final, si el usuario ha
+   habilitado persistencia local. Si no hay refresh token, no guardar nada. La
+   contraseña se descarta inmediatamente después de `USER_PASSWORD_AUTH`.
+6. **Delete:** el borrado explícito/logout y la revocación o cambio de cuenta
+   limpian manifiesto, todos los slots y legacy de forma idempotente, primero el
+   manifiesto; no se revela si existía una entrada.
 
 `REFRESH_TOKEN_AUTH` no funciona en app clients con refresh-token rotation
 habilitada; AWS indica que esos clientes deben usar el mecanismo de refresh
@@ -242,7 +312,7 @@ remota, expiración, rotación y cambio de app client siguen requiriendo
 fallback a GUI. Ningún mecanismo local elimina la necesidad de minimizar el
 tiempo de vida en memoria y de redactar errores.
 
-### Criterios de aceptación cubiertos
+### Criterios de aceptación de v1
 
 - En una máquina Windows, `save/load/delete` usa exclusivamente Credential
   Manager del usuario actual; no crea archivos de secretos ni claves de
@@ -260,6 +330,17 @@ tiempo de vida en memoria y de redactar errores.
   respetan `Expiration` y se descartan al terminar o invalidar la sesión.
 - Los tests usan transportes/keyrings falsos y secretos sintéticos; CI no
   requiere credenciales, acceso al vault del desarrollador ni red MAPIT.
+- La implementación fragmentada rechaza más de 8 chunks o 8192 bytes, escribe
+  y valida el manifiesto al final, detecta slots ausentes/extra/hash incorrecto
+  y hace rollback best-effort sin logs secretos.
+- La migración debe conservar el legacy hasta verificar v1 y borrarlo después;
+  `delete` debe cubrir manifiesto, todos los chunks y la entrada legacy de forma
+  idempotente.
+
+El 2026-09-26 se validó además el backend nativo `WinVaultKeyring` de este host
+con servicios sintéticos aislados: guardar/cargar/borrar un token Unicode de
+más de 3.000 caracteres y reemplazarlo por otro de más de 5.000 funcionó, y la
+limpieza final dejó el servicio de prueba vacío. No se usaron credenciales MAPIT.
 
 ## Probe manual seguro
 
@@ -336,6 +417,7 @@ realiza ninguna llamada de datos.
 - [AWS Cognito: refresh tokens](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-refresh-token.html) — expiración, revocación, rotation y compatibilidad de `REFRESH_TOKEN_AUTH`.
 - [AWS Cognito: identity-pool authentication flow](https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html) — `GetId`, credenciales temporales y expiración.
 - [Microsoft: Handling Passwords](https://learn.microsoft.com/en-us/windows/win32/secbp/handling-passwords), [Generic Credentials](https://learn.microsoft.com/en-us/windows/win32/secauthn/kinds-of-credentials) y [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) — orden recomendado Credential Manager/DPAPI y límites de protección.
+- [Microsoft: CREDENTIALA](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentiala) — `CredentialBlobSize` y `CRED_MAX_CREDENTIAL_BLOB_SIZE` (`5*512` bytes).
 - [Python keyring](https://keyring.readthedocs.io/en/stable/) — interfaz y backends de almacén del sistema, incluido Windows Credential Locker.
 
 ## Preguntas abiertas
@@ -344,8 +426,12 @@ realiza ninguna llamada de datos.
   `Complete`: el flujo `USER_PASSWORD_AUTH` observado fue aceptado, el Identity
   Pool entregó credenciales temporales y no apareció un challenge adicional.
   No se conservaron tokens, credenciales, identificadores ni datos de cuenta.
-- Validar el backend nativo Credential Manager en una máquina Windows con el
-  extra opcional instalado; CI solo cubre stores/transports falsos.
+- Confirmar con el token real que el formato fragmentado elimina el fallo de
+  tamaño observado y que `REFRESH_TOKEN_AUTH` permite reanudar la siguiente
+  ejecución sin contraseña.
+- Confirmar el límite efectivo del backend nativo en los Windows soportados;
+  usar siempre los límites conservadores del formato aunque otro host acepte
+  más.
 - Confirmar si el app client real tiene refresh-token rotation habilitada antes de
   depender de `REFRESH_TOKEN_AUTH` para reanudación automática.
 - Resolver la divergencia del websocket actual frente al fallback legado; está documentada en `docs/mapit-endpoints-discovered.md`.

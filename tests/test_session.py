@@ -55,12 +55,180 @@ def test_keyring_store_save_load_delete_is_idempotent_and_constant_scoped():
     store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
     store.save("refresh-secret")
     assert store.load() == "refresh-secret"
-    assert list(fake.values) == [("mapit-client", "refresh-token")]
+    assert set(fake.values) == {
+        ("mapit-client", "mapit-refresh-v1-chunk-0000"),
+        ("mapit-client", "mapit-refresh-v1-manifest"),
+    }
+    assert ("mapit-client", "refresh-token") not in fake.values
     store.delete()
     store.delete()
     assert store.load() is None
     with pytest.raises(RefreshTokenStoreError):
         store.save("")
+
+
+def test_fragmented_store_handles_long_token_and_unicode_chunk_boundaries():
+    fake = FakeKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    token = "a" * 1023 + "€" + "🙂" * 100
+    store.save(token)
+    assert store.load() == token
+    chunks = [
+        fake.values[("mapit-client", f"mapit-refresh-v1-chunk-{index:04d}")]
+        for index in range(WindowsKeyringRefreshTokenStore.MAX_CHUNKS)
+        if ("mapit-client", f"mapit-refresh-v1-chunk-{index:04d}") in fake.values
+    ]
+    assert len(chunks) == 2
+    assert all(0 < len(chunk.encode("utf-8")) <= 1024 for chunk in chunks)
+    assert chunks[0] == "a" * 1023
+    assert chunks[1].startswith("€")
+
+
+def test_fragmented_store_rejects_missing_tampered_and_stale_chunks():
+    fake = FakeKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    store.save("token-" + "x" * 1100)
+    del fake.values[("mapit-client", "mapit-refresh-v1-chunk-0000")]
+    with pytest.raises(RefreshTokenStoreError):
+        store.load()
+
+    fake = FakeKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    store.save("token-" + "x" * 1100)
+    fake.values[("mapit-client", "mapit-refresh-v1-chunk-0000")] = "tampered"
+    with pytest.raises(RefreshTokenStoreError):
+        store.load()
+
+    fake = FakeKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    store.save("short-token")
+    fake.values[("mapit-client", "mapit-refresh-v1-chunk-0001")] = "stale"
+    with pytest.raises(RefreshTokenStoreError):
+        store.load()
+
+
+def test_fragmented_store_rejects_oversize_token_before_writes():
+    fake = FakeKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    with pytest.raises(RefreshTokenStoreError):
+        store.save("x" * (WindowsKeyringRefreshTokenStore.MAX_TOKEN_BYTES + 1))
+    assert fake.values == {}
+
+
+def test_fragmented_store_rejects_oversize_legacy_and_invalid_manifest_limits():
+    fake = FakeKeyring()
+    fake.values[("mapit-client", "refresh-token")] = "x" * (WindowsKeyringRefreshTokenStore.MAX_TOKEN_BYTES + 1)
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    with pytest.raises(RefreshTokenStoreError):
+        store.load()
+    assert fake.values[("mapit-client", "refresh-token")].startswith("x")
+
+    fake = FakeKeyring()
+    fake.values[("mapit-client", "mapit-refresh-v1-manifest")] = (
+        '{"chunk_bytes":1024,"count":9,"format":"mapit-refresh-v1",'
+        '"sha256":"' + "0" * 64 + '","version":1}'
+    )
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    with pytest.raises(RefreshTokenStoreError):
+        store.load()
+
+
+class FailingKeyring(FakeKeyring):
+    def __init__(self, fail_accounts=()):
+        super().__init__()
+        self.fail_accounts = set(fail_accounts)
+
+    def set_password(self, service, account, value):
+        if account in self.fail_accounts:
+            raise OSError("synthetic keyring failure")
+        super().set_password(service, account, value)
+
+
+def test_fragmented_store_rolls_back_on_write_failure():
+    fake = FailingKeyring({"mapit-refresh-v1-manifest"})
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    with pytest.raises(RefreshTokenStoreError):
+        store.save("token-" + "x" * 1100)
+    assert fake.values == {}
+
+
+def test_fragmented_store_preserves_published_token_when_staging_fails():
+    alternate_first_chunk = WindowsKeyringRefreshTokenStore._chunk_account(
+        0, WindowsKeyringRefreshTokenStore.ALTERNATE_CHUNK_ACCOUNT_PREFIX
+    )
+    fake = FailingKeyring({alternate_first_chunk})
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    store.save("published-refresh")
+    with pytest.raises(RefreshTokenStoreError):
+        store.save("replacement-refresh")
+    assert store.load() == "published-refresh"
+
+
+def test_fragmented_store_replaces_published_token_using_alternate_bank():
+    fake = FakeKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    store.save("first-refresh")
+    store.save("second-refresh")
+    assert store.load() == "second-refresh"
+    assert ("mapit-client", "mapit-refresh-v1-manifest") in fake.values
+    assert any(account.startswith("mapit-refresh-v1-alt-chunk-") for _, account in fake.values)
+
+
+def test_fragmented_store_migrates_legacy_only_after_v1_verification():
+    fake = FakeKeyring()
+    fake.values[("mapit-client", "refresh-token")] = "legacy-refresh"
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    assert store.load() == "legacy-refresh"
+    assert ("mapit-client", "refresh-token") not in fake.values
+    assert store.load() == "legacy-refresh"
+
+    failing = FailingKeyring({"mapit-refresh-v1-chunk-0000"})
+    failing.values[("mapit-client", "refresh-token")] = "legacy-refresh"
+    failing_store = WindowsKeyringRefreshTokenStore(keyring_module=failing, backend=_native_backend())
+    with pytest.raises(RefreshTokenStoreError):
+        failing_store.load()
+    assert failing.values[("mapit-client", "refresh-token")] == "legacy-refresh"
+
+
+def test_fragmented_store_delete_cleans_v1_and_legacy_entries():
+    fake = FakeKeyring()
+    fake.values[("mapit-client", "refresh-token")] = "legacy-refresh"
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    store.save("current-refresh")
+    fake.values[("mapit-client", "refresh-token")] = "stale-legacy"
+    store.delete()
+    assert fake.values == {}
+    store.delete()
+
+
+def test_fragmented_store_delete_attempts_all_slots_before_reporting_failure():
+    class FailingDeleteKeyring(FakeKeyring):
+        def __init__(self):
+            super().__init__()
+            self.delete_calls = []
+
+        def delete_password(self, service, account):
+            self.delete_calls.append(account)
+            if account == "mapit-refresh-v1-chunk-0000":
+                raise OSError("synthetic delete failure")
+            super().delete_password(service, account)
+
+    fake = FailingDeleteKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    with pytest.raises(RefreshTokenStoreError):
+        store.delete()
+    assert fake.delete_calls[0] == "mapit-refresh-v1-manifest"
+    assert "mapit-refresh-v1-chunk-0007" in fake.delete_calls
+    assert "refresh-token" in fake.delete_calls
+
+
+def test_fragmented_store_rejects_noncanonical_or_extra_manifest_fields():
+    fake = FakeKeyring()
+    store = WindowsKeyringRefreshTokenStore(keyring_module=fake, backend=_native_backend())
+    fake.values[("mapit-client", "mapit-refresh-v1-manifest")] = '{"format":"mapit-refresh-v1","version":1,"count":1,"chunk_bytes":1024,"sha256":"' + "0" * 64 + '","extra":true}'
+    fake.values[("mapit-client", "mapit-refresh-v1-chunk-0000")] = "token"
+    with pytest.raises(RefreshTokenStoreError):
+        store.load()
 
 
 class MemoryStore:
