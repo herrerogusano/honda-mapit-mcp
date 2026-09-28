@@ -66,10 +66,11 @@ Observed optional filters and their current evidence level:
 
 | Query parameter | Evidence | First-probe policy |
 |---|---|---|
-| `limit` | Frontend query construction; accepted by latest authorized probe | Use only `limit=1` as a bounded probe; default/maximum unknown |
-| `month`, `day` | Frontend query construction | Defer; calendar semantics and required combinations unknown |
-| `from`, `to` | Frontend query construction | Defer; timezone, format, inclusivity, and pairing unknown |
-| `includeInProgress` | Frontend query construction | Defer; boolean encoding and behavior unknown |
+| `limit` | Optional low-level query key; bounded live probe accepted integer `1`; current dashboard call omits it | Keep `limit=1` for bounded reads; default/maximum unknown |
+| `month` | Optional low-level query key only; no current dashboard call observed | Defer; type, calendar semantics, and combinations unknown |
+| `day` | Optional low-level query key only; dashboard `routeDay` filters locally instead | Defer; type, date semantics, and combinations unknown |
+| `from`, `to` | Current dashboard sends them as paired ISO boundaries for the selected calendar month | Inclusivity, timezone interpretation, and independent-field behavior unknown |
+| `includeInProgress` | Optional low-level query key only; no current dashboard call observed | Defer; boolean encoding and behavior unknown |
 
 These observations establish parameter names only. They do not establish route
 history completeness, units, ordering, pagination, date semantics, or the
@@ -113,6 +114,84 @@ The fixture contains no top-level cursor, token, offset, count, or
 item and is explicitly `null` in this schema sample; it is not treated as
 pagination metadata. Pagination behavior, ordering, units, date semantics and
 whether additional fields appear on another page remain open.
+
+## Historical range, filtering, and pagination evidence
+
+The current public bundle has one route-list request builder. Its required
+query key is `vehicleId`; it can serialize `limit`, `month`, `day`, `from`,
+`to`, and `includeInProgress` when callers supply them. This is parameter
+construction evidence, not proof that every combination is accepted or has
+the named semantics.
+
+The dashboard call site currently supplies only a paired `from`/`to` range.
+For a selected `routesMonth` (`YYYY-MM`), it computes the first instant of
+that month and the first instant of the next month as ISO strings, then uses
+those values as the query boundaries. Previous/next month controls change the
+`routesMonth` state and therefore the query key; this is the frontend's
+observed way to load another historical window. The current call site does
+not supply `limit`, `month`, `day`, or `includeInProgress`.
+
+The dashboard applies `routeDay` (`YYYY-MM-DD`) locally by filtering the
+already-loaded `data` items on their `startedAt` date. It does not pass the
+`day` query parameter for that interaction. It also groups the loaded route
+items into day-level summaries in memory and displays the resulting route
+count; this is not evidence of server-side aggregation or complete history.
+There is no route-specific load-more or cursor-following code. The response
+validator allows an optional `lastEvaluatedKey`, but the dashboard never reads
+or sends it, and no route-specific `cursor`, `offset`, `page`, or `nextToken`
+field/use was observed. Generic pagination code from the query library is not
+route behavior. The absence of a cursor in the bounded fixture and current
+monthly flow does not prove that the backend never paginates.
+
+The d3vv3 and citylife4 clients independently call the list endpoint with only
+`vehicleId`, extract `data`, and sort the returned items by `startedAt` in
+memory. They do not expose cursor, offset, page, or filter handling in their
+route methods. This is historical client evidence and does not override the
+current frontend's monthly `from`/`to` behavior.
+
+### Minimum safe probes for history/filter questions
+
+The successful `limit=1` schema-only read already establishes bounded request
+acceptance for this account/vehicle. Do not repeat it merely to test a default
+or maximum, since that would increase retained-data risk without proving
+pagination. If additional authorized reads are approved, use this smallest
+sequence, each with the same in-memory vehicle and `limit=1`:
+
+1. One current-month paired `from`/`to` request, matching the frontend's
+   construction, to confirm the live bounded range contract.
+2. One adjacent-month paired `from`/`to` request to confirm that month
+   navigation maps to a second bounded window; retain only sanitized status and
+   schema shape, never counts or date values.
+3. Only if filter coverage is required, one `includeInProgress=true` request
+   for the same bounded window. Test `month` and `day` separately and later,
+   because neither is used by the current dashboard interaction; do not mix
+   them with other unconfirmed filters.
+
+Do not manufacture a cursor request. If a future response contains a
+`lastEvaluatedKey`, a follow-up may use that token once in memory solely to
+confirm continuation, then discard it; if no token appears, record only that
+it was not observed in that bounded response. Every probe must discard route
+and vehicle IDs, counts, dates, coordinates, metrics, token values, headers,
+URLs, and raw bodies.
+
+### Implemented non-persisting history-filter probe
+
+`scripts/probe_route_history_filters.py` implements the two safe reads above
+using a saved WinVault session. It selects the vehicle with the same in-memory
+preference as the other probes, then sends exactly two Geo requests: current
+local calendar month first and the immediately preceding month second. Each
+request contains only `vehicleId`, `limit=1`, `from`, and `to`; the month
+boundaries are created at local-month start/next-month start and serialized as
+UTC ISO strings ending in `Z`, matching the browser's `toISOString()` result.
+No `month`, `day`, `includeInProgress`, cursor, or legacy route path is used.
+
+For each response, the probe inspects only that the root is an object with a
+`data` array and whether the root contains the allowlisted
+`lastEvaluatedKey` name. It never reads that field's value, follows it, counts
+the array, persists a schema, or retains dates/IDs/route values. Success emits
+only `windows_checked: 2` and a boolean `last_evaluated_key_observed`; all
+failures are categorized without response text, URLs, headers, or payloads.
+This implementation has offline tests only and has not been run against MAPIT.
 
 ## Route-detail contract and latest schema-only result
 

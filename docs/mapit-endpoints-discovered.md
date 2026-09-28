@@ -25,7 +25,7 @@ Los valores entre llaves son identificadores del usuario/tenant y se mantienen c
 | `GET` | `https://core.prod.mapit.me/v1/account-summary` | bundle actual (`bG`), d3vv3, citylife4; authorized schema-only probe | **CONFIRMED**: HTTP 200 read completed; only anonymized schema retained |
 | `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4; probe autorizado schema-only | **CONFIRMED_SCHEMA_ONLY**: lectura autorizada completada; no se retuvieron valores |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}` | bundle actual y clientes públicos; bounded probe autorizado | **CONFIRMED_SCHEMA_ONLY**: el host/path y la lectura con `vehicleId` más `limit=1` fueron aceptados; solo se retuvo el esquema de la respuesta |
-| `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual; `limit=1` también en el probe acotado | filtros opcionales observados; aceptación/semántica del resto pendiente |
+| `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual; `limit=1` también en el probe acotado | **PARTIAL_FRONTEND_CONTRACT**: el builder serializa estas claves; el dashboard actual solo envía `from`/`to` mensuales |
 | `GET` | `https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true` | bundle actual vigente; probe autorizado schema-only | **CONFIRMED_SCHEMA_ONLY**: lectura actual completada; `includeStats=true` aceptado y solo se retuvo la forma de la respuesta |
 | `GET` | `https://geo.prod.mapit.me/v1/routes/{routeId}` | d3vv3 y citylife4 | **LEGACY_PUBLIC_CONTRACT**: ruta de detalle histórica sin query; no asumir que sustituye a la actual |
 | `GET` | `https://geo.prod.mapit.me/v1/reverse-geocoding/{lat}/{lng}?lang={language}` | bundle actual | geocodificación inversa |
@@ -53,7 +53,10 @@ campos adicionales `complete`/`merged`, referencias `device`/`vehicle`,
 odómetros y `continues` nullables, y propiedades GeoJSON con `inferred`,
 `label`, `name`, `maxSpeed` y `avgSpeed`/`distance` observados como null.
 Esto confirma estructura y nullabilidad de una sola lectura, no semántica,
-unidades ni universalidad. La ruta histórica `/v1/routes/{routeId}` aparece
+unidades ni universalidad. En el dashboard, `routesMonth` genera ventanas
+mensuales mediante `from`/`to`, mientras que `routeDay` filtra localmente por
+`startedAt`; no se observó carga incremental por cursor. El parser permite
+`lastEvaluatedKey`, pero el frontend no lo consume ni lo reenvía. La ruta histórica `/v1/routes/{routeId}` aparece
 solo en los clientes Python públicos y sus consumidores esperan un objeto de
 ruta con `geoJSON`; se conserva como compatibilidad pendiente, no como primera
 opción de probe.

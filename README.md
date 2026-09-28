@@ -149,6 +149,20 @@ schema-only document and written atomically to
 URLs, headers, and bodies are never printed or persisted. Without a valid
 saved session the script makes no Core/Geo request.
 
+To compare the current and immediately previous calendar month using the
+frontend's paired UTC `from`/`to` boundaries, run the non-persisting probe:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\probe_route_history_filters.py
+```
+
+It performs exactly two bounded Geo reads after the single account-summary
+selection. It checks only that each response is an object with a `data` array
+and whether the allowlisted `lastEvaluatedKey` field is present. It never
+follows that field, saves dates, IDs, counts, values, or payloads, and emits
+only safe status metadata.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and

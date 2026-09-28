@@ -69,6 +69,12 @@ route-list fields plus non-null `merged`, while GeoJSON feature properties add
 `maxSpeed` and explicitly nullable `avgSpeed`/`distance`. The fixture confirms
 structure and sample nullability only; it does not establish units, statistics
 semantics, or cross-route stability.
+The current dashboard fetches one calendar month at a time using paired
+`from`/`to` ISO boundaries, navigates history by changing the month, and
+filters selected days locally by `startedAt`. Its route parser permits an
+optional `lastEvaluatedKey`, but no route-specific cursor/offset/page/next-token
+flow is used. The bounded list fixture likewise contained no pagination
+metadata, so server-side pagination and complete historical reach remain open.
 An authorized bounded read using the saved session (`session_valid=true`) and
 one in-memory vehicle completed with `GET /v1/routes?vehicleId=...&limit=1`.
 Only `samples/anonymized/routes-list.schema.json` was retained. It confirms a
@@ -113,7 +119,7 @@ scope for Phase 0 execution.
   authorized account.
 - Semantics and read/write endpoints, if any, behind payment, catalog,
   capability, dealer, notification, and alert-setting structures.
-- Route pagination, history depth, date semantics, and units.
+- Route pagination, history depth, date/filter semantics, and units.
 - Read-only endpoints for zones, alerts/events, maintenance, and appointments.
 
 ## Potential MCP Capabilities

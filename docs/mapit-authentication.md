@@ -426,6 +426,11 @@ Core/Geo si `login_saved()` no devuelve una sesión válida. Sus fallos de sesi�
 son categorías estables y su salida nunca incluye tokens, IDs ni mensajes de
 excepción.
 
+El probe histórico `scripts/probe_route_history_filters.py` también requiere
+una sesión guardada válida y no solicita credenciales. Si `login_saved()` falla
+o no devuelve sesión, termina antes de cualquier lectura Core/Geo; no guarda
+fechas, identificadores, tokens ni respuestas.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.

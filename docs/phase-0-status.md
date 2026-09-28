@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`112 passed`). Session and routes GUI failures are
+  closed. Offline tests pass (`127 passed`). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -96,6 +96,11 @@ and manual WebSocket investigation.
   counts, IDs, coordinates, headers, tokens, or raw payload were retained.
   The fixture confirms the root route-detail shape and sample nullability, but
   not statistics semantics, units, or cross-account stability.
+- A non-interactive `scripts/probe_route_history_filters.py` is implemented
+  but not live-executed. It makes exactly two monthly `from`/`to` Geo reads
+  with `vehicleId` and `limit=1`, validates only the root/data shape, and
+  records only whether the root contains `lastEvaluatedKey`. It persists
+  nothing and makes no data calls without a valid saved session.
 
 ## Active Constraints
 
