@@ -74,7 +74,10 @@ The current dashboard fetches one calendar month at a time using paired
 filters selected days locally by `startedAt`. Its route parser permits an
 optional `lastEvaluatedKey`, but no route-specific cursor/offset/page/next-token
 flow is used. The bounded list fixture likewise contained no pagination
-metadata, so server-side pagination and complete historical reach remain open.
+metadata. A separate schema-free live probe accepted two monthly `from`/`to`
+windows and observed no `lastEvaluatedKey`; it persisted nothing. This
+confirms only those two bounded reads for that run, so server-side pagination
+and complete historical reach remain open.
 An authorized bounded read using the saved session (`session_valid=true`) and
 one in-memory vehicle completed with `GET /v1/routes?vehicleId=...&limit=1`.
 Only `samples/anonymized/routes-list.schema.json` was retained. It confirms a
@@ -89,17 +92,62 @@ history completeness, units, or cross-account stability. See
 
 ## Realtime
 
-The current frontend uses `wss://dsw.prod.mapit.me/accounts/{accountId}`. Older
-clients use `/devicestate/{deviceId}`. Compatibility and message schemas require
-an authorized manual probe.
+The current frontend uses
+`wss://dsw.prod.mapit.me/accounts/{encodeURIComponent(account.id)}`, where
+`account.id` comes from the successful in-memory `account-summary`. When a
+token is available it is passed as the sole WebSocket subprotocol; the auth
+evidence identifies it as the Cognito `IdToken`. No application message is
+sent on open. Text JSON is parsed and normalized only when it has a string
+`id` or `deviceId`; the frontend consumes `status`, numeric-or-null
+`battery`/`lat`/`lng`/`hdop`, and `lastTs` with `lastCoordTs` as fallback.
+Malformed/nonmatching frames are ignored.
+
+The bundle reconnects after `close` indefinitely with exponential backoff
+capped at 30 seconds plus 0--399 ms jitter, but has no application heartbeat
+or explicit `error` handler. Older clients use `/devicestate/{deviceId}` and
+client heartbeat, so compatibility remains unconfirmed. No authenticated
+WebSocket connection was made. A bounded schema-only probe is specified in
+`mapit-websocket-investigation.md` (one account, no send, 10 seconds or 3
+frames, no IDs/coordinates/timestamps/values/raw payload persistence).
 
 ## Statistics, Geofences, Alerts, Maintenance, and Appointments
 
 Route-detail response structure was observed after requesting
 `includeStats=true`, but the frontend does not enumerate separate statistics
-fields and no metric semantics or computation behavior is confirmed. No
-statistics capability beyond that structural observation is claimed. Geofences,
-alerts, maintenance, and appointments remain unconfirmed.
+fields and no metric semantics or computation behavior is confirmed. The
+confirmed route metrics are `distance`, `avgSpeed`, `maxSpeed`, timestamps and
+GeoJSON; the route-detail fixture also contains nullable GeoJSON metric
+properties. The account-summary schema separately confirms embedded state
+fields for `speed`, `battery`, `voltage`, `hdop`, `odometer` (null in the
+sample), `version`, status and timestamps. The current frontend uses only a
+subset of these state fields and uses `hdop` for the accuracy overlay. The
+reference clients expose speed/odometer/HDOP, with speed normalization while
+`AT_REST` implemented client-side. No dedicated stats/telemetry endpoint or
+separate stats envelope is evidenced; hard braking, acceleration, overspeed
+events, elevation, tire/oil and firmware telemetry remain unconfirmed. No
+statistics capability beyond that structural observation is claimed. The
+account-summary schema does confirm alert configuration/entitlement fields,
+including `notificationSettings.geofenceAlertCritical` and access flags for
+accident, fall and ignition alerts. No current frontend bundle or public
+reference client exposes a dedicated GET for zones/geofences, alert history or
+events, and no event payload has been observed. Citylife4's public docs list
+geofencing/events as future enhancements, not as an implemented contract.
+including `notificationSettings.geofenceAlertCritical` and access flags for
+accident, fall and ignition alerts. No current frontend bundle or public
+reference client exposes a dedicated GET for zones/geofences, alert history or
+events, and no event payload has been observed. Citylife4's public docs list
+geofencing/events as future enhancements, not as an implemented contract.
+Maintenance, appointments, saved geofences and alert/event delivery therefore
+remain unconfirmed. No dedicated live probe is justified until a primary
+source reveals an exact GET path.
+
+Dealer metadata is confirmed only as embedded `dealerData` in the
+`account-summary` vehicle schema and `dealer` in the vehicle-detail schema;
+these include business/contact structure but no confirmed workshop history,
+service order or appointment slot. The current frontend and both reference
+clients expose no dedicated maintenance/dealer/appointment GET. The only
+related write found publicly is the account-preferences `PUT`, which was not
+executed and is unrelated to service operations.
 
 ## Other Discoveries
 
@@ -120,7 +168,13 @@ scope for Phase 0 execution.
 - Semantics and read/write endpoints, if any, behind payment, catalog,
   capability, dealer, notification, and alert-setting structures.
 - Route pagination, history depth, date/filter semantics, and units.
+- Live WebSocket acceptance of the account-level URL and IdToken subprotocol;
+  initial frame shape, server events, ping/pong behavior, and legacy-path
+  compatibility.
 - Read-only endpoints for zones, alerts/events, maintenance, and appointments.
+- Whether the observed alert configuration (`geofenceAlertCritical` and access
+  flags) has any separate read-only resource or is only account-summary state;
+  no endpoint path is evidenced yet.
 
 ## Potential MCP Capabilities
 

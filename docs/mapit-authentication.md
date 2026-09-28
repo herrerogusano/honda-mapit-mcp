@@ -431,6 +431,11 @@ una sesión guardada válida y no solicita credenciales. Si `login_saved()` fall
 o no devuelve sesión, termina antes de cualquier lectura Core/Geo; no guarda
 fechas, identificadores, tokens ni respuestas.
 
+El probe WebSocket account-level `scripts/probe_websocket.py` reutiliza esa
+sesión guardada y obtiene el `account.id` únicamente desde un
+`account-summary` en memoria. No abre el socket si la sesión no es válida; el
+`IdToken` se pasa solo como subprotocolo y nunca se imprime ni persiste.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.

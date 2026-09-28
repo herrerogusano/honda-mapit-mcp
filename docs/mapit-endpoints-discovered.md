@@ -61,6 +61,98 @@ solo en los clientes Python públicos y sus consumidores esperan un objeto de
 ruta con `geoJSON`; se conserva como compatibilidad pendiente, no como primera
 opción de probe.
 
+El probe histórico autorizado aceptó exactamente dos ventanas mensuales
+acotadas con `from`/`to`, `vehicleId` y `limit=1`. Ninguna expuso
+`lastEvaluatedKey` y no se persistió ningún resultado; esto confirma solo esas
+dos lecturas y no la ausencia universal de paginación ni la cobertura completa
+del histórico.
+
+## Zonas, geofences y alertas/eventos
+
+No se encontró un endpoint público actual de lectura para zonas, geofences,
+alertas o eventos. En los bundles vigentes, las únicas rutas MAPIT literales
+observadas son `GET /v1/account-summary`, `GET /v1/routes`, el detalle Geo de
+ruta, `GET /v1/reverse-geocoding/{lat}/{lng}` y el `PUT` de preferencias; no
+aparecen rutas `/v1/geofences`, `/v1/zones`, `/v1/alerts` o `/v1/events`.
+Tampoco se encontró consumo de esos recursos en los clientes públicos d3vv3 o
+citylife4.
+
+El schema ya conservado de `account-summary` sí contiene configuración de
+alertas dentro de cada vehículo: `notificationSettings.geofenceAlertCritical`,
+los flags de acceso a alertas y ajustes de accidentes, caída, ignición y
+movimiento. Esto es estructura de configuración/entitlement únicamente; no
+demuestra una lectura de eventos, zonas guardadas, entrega de notificaciones ni
+una operación de escritura. El bundle actual no valida ni consume esos campos
+en una pantalla o llamada separada.
+
+El repositorio citylife4 menciona geofencing y eventos como posibles mejoras
+futuras, no como contrato implementado. Por tanto no hay un path, host,
+parámetros, body o envelope de respuesta que pueda documentarse honestamente
+para un probe dedicado. No se deben adivinar rutas ni probar POST/PUT/PATCH/
+DELETE. Si documentación primaria futura revela una ruta GET, el primer probe
+debe ser una sola lectura acotada, con cualquier identificador obtenido en
+memoria, sin filtros inventados y con retención schema-only.
+
+## Mantenimiento, revisiones, dealer y citas Honda
+
+El frontend vigente no contiene paths, métodos o consumidores específicos para
+mantenimiento, revisiones/taller, citas o servicios de dealer. Los clientes
+públicos d3vv3 y citylife4 solo leen `account-summary`, detalle de vehículo,
+rutas y detalle de ruta para este conjunto de datos; no añaden un GET de
+service history, booking, appointment o workshop.
+
+El schema-only de `account-summary` sí contiene `dealerData` embebido en el
+vehículo (nombre, IDs, dirección de tienda, contacto, email, teléfono y
+horario), y el detalle Core de vehículo contiene un objeto `dealer`. Es
+metadata de dealer observada dentro de lecturas ya conocidas, no un historial
+de mantenimiento ni una API de citas. El mismo detalle contiene además
+`branch`, `productPlanName` y estructura de suscripción; ninguno prueba
+revisiones, órdenes de trabajo o disponibilidad de agenda.
+
+El único write relevante encontrado en el bundle actual sigue siendo el
+`PUT /v1/accounts/{accountId}/preferences` para preferencias de cuenta; no se
+ejecutó y no se relaciona con dealer, taller o citas. No hay un path GET exacto
+con evidencia primaria para proponer un probe de mantenimiento/appointment.
+No se deben adivinar rutas ni ejecutar writes. Si el backend documenta después
+un GET concreto, el primer probe debe limitarse a una lectura, un vehículo o
+cuenta en memoria y schema-only sin valores de contacto, IDs, fechas de cita o
+historial.
+
+## Estadísticas, conducción y telemetría adicional
+
+La única ruta actual con una opción explícita de estadísticas es el detalle Geo
+de una ruta:
+
+```text
+GET https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true
+```
+
+El bundle vigente la consume y valida un objeto de ruta con `distance`,
+`startedAt`, `endedAt`, `avgSpeed`, `maxSpeed` y `geoJSON`; no valida un bloque
+de estadísticas separado. La lectura autorizada schema-only confirmó esa
+forma y que `includeStats=true` fue aceptado, pero no estableció semántica,
+unidades ni qué cambia al omitir el parámetro. No se observó un endpoint
+dedicado `/stats`, `/telemetry` o equivalente.
+
+El schema de `account-summary` contiene telemetría de estado embebida en
+`vehicle.device.state`: `speed`, `battery`, `voltage`, `hdop`, `lat`, `lng`,
+`odometer` (null en la muestra), `status`, `prevStatus`, `version`,
+`detectedCan`, `location` y marcas de estado/coordenadas. El frontend vigente
+valida/usa solo un subconjunto (`battery`, `status`, `lat`, `lng`, `hdop`,
+`lastTs`); `hdop` se usa para dibujar un área de precisión. Los clientes
+Python públicos exponen además velocidad, odómetro y HDOP, pero su
+normalización de velocidad en `AT_REST` es lógica del cliente, no semántica
+confirmada del backend.
+
+No hay evidencia primaria actual o histórica en los repos de hard braking,
+acceleration, overspeed como evento MAPIT, elevation, tire/oil state,
+firmware-update API o un flujo de telemetría distinto del estado y rutas.
+`speed`/`avgSpeed`/`maxSpeed` y distancia sí están observados; no se debe
+derivar de ellos capacidades de conducción avanzada ni crear endpoints de
+estadísticas. No hay un probe adicional justificado: cualquier trabajo futuro
+debe reutilizar el detalle de ruta exacto anterior y conservar solo schema,
+sin valores ni geometrías.
+
 ## Detalle de vehículo: contrato público y primer probe
 
 Los dos clientes Home Assistant públicos construyen la lectura de detalle como:
@@ -152,7 +244,27 @@ El frontend actual abre:
 wss://dsw.prod.mapit.me/accounts/{accountId}
 ```
 
-Si hay token, lo pasa como subprotocolo WebSocket; recibe JSON y extrae un identificador `id` o `deviceId` junto con campos de estado como `status`, `battery`, `lat`, `lng`, `hdop` y `lastTs`/`lastCoordTs`. El bundle implementa reconexión con backoff.
+El bundle vigente obtiene `accountId` de `account.id` del `account-summary`
+que ya tiene en memoria y aplica `encodeURIComponent` al segmento. Obtiene el
+token de su contexto de autenticación y, si no está vacío, lo pasa como el
+único subprotocolo (`new WebSocket(url, [token])`); no lo coloca en query ni en
+`Authorization`. El bundle principal público muestra que el getter devuelve
+`fetchAuthSession().tokens?.idToken?.toString()`, por lo que el subprotocolo es
+el Cognito `IdToken`; la aceptación live todavía no se ha probado.
+
+No envía mensaje inicial. Solo procesa frames de texto JSON y descarta JSON
+inválido u objetos sin `id`/`deviceId` string. Normaliza `id` (preferido) o
+`deviceId`, `status`, `battery`, `lat`, `lng`, `hdop` y `lastTs` (fallback a
+`lastCoordTs`); los números finitos se convierten desde string cuando procede.
+No se ha demostrado que estos sean todos los campos del servidor ni se han
+establecido unidades.
+
+El bundle implementa reconexión indefinida tras `close`, con backoff de
+`min(30 s, 1 s * 2^attempts)` más jitter de 0--399 ms; `open` reinicia los
+intentos. No contiene heartbeat/ping de aplicación ni handler explícito de
+`error`. Al desmontar, deshabilitar o cambiar de cuenta cierra el socket y
+limpia el temporizador. El detalle, el probe acotado y las restricciones de
+retención están en [mapit-websocket-investigation.md](mapit-websocket-investigation.md).
 
 Los dos clientes Home Assistant públicos abren en cambio una URL derivada/fallback de la forma:
 
@@ -160,7 +272,10 @@ Los dos clientes Home Assistant públicos abren en cambio una URL derivada/fallb
 wss://dsw.prod.mapit.me/devicestate/{deviceId}
 ```
 
-también con el `IdToken` como subprotocolo. Esto puede ser compatibilidad retroactiva o un contrato cambiado. Para la Fase 0 se debe tomar el websocket account-level del bundle actual como hipótesis primaria y no eliminar el fallback hasta una prueba autorizada.
+también con el `IdToken` como subprotocolo y heartbeat del cliente. Esto puede
+ser compatibilidad retroactiva o un contrato cambiado. Para la Fase 0 se debe
+tomar el websocket account-level del bundle actual como hipótesis primaria y no
+eliminar el fallback hasta una prueba autorizada.
 
 ## Autenticación de API
 
@@ -214,10 +329,12 @@ El método es frágil frente a cambios de bundler o nombres de campos; debe incl
 ## Evidencia y referencias
 
 - [Frontend público](https://app.mapit.me/) — HTML y entry assets observados el 2026-09-23.
+- [Bundle público `useDashboardSummary`](https://app.mapit.me/assets/useDashboardSummary-Bt9fZxl2.js) — URL account-level, subprotocolo, parsing y reconexión observados el 2026-09-28.
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — endpoints, firma, websocket y discovery.
 - [d3vv3/hass-honda-mapit, README, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/README.md) — alcance funcional público.
 - [citylife4/Honda-Mapit-HA, `api.py`, commit 4bc092b](https://github.com/citylife4/Honda-Mapit-HA/blob/4bc092bab6125d0f7cb8e59780d04fe8ee90dda9/custom_components/mapit_tracker/api.py) — revisión posterior con `account-summary`, persistencia y discovery.
 - [citylife4/Honda-Mapit-HA, `mapit.py`, commit 4bc092b](https://github.com/citylife4/Honda-Mapit-HA/blob/4bc092bab6125d0f7cb8e59780d04fe8ee90dda9/mapit.py) — cliente standalone y paths históricos.
+- [citylife4/Honda-Mapit-HA, `INTEGRATION_SUMMARY.md`, commit 4bc092b](https://github.com/citylife4/Honda-Mapit-HA/blob/4bc092bab6125d0f7cb8e59780d04fe8ee90dda9/docs/INTEGRATION_SUMMARY.md) — geofencing/eventos aparecen como mejoras futuras, no endpoints implementados.
 
 ## Preguntas abiertas para el supervisor
 

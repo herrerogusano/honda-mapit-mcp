@@ -163,6 +163,22 @@ and whether the allowlisted `lastEvaluatedKey` field is present. It never
 follows that field, saves dates, IDs, counts, values, or payloads, and emits
 only safe status metadata.
 
+The account-level WebSocket probe is optional and does not install realtime
+support by default. After installing `.[realtime]`, run:
+
+```powershell
+py scripts\probe_websocket.py
+```
+
+It uses the saved session, reads `account-summary` once for the in-memory
+account ID, opens only `wss://dsw.prod.mapit.me/accounts/{encodedId}` with the
+Cognito ID token as its sole subprotocol, sends no messages, and receives at
+most three text frames within ten seconds. Valid frames are converted and
+merged immediately into a schema-only artifact at
+`samples/anonymized/websocket-message.schema.json`; invalid/binary frames are
+ignored. No fixture is written when no valid frame arrives, and output never
+contains the URL, subprotocol, IDs, values, close reason, or raw frame.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and

@@ -191,7 +191,11 @@ For each response, the probe inspects only that the root is an object with a
 the array, persists a schema, or retains dates/IDs/route values. Success emits
 only `windows_checked: 2` and a boolean `last_evaluated_key_observed`; all
 failures are categorized without response text, URLs, headers, or payloads.
-This implementation has offline tests only and has not been run against MAPIT.
+The authorized live run completed both monthly windows successfully, observed
+no `lastEvaluatedKey`, and persisted nothing: no schema, counts, dates, IDs,
+route values, coordinates, or raw responses. This confirms acceptance of the
+two bounded `from`/`to` requests for that run only; it does not establish
+absence of pagination outside those responses or complete historical coverage.
 
 ## Route-detail contract and latest schema-only result
 

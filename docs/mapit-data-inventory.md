@@ -9,12 +9,12 @@ below are placeholders, not real account data.
 |---|---|---:|---|---|---|---|---|
 | `account` | `GET /v1/account-summary` | object | `{...}` | Account and preference/payment containers | non-null in schema sample | current | CONFIRMED_SCHEMA_ONLY |
 | `vehicles` | `GET /v1/account-summary` | array | `[{...}]` | Vehicle/device/dealer/capability containers | non-null in schema sample | current | CONFIRMED_SCHEMA_ONLY |
-| `id` / `deviceId` | current WebSocket bundle | string | `DEVICE_ID_1` | Device identity in a state message | unknown | current | FOUND_IN_FRONTEND |
-| `status` | current WebSocket bundle | unknown | `STATE_REDACTED` | Device state | unknown | current | FOUND_IN_FRONTEND |
-| `battery` | current WebSocket bundle | number | `73` | Suspected tracker battery value | unknown | current | FOUND_IN_FRONTEND |
-| `lat` / `lng` | current WebSocket bundle | number | `LAT_REDACTED` / `LNG_REDACTED` | Device coordinates | unknown | current | FOUND_IN_FRONTEND |
-| `hdop` | current WebSocket bundle | number | `1.2` | Suspected GPS dilution/accuracy metric | unknown | current | FOUND_IN_FRONTEND |
-| `lastTs` / `lastCoordTs` | current WebSocket bundle | unknown | `TIMESTAMP_REDACTED` | State/coordinate timestamps | unknown | current | FOUND_IN_FRONTEND |
+| `id` / `deviceId` | current WebSocket bundle | string | `DEVICE_ID_1` | Device identity in a state message | required after normalization | current | FRONTEND_CONTRACT_ONLY |
+| `status` | current WebSocket bundle | string or null | `STATE_REDACTED` | State label as consumed by frontend | nullable/absent | current | FRONTEND_CONTRACT_ONLY |
+| `battery` | current WebSocket bundle | finite number or null | `<redacted>` | Numeric state field; semantics not confirmed | nullable/absent | current | FRONTEND_CONTRACT_ONLY |
+| `lat` / `lng` | current WebSocket bundle | finite number or null | `<redacted>` | Coordinates; highly sensitive | nullable/absent | current | FRONTEND_CONTRACT_ONLY |
+| `hdop` | current WebSocket bundle | finite number or null | `<redacted>` | Numeric state field; units not confirmed | nullable/absent | current | FRONTEND_CONTRACT_ONLY |
+| `lastTs` | current WebSocket bundle | finite number or null | `<redacted>` | `lastTs`, falling back to `lastCoordTs` | nullable/absent | current | FRONTEND_CONTRACT_ONLY |
 
 ## Authorized schema-only result
 
@@ -66,11 +66,20 @@ telephone, and opening hours. S3 logo/header keys were observed as null in the
 schema sample. Dealer and branch fields are location/business-sensitive and
 must be redacted before persistence.
 
+This is embedded dealer metadata only. Neither this structure nor the vehicle
+detail's `dealer` object contains a confirmed maintenance history, workshop
+visit, appointment, booking slot, or service-order envelope. No such payload
+has been observed in the frontend or public reference clients, so no separate
+maintenance/appointment inventory is claimed.
+
 `flags` exposes access booleans for accident, fall, hibernation, and ignition-on
 alerts. `notificationSettings` contains alert booleans, critical variants,
 sound, an ID, and movement-alert schedules (`days`, `startTime`, `endTime`).
-These confirm the presence of alert-setting state, not alert delivery or
-mutation support.
+The schema specifically includes `geofenceAlertCritical` alongside accident,
+fall, ignition and movement settings. These confirm the presence of
+alert-setting/entitlement state, not saved geofences, event history, alert
+delivery or mutation support. No current frontend bundle or public reference
+client consumes a dedicated alert/geofence endpoint.
 
 ### Device state
 
@@ -85,6 +94,25 @@ The schema sample observed `data`, communications-check request IDs/timestamps,
 it does not establish that odometer or VIN are always null. Coordinates,
 location encodings, timestamps, IDs, IMEI, VIN, and creator/updater fields are
 high-sensitivity data and must be removed or replaced before persistence.
+
+## Statistics and driving-data classification
+
+| Field/group | Evidence | Classification |
+|---|---|---|
+| `speed` in `account-summary.vehicle.device.state` | Authorized schema-only fixture; public Python clients consume it | Confirmed embedded state shape; current frontend validator does not retain it |
+| `battery`, `voltage`, `hdop`, `lat`, `lng`, `status`, `version`, timestamps | Authorized schema-only fixture; current frontend uses a subset | Confirmed embedded state fields; values and units are sensitive/unknown |
+| `odometer` | Authorized schema-only fixture, explicit null in sample; public clients expose field | Nullable in this sample only; no universal availability or unit guarantee |
+| route `distance`, `avgSpeed`, `maxSpeed`, timestamps | Route-list/detail schema-only fixtures and current UI | Confirmed route metrics; semantics/units and aggregation rules remain open |
+| `geoJSON` feature `maxSpeed`, `avgSpeed`, `distance` | Route-detail schema-only fixture; some properties explicitly null | Confirmed property names/types/nullability for one response only |
+| `includeStats=true` | Current frontend route-detail request and authorized read | Query accepted; no separate stats envelope or dedicated stats endpoint observed |
+| hard braking, acceleration, overspeed events, elevation, tire/oil, firmware telemetry | No match in current bundles or public reference clients | UNCONFIRMED; no endpoint or payload evidence |
+
+The current frontend derives/display-consumes route duration from timestamps and
+shows distance, average speed, and maximum speed from the selected route. It
+uses `hdop` to render a location-accuracy area. The public reference clients'
+speed normalization while `AT_REST` is client behavior, not proof of a server
+rule. No separate statistics, driving-event, or extended-telemetry read should
+be proposed without a new exact GET contract.
 
 ## `account-summary` contract (frontend evidence)
 
@@ -135,6 +163,29 @@ The schema supplies defaults for some optional subscription booleans
 frontend defaults if that distinction matters. Unknown server fields may exist;
 the first probe must not persist them merely because the frontend currently
 strips them during validation.
+
+## Current account-level WebSocket inventory (public frontend)
+
+The current frontend constructs
+`wss://dsw.prod.mapit.me/accounts/{encodeURIComponent(account.id)}` after a
+successful in-memory `account-summary`. It passes the current Cognito ID token
+as the only WebSocket subprotocol when present and sends no application frame
+on open. This is a frontend contract observation only; no authorized WebSocket
+probe or live message was retained.
+
+For a valid text JSON object, the frontend keeps only the normalized fields in
+the table above. It accepts `id` or fallback `deviceId`, prefers `lastTs` over
+`lastCoordTs`, converts finite numeric strings to numbers, preserves null, and
+ignores malformed JSON or objects without an identifier. The raw event may have
+more fields. IDs, coordinates, timestamps, and all raw frames are sensitive and
+must never be persisted by a probe.
+
+Lifecycle evidence is bounded to the bundle: reconnect after `close` uses
+exponential backoff capped at 30 seconds plus 0--399 ms jitter, with no
+application heartbeat or explicit `error` handler. The legacy Python clients'
+`/devicestate/{deviceId}` path is tracked separately as unverified historical
+compatibility. See [mapit-websocket-investigation.md](mapit-websocket-investigation.md)
+for the evidence and the 10-second/3-frame schema-only probe design.
 
 ## Route-list inventory (authorized schema-only)
 

@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`127 passed`). Session and routes GUI failures are
+  closed. Offline tests pass (`141 passed`). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -97,10 +97,42 @@ and manual WebSocket investigation.
   The fixture confirms the root route-detail shape and sample nullability, but
   not statistics semantics, units, or cross-account stability.
 - A non-interactive `scripts/probe_route_history_filters.py` is implemented
-  but not live-executed. It makes exactly two monthly `from`/`to` Geo reads
-  with `vehicleId` and `limit=1`, validates only the root/data shape, and
-  records only whether the root contains `lastEvaluatedKey`. It persists
-  nothing and makes no data calls without a valid saved session.
+  and its authorized live run completed exactly two monthly `from`/`to` Geo
+  reads with `vehicleId` and `limit=1`. Both were accepted; neither response
+  exposed `lastEvaluatedKey`. It validated only root/data shape, persisted
+  nothing, and retained no counts, dates, IDs, route values, coordinates, or
+  raw responses. This does not establish universal absence of pagination or
+  complete historical reach.
+- La investigación pública del WebSocket account-level quedó documentada en
+  `docs/mapit-websocket-investigation.md`: el frontend vigente usa
+  `/accounts/{encodeURIComponent(account.id)}`, pasa el `IdToken` como único
+  subprotocolo cuando está disponible, no envía mensaje inicial y reconecta
+  tras `close` con backoff. No se abrió conexión autenticada ni se retuvo un
+  mensaje; el probe schema-only acotado sigue pendiente de autorización.
+- El probe account-level `scripts/probe_websocket.py` ya está implementado con
+  `websockets` opcional y lazy. Queda limitado a una lectura de cuenta, una
+  conexión, tres frames de texto y diez segundos; no envía mensajes ni
+  reconecta. Solo un frame válido con `id`/`deviceId` produce el schema-only
+  fusionado. No se abrió conexión live ni se creó fixture.
+- La investigación pública de zonas/geofences y alertas/eventos no encontró
+  rutas GET dedicadas en los bundles vigentes ni en d3vv3/citylife4. El schema
+  de `account-summary` sí contiene `geofenceAlertCritical` y flags de acceso,
+  pero solo como configuración/entitlement; no hay evidencia de eventos,
+  geofences guardadas o delivery. No se diseñará un probe hasta descubrir un
+  path GET primario y exacto.
+- La investigación pública de mantenimiento, revisiones/taller, dealer y
+  citas no encontró GETs dedicados en el frontend vigente ni en d3vv3/citylife4.
+  Solo están confirmados metadata `dealerData`/`dealer` embebida y estructura
+  de suscripción; no historial de servicio, órdenes de trabajo ni agenda. El
+  único write relacionado es preferencias de cuenta, documentado pero no
+  ejecutado. No se propone probe hasta descubrir un path GET primario.
+- La revisión de estadísticas y telemetría no encontró un endpoint dedicado.
+  Quedan confirmados solo los campos embebidos de estado (`speed`, `battery`,
+  `voltage`, `hdop`, `odometer` nullable, `version`, etc.) y las métricas de
+  ruta (`distance`, `avgSpeed`, `maxSpeed`); `includeStats=true` fue aceptado
+  en el detalle de ruta, sin envelope de estadísticas separado. Hard braking,
+  acceleration, overspeed events, elevation, tire/oil y firmware telemetry no
+  tienen evidencia primaria y no requieren probe adicional ahora.
 
 ## Active Constraints
 
@@ -112,8 +144,9 @@ and manual WebSocket investigation.
 
 ## Next Steps
 
-1. Investigate route-list pagination and filters using evidence-led probes.
-2. Investigate the current account-level WebSocket.
+1. Investigate route-list filters using evidence-led probes if needed.
+2. Si se autoriza, ejecutar el probe WebSocket schema-only acotado descrito en
+   `docs/mapit-websocket-investigation.md`.
 
 ## Open Questions
 
