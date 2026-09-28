@@ -11,10 +11,15 @@ from mcp.types import ToolAnnotations
 from .services import (
     DateRangeInput,
     DistanceComparison,
+    DistanceBreakdown,
     DistanceResult,
+    GroupBy,
     MapitServices,
     RouteDetail,
+    RouteExtremes,
     RouteList,
+    RoutePeriodComparison,
+    RouteStatistics,
     ServiceError,
     ServiceProvider,
     VehicleDetails,
@@ -43,7 +48,7 @@ def create_server(provider: ServiceProvider | None = None) -> MCPServer:
             "All tools are read-only. MAPIT route metric units and route-history completeness are not yet confirmed; "
             "preserve the explicit metadata returned by each tool."
         ),
-        version="0.2.0",
+        version="0.3.0",
     )
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
@@ -75,6 +80,26 @@ def create_server(provider: ServiceProvider | None = None) -> MCPServer:
     def compare_distance_periods(period_a: DateRangeInput, period_b: DateRangeInput) -> DistanceComparison:
         """Compare native MAPIT distance totals for two bounded periods."""
         return _safe_call(lambda: selected.get().compare_distance_periods(period_a, period_b))
+
+    @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
+    def get_route_statistics(from_time: str, to_time: str) -> RouteStatistics:
+        """Summarize bounded route distance, count, elapsed duration, and maximum speed."""
+        return _safe_call(lambda: selected.get().get_route_statistics(from_time, to_time))
+
+    @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
+    def get_distance_breakdown(from_time: str, to_time: str, group_by: GroupBy) -> DistanceBreakdown:
+        """Group bounded native route distance by UTC day, month, or year."""
+        return _safe_call(lambda: selected.get().get_distance_breakdown(from_time, to_time, group_by))
+
+    @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
+    def get_route_extremes(from_time: str, to_time: str) -> RouteExtremes:
+        """Return deterministic bounded route and calendar distance extremes."""
+        return _safe_call(lambda: selected.get().get_route_extremes(from_time, to_time))
+
+    @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
+    def compare_route_periods(period_a: DateRangeInput, period_b: DateRangeInput) -> RoutePeriodComparison:
+        """Compare bounded route statistics with safe signed changes."""
+        return _safe_call(lambda: selected.get().compare_route_periods(period_a, period_b))
 
     return server
 

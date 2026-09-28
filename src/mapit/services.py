@@ -11,6 +11,18 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .analytics import (
+    AnalyticsError,
+    DistanceBreakdown,
+    GroupBy,
+    RouteExtremes,
+    RoutePeriodComparison,
+    RouteStatistics,
+    compare_route_periods as analytics_compare_route_periods,
+    distance_breakdown,
+    route_extremes,
+    route_statistics,
+)
 from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
 from .session import SessionManager, WindowsKeyringRefreshTokenStore
 
@@ -18,6 +30,7 @@ MAX_PERIOD_DAYS = 366
 MAX_RETURNED_ROUTES = 500
 MAX_ROUTE_LIST_BYTES = 2 * 1024 * 1024
 MAX_ROUTE_DETAIL_BYTES = 1024 * 1024
+MAX_ANALYTIC_ROUTES = 10_000
 MAPIT_NATIVE_UNIT = "mapit_native_unconfirmed"
 
 
@@ -344,7 +357,17 @@ class MapitServices:
                 route = self._normalize_route(item)
                 if route is None:
                     raise ServiceError("invalid_response", "MAPIT route history contains a route without an ID")
+                existing = routes.get(route.route_id)
+                if existing is not None:
+                    if existing != route:
+                        raise ServiceError(
+                            "duplicate_route_conflict",
+                            "MAPIT returned conflicting normalized data for one route ID",
+                        )
+                    continue
                 routes[route.route_id] = route
+                if len(routes) > MAX_ANALYTIC_ROUTES:
+                    raise ServiceError("route_limit_exceeded", "MAPIT returned more routes than the safety limit")
         ordered = sorted(routes.values(), key=lambda item: (item.started_at or "", item.route_id))
         return _iso(start), _iso(end), ordered
 
@@ -402,6 +425,46 @@ class MapitServices:
             distance=sum(route.distance for route in routes),
             route_count=len(routes),
         )
+
+    @staticmethod
+    def _analytics_error(exc: AnalyticsError) -> ServiceError:
+        return ServiceError(exc.code, exc.public_message)
+
+    def get_route_statistics(self, from_time: str, to_time: str) -> RouteStatistics:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+        try:
+            return route_statistics(routes, normalized_from, normalized_to)
+        except AnalyticsError as exc:
+            raise self._analytics_error(exc) from None
+
+    def get_distance_breakdown(self, from_time: str, to_time: str, group_by: GroupBy) -> DistanceBreakdown:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+        try:
+            return distance_breakdown(routes, normalized_from, normalized_to, group_by)
+        except AnalyticsError as exc:
+            raise self._analytics_error(exc) from None
+
+    def get_route_extremes(self, from_time: str, to_time: str) -> RouteExtremes:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+        try:
+            return route_extremes(routes, normalized_from, normalized_to)
+        except AnalyticsError as exc:
+            raise self._analytics_error(exc) from None
+
+    def compare_route_periods(self, period_a: DateRangeInput, period_b: DateRangeInput) -> RoutePeriodComparison:
+        normalized_a_from, normalized_a_to, routes_a = self._all_routes(period_a.from_time, period_a.to_time)
+        normalized_b_from, normalized_b_to, routes_b = self._all_routes(period_b.from_time, period_b.to_time)
+        try:
+            return analytics_compare_route_periods(
+                routes_a,
+                normalized_a_from,
+                normalized_a_to,
+                routes_b,
+                normalized_b_from,
+                normalized_b_to,
+            )
+        except AnalyticsError as exc:
+            raise self._analytics_error(exc) from None
 
     def compare_distance_periods(self, period_a: DateRangeInput, period_b: DateRangeInput) -> DistanceComparison:
         first = self.get_distance(period_a.from_time, period_a.to_time)

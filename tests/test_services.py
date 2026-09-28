@@ -189,6 +189,50 @@ def test_route_cursor_fails_closed_instead_of_claiming_completeness():
     assert secret_cursor not in str(error.value)
 
 
+def test_conflicting_duplicate_route_fails_closed():
+    client = RecordingClient(
+        route_windows=[
+            {"data": [{"id": "same", "distance": 1}]},
+            {"data": [{"id": "same", "distance": 2}]},
+        ]
+    )
+
+    with pytest.raises(ServiceError) as error:
+        MapitServices(client).list_routes("2026-01-01", "2026-03-01")
+
+    assert error.value.code == "duplicate_route_conflict"
+
+
+def test_route_accumulation_limit_fails_closed():
+    routes = [{"id": f"route-{index}", "distance": 1} for index in range(10_001)]
+    client = RecordingClient(route_windows=[{"data": routes}])
+
+    with pytest.raises(ServiceError) as error:
+        MapitServices(client).list_routes("2026-01-01", "2026-02-01")
+
+    assert error.value.code == "route_limit_exceeded"
+
+
+def test_route_analytics_wrappers_use_monthly_read_path():
+    route = {
+        "id": "route-one",
+        "distance": 10,
+        "startedAt": "2026-01-01T00:00:00Z",
+        "endedAt": "2026-01-01T01:00:00Z",
+        "maxSpeed": 42,
+    }
+    client = RecordingClient(route_windows=[{"data": [route]}] * 4)
+    service = MapitServices(client)
+
+    stats = service.get_route_statistics("2026-01-01", "2026-02-01")
+    breakdown = service.get_distance_breakdown("2026-01-01", "2026-02-01", "month")
+    extremes = service.get_route_extremes("2026-01-01", "2026-02-01")
+
+    assert stats.total_distance == 10
+    assert breakdown.buckets[0].bucket == "2026-01"
+    assert extremes.longest_route.route_id == "route-one"
+
+
 def test_vehicle_status_preserves_zero_odometer_without_vehicle_km_fallback():
     client = RecordingClient()
     client.summary["vehicles"][0]["device"]["state"]["odometer"] = 0

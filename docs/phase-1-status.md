@@ -20,7 +20,9 @@ Status: COMPLETE (2026-09-28).
 
 ## Validation state
 
-- The complete offline suite is green on Windows (`191 passed`).
+- The complete offline suite was green on Windows at the Phase 1 closure
+  snapshot (`191 passed`); later Phase 2 changes have expanded the current
+  suite.
 - Tests prohibit external network access; the loopback connection used by the
   Windows async event loop is the only socket exception.
 - MCP contract tests cover the exact tool list, input/output schemas,

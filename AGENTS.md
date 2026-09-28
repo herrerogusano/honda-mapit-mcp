@@ -3,11 +3,11 @@
 ## Scope
 
 Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
-client) is complete. Phase 1 is limited to the local, read-only MCP core
-defined by `docs/phase-1-mcp-contracts.md` (the approved Phase 1 MCP core).
-Do not expand beyond that contract or implement Telegram, an agent UI, a
-frontend, a project database, project-owned AWS infrastructure, Home Assistant,
-or a persistent realtime service.
+client) and Phase 1 (the local read-only MCP core) are complete. Phase 2 is
+limited to route analytics over the existing monthly read path, as defined by
+`docs/phase-2-analytics-contracts.md`. Do not expand beyond that contract or
+implement Telegram, an agent UI, a frontend, a project database, project-owned
+AWS infrastructure, Home Assistant, or a persistent realtime service.
 
 Phase 0 is read-only against MAPIT. Do not send `POST`, `PUT`, `PATCH`, or
 `DELETE` requests except the Cognito calls strictly required for authentication.

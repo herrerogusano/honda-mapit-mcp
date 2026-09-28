@@ -1,8 +1,9 @@
 # Honda MAPIT read-only MCP
 
 Phase 0 produced the standalone synchronous client. Phase 1 now adds a local
-stdio MCP server with six read-only tools over a separate application-service
-layer. The project discovers public runtime configuration, performs
+stdio MCP server with ten read-only tools over a separate application-service
+layer. Phase 2 adds bounded route analytics over the same monthly retrieval
+path. The project discovers public runtime configuration, performs
 the Cognito authentication flow when explicitly requested, obtains temporary
 Identity Pool credentials, signs Core/Geo `GET` requests with AWS SigV4, and
 recovers one time from an expired/invalid session.
@@ -48,9 +49,23 @@ Exposed tools:
 - `get_route_detail`
 - `get_distance`
 - `compare_distance_periods`
+- `get_route_statistics`
+- `get_distance_breakdown`
+- `get_route_extremes`
+- `compare_route_periods`
 
-All six tools carry MCP `readOnlyHint` and `idempotentHint` annotations. Date
-ranges accept ISO 8601 dates or timezone-aware datetimes, use an inclusive
+All ten tools carry MCP `readOnlyHint` and `idempotentHint` annotations.
+
+Phase 2 analytics group native distance by UTC day, month, or year and report
+observed counts, elapsed durations, deterministic extremes, and bounded period
+comparisons. It never labels MAPIT values as kilometres or km/h, does not
+aggregate average speed, and fails closed when required distance, timestamp, or
+speed fields are unavailable. Negative distances/speeds and non-finite
+aggregates fail closed. At most 10,000 normalized routes are retained per
+period; conflicting duplicate IDs fail closed. See the
+[Phase 2 analytics contract](docs/phase-2-analytics-contracts.md).
+
+Date ranges accept ISO 8601 dates or timezone-aware datetimes, use an inclusive
 `from_time` and exclusive `to_time`, and are limited to 366 days. Route reads
 are split into at most 13 monthly UTC windows; a two-period comparison can make
 at most 26 Geo reads. Route lists return at most 500 normalized routes.
@@ -66,6 +81,20 @@ server does not log or persist tool results.
 
 See [the Phase 1 contracts](docs/phase-1-mcp-contracts.md) and
 [implementation status](docs/phase-1-status.md).
+
+The separate Phase 2 analytics gate uses the saved session, calls only the four
+analytics tools over a maximum 31-day window, and prints only safe per-tool
+status categories. It requires `get_route_statistics` to observe at least one
+route and does not print or persist dates, IDs, metrics, payloads, or exception
+details:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\smoke_mcp_phase2.py
+```
+
+See the [Phase 2 analytics contract](docs/phase-2-analytics-contracts.md) and
+[Phase 2 completion status](docs/phase-2-status.md).
 
 Public runtime discovery does not use credentials:
 
