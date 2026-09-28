@@ -6,9 +6,10 @@ the Cognito authentication flow when explicitly requested, obtains temporary
 Identity Pool credentials, signs Core/Geo `GET` requests with AWS SigV4, and
 recovers one time from an expired/invalid session.
 
-The reusable client does not implement an MCP server, account/routing writes,
-or WebSocket support; the test suite makes no real requests. The explicit local
-read-only probe scripts are separate from the client library. The reusable library
+The reusable client does not implement an MCP server or account/routing writes;
+realtime support is limited to the optional bounded WebSocket probe and is not a
+general subscription service. The test suite makes no real requests. The explicit
+local read-only probe scripts are separate from the normal client workflow. The reusable library
 reads environment credentials only when explicitly requested, while the local
 session setup GUI keeps them in memory and persists only a refresh token in the
 approved Windows store. Credentials are never logged. Cognito identifiers may
@@ -178,6 +179,9 @@ merged immediately into a schema-only artifact at
 `samples/anonymized/websocket-message.schema.json`; invalid/binary frames are
 ignored. No fixture is written when no valid frame arrives, and output never
 contains the URL, subprotocol, IDs, values, close reason, or raw frame.
+The bounded authorized run connected successfully and produced the current
+schema-only fixture; this is one-account evidence, not a universal realtime
+contract.
 
 ## CI and environments
 

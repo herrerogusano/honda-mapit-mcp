@@ -1,6 +1,6 @@
 # Phase 0 Findings
 
-Status: **IN PROGRESS** as of 2026-09-23. This document is a cumulative summary,
+Status: **IN PROGRESS** as of 2026-09-28. This document is a cumulative summary,
 not a declaration that Phase 0 is complete.
 
 ## Authentication
@@ -100,15 +100,21 @@ evidence identifies it as the Cognito `IdToken`. No application message is
 sent on open. Text JSON is parsed and normalized only when it has a string
 `id` or `deviceId`; the frontend consumes `status`, numeric-or-null
 `battery`/`lat`/`lng`/`hdop`, and `lastTs` with `lastCoordTs` as fallback.
-Malformed/nonmatching frames are ignored.
+Malformed/nonmatching frames are ignored. The authorized bounded probe
+confirmed connection and a valid text shape for one account, then ended by
+the expected local ten-second timeout after connection; it wrote only
+`samples/anonymized/websocket-message.schema.json` and sent no message.
 
 The bundle reconnects after `close` indefinitely with exponential backoff
 capped at 30 seconds plus 0--399 ms jitter, but has no application heartbeat
 or explicit `error` handler. Older clients use `/devicestate/{deviceId}` and
-client heartbeat, so compatibility remains unconfirmed. No authenticated
-WebSocket connection was made. A bounded schema-only probe is specified in
-`mapit-websocket-investigation.md` (one account, no send, 10 seconds or 3
-frames, no IDs/coordinates/timestamps/values/raw payload persistence).
+client heartbeat, so legacy compatibility remains unconfirmed. The bounded
+account-level probe was accepted for the authorized account and retained only
+`samples/anonymized/websocket-message.schema.json`; it sent no message and
+persisted no IDs, coordinates, timestamps, values or raw frames. The fixture
+confirms additional live state field names (`speed`, `voltage`, `version`,
+`lastBuzzTs`, etc.) beyond the frontend's normalized subset, but not their
+semantics or cross-account stability.
 
 ## Statistics, Geofences, Alerts, Maintenance, and Appointments
 
@@ -127,11 +133,6 @@ separate stats envelope is evidenced; hard braking, acceleration, overspeed
 events, elevation, tire/oil and firmware telemetry remain unconfirmed. No
 statistics capability beyond that structural observation is claimed. The
 account-summary schema does confirm alert configuration/entitlement fields,
-including `notificationSettings.geofenceAlertCritical` and access flags for
-accident, fall and ignition alerts. No current frontend bundle or public
-reference client exposes a dedicated GET for zones/geofences, alert history or
-events, and no event payload has been observed. Citylife4's public docs list
-geofencing/events as future enhancements, not as an implemented contract.
 including `notificationSettings.geofenceAlertCritical` and access flags for
 accident, fall and ignition alerts. No current frontend bundle or public
 reference client exposes a dedicated GET for zones/geofences, alert history or
@@ -157,8 +158,8 @@ scope for Phase 0 execution.
 
 ## Unknowns
 
-- Cognito challenges for the authorized account.
-- Live acceptance of the observed signing/header contract.
+- Cognito challenges that may occur for other account states; the authorized
+  baseline login required none.
 - Full account, vehicle, and realtime schemas; the account, vehicle-detail,
   bounded route-list, and one route-detail probes establish only one-account
   schema-only samples.
@@ -168,9 +169,8 @@ scope for Phase 0 execution.
 - Semantics and read/write endpoints, if any, behind payment, catalog,
   capability, dealer, notification, and alert-setting structures.
 - Route pagination, history depth, date/filter semantics, and units.
-- Live WebSocket acceptance of the account-level URL and IdToken subprotocol;
-  initial frame shape, server events, ping/pong behavior, and legacy-path
-  compatibility.
+- WebSocket initial-frame/event coverage beyond the one accepted frame,
+  ping/pong behavior, and legacy-path compatibility.
 - Read-only endpoints for zones, alerts/events, maintenance, and appointments.
 - Whether the observed alert configuration (`geofenceAlertCritical` and access
   flags) has any separate read-only resource or is only account-summary state;

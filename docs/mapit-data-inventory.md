@@ -1,7 +1,8 @@
 # MAPIT Data Inventory
 
 Status: authorized read-only probes produced schema-only anonymized samples for
-`account-summary`, vehicle detail, route listing, and route detail. No values,
+`account-summary`, vehicle detail, route listing, route detail, and one
+account-level WebSocket frame. No values,
 counts, raw payloads, headers, tokens, or identifiers were retained. Examples
 below are placeholders, not real account data.
 
@@ -170,8 +171,25 @@ The current frontend constructs
 `wss://dsw.prod.mapit.me/accounts/{encodeURIComponent(account.id)}` after a
 successful in-memory `account-summary`. It passes the current Cognito ID token
 as the only WebSocket subprotocol when present and sends no application frame
-on open. This is a frontend contract observation only; no authorized WebSocket
-probe or live message was retained.
+on open. The authorized bounded probe connected with the account-level
+contract, observed a valid text JSON shape, and retained only
+`samples/anonymized/websocket-message.schema.json`. It ended through the
+expected local ten-second timeout after connection; no application message was
+sent and no reconnect was attempted. The fixture is one schema-only capture,
+not a universal server contract.
+
+The retained top-level fields were observed with these JSON shapes:
+
+| Fields | Observed type/nullability |
+|---|---|
+| `battery`, `hdop`, `lastBuzzTs`, `lastCoordTs`, `lastTs`, `lat`, `lng` | non-null number |
+| `id`, `model`, `status`, `updatedAt`, `version` | non-null string |
+| `batteryConnectionStatus`, `batteryConnectionStatusTs`, `data`, `detectedCAN`, `odometer`, `speed`, `vin`, `voltage` | nullable null in this capture |
+
+These names and shapes are evidence from one authorized frame/schema merge;
+they do not establish units, semantics, field universality, or the meaning of
+the numeric/timestamp fields. No frame values, identifiers, coordinates,
+timestamps, counts, headers, close reasons, or raw payload were retained.
 
 For a valid text JSON object, the frontend keeps only the normalized fields in
 the table above. It accepts `id` or fallback `deviceId`, prefers `lastTs` over

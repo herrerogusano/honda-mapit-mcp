@@ -119,7 +119,7 @@ def perform_websocket_probe(
     manager: Any = None
     context: ManagedSession | None = None
     client: Any = None
-    socket: Any = None
+    connection: Any = None
     summary_payload: Any = None
     frame: Any = None
     frame_payload: Any = None
@@ -160,61 +160,65 @@ def perform_websocket_probe(
         deadline = clock() + MAX_SECONDS
         remaining = max(0.0, deadline - clock())
         try:
-            socket = connector_factory(
+            connection = connector_factory(
                 ws_url,
                 context.session.id_token,
                 timeout=remaining,
                 max_size=MAX_FRAME_BYTES,
                 max_queue=MAX_QUEUE,
             )
-            connected = True
             ws_url = ""
         except WebSocketDependencyError:
             return _error_result(region=region, category="websocket_dependency_missing")
         except Exception as exc:
             return _error_result(region=region, category=_safe_exception_category(exc, connected=False))
 
-        for _ in range(MAX_FRAMES):
-            remaining = deadline - clock()
-            if remaining <= 0:
-                termination_category = "websocket_timeout"
-                break
-            try:
-                frame = socket.recv(timeout=remaining)
-            except Exception as exc:
-                termination_category = _safe_exception_category(exc, connected=True)
-                break
-            if isinstance(frame, bytes):
+        # websockets.sync.client.connect is a context manager in the supported
+        # API.  Enter it explicitly so the official __exit__ path owns the
+        # close, including timeout, parser, and downstream error paths.
+        with connection as socket:
+            connected = True
+            for _ in range(MAX_FRAMES):
+                remaining = deadline - clock()
+                if remaining <= 0:
+                    termination_category = "websocket_timeout"
+                    break
+                try:
+                    frame = socket.recv(timeout=remaining)
+                except Exception as exc:
+                    termination_category = _safe_exception_category(exc, connected=True)
+                    break
+                if isinstance(frame, bytes):
+                    frame = None
+                    continue
+                if not isinstance(frame, str):
+                    frame = None
+                    continue
+                if len(frame.encode("utf-8", errors="ignore")) > MAX_FRAME_BYTES:
+                    frame = None
+                    continue
+                try:
+                    frame_payload = json.loads(frame)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    frame = None
+                    frame_payload = None
+                    continue
                 frame = None
-                continue
-            if not isinstance(frame, str):
-                frame = None
-                continue
-            if len(frame.encode("utf-8", errors="ignore")) > MAX_FRAME_BYTES:
-                frame = None
-                continue
-            try:
-                frame_payload = json.loads(frame)
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                frame = None
+                if not isinstance(frame_payload, dict):
+                    frame_payload = None
+                    continue
+                candidate = frame_payload.get("id")
+                if not (isinstance(candidate, str) and candidate.strip()):
+                    candidate = frame_payload.get("deviceId")
+                if not (isinstance(candidate, str) and candidate.strip()):
+                    frame_payload = None
+                    continue
+                stage = "schema"
+                current_schema = schema_only(frame_payload)
                 frame_payload = None
-                continue
-            frame = None
-            if not isinstance(frame_payload, dict):
-                frame_payload = None
-                continue
-            candidate = frame_payload.get("id")
-            if not (isinstance(candidate, str) and candidate.strip()):
-                candidate = frame_payload.get("deviceId")
-            if not (isinstance(candidate, str) and candidate.strip()):
-                frame_payload = None
-                continue
-            stage = "schema"
-            current_schema = schema_only(frame_payload)
-            frame_payload = None
-            merged_schema = current_schema if merged_schema is None else _merge(merged_schema, current_schema)
-            valid_shape_observed = True
-            stage = "websocket"
+                merged_schema = current_schema if merged_schema is None else _merge(merged_schema, current_schema)
+                valid_shape_observed = True
+                stage = "websocket"
 
         if valid_shape_observed and merged_schema is not None:
             stage = "persist"
@@ -266,12 +270,7 @@ def perform_websocket_probe(
         context = None
         client = None
         manager = None
-        if socket is not None:
-            try:
-                socket.close()
-            except Exception:
-                pass
-            socket = None
+        connection = None
 
 
 def main() -> int:

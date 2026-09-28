@@ -1,6 +1,6 @@
 # Mapit: autenticación y configuración runtime descubiertas
 
-Estado de investigación: 2026-09-23. Esta nota documenta evidencia pública y
+Estado de investigación: 2026-09-28. Esta nota documenta evidencia pública y
 probes autorizados de lectura; no se retuvieron credenciales, tokens, datos de
 cuenta ni se ejecutaron escrituras.
 
@@ -42,7 +42,14 @@ geo API: https://geo.prod.mapit.me
 device-state WS: wss://dsw.prod.mapit.me/devicestate  # fallback legado
 ```
 
-Ambas también intentan descubrir la configuración desde los bundles públicos antes de usar el fallback. Los patrones soportados son tanto constantes `VITE_*` antiguas como campos Amplify actuales (`userPoolId`, `userPoolClientId`, `identityPoolId` y `endpoint`).
+Ambas también intentan descubrir la configuración desde los bundles públicos antes
+de usar el fallback. El cliente de este repositorio recoge `script[src]`,
+`modulepreload`, `preload as=script` e imports dinámicos inline, y prioriza
+`main*`/`index*` con validación estricta de host. Los patrones de configuración
+soportados son tanto constantes `VITE_*` antiguas como campos Amplify actuales
+(`userPoolId`, `userPoolClientId`, `identityPoolId` y `endpoint`). La ejecución
+pública actual ya confirmó región, hosts e identificadores solo como
+`<discovered>` en la salida.
 
 ## Secuencia Cognito reproducible (sin credenciales)
 
@@ -455,12 +462,13 @@ sesión guardada y obtiene el `account.id` únicamente desde un
   `Complete`: el flujo `USER_PASSWORD_AUTH` observado fue aceptado, el Identity
   Pool entregó credenciales temporales y no apareció un challenge adicional.
   No se conservaron tokens, credenciales, identificadores ni datos de cuenta.
-- Confirmar con el token real que el formato fragmentado elimina el fallo de
-  tamaño observado y que `REFRESH_TOKEN_AUTH` permite reanudar la siguiente
-  ejecución sin contraseña.
+- La reanudación con refresh token fragmentado y `REFRESH_TOKEN_AUTH` ya fue
+  confirmada en el host autorizado; permanecen abiertos solo rotación,
+  revocación y comportamiento ante expiración natural.
 - Confirmar el límite efectivo del backend nativo en los Windows soportados;
   usar siempre los límites conservadores del formato aunque otro host acepte
   más.
 - Confirmar si el app client real tiene refresh-token rotation habilitada antes de
   depender de `REFRESH_TOKEN_AUTH` para reanudación automática.
-- Resolver la divergencia del websocket actual frente al fallback legado; está documentada en `docs/mapit-endpoints-discovered.md`.
+- El WebSocket account-level ya fue aceptado en el probe autorizado; queda por
+  resolver únicamente la compatibilidad universal del fallback legacy.

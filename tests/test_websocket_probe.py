@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -55,6 +56,18 @@ class RecordingSocket:
         self.recv_error = recv_error
         self.recv_calls = 0
         self.closed = False
+        self.close_calls = 0
+        self.enter_calls = 0
+        self.exit_calls = 0
+
+    def __enter__(self):
+        self.enter_calls += 1
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.exit_calls += 1
+        self.closed = True
+        return False
 
     def recv(self, *, timeout):
         self.recv_calls += 1
@@ -65,6 +78,7 @@ class RecordingSocket:
         raise TimeoutError("secret timeout detail")
 
     def close(self):
+        self.close_calls += 1
         self.closed = True
 
 
@@ -114,6 +128,9 @@ def test_exact_account_url_subprotocol_and_schema_merge(tmp_path):
         }
     ]
     assert socket.closed is True
+    assert socket.enter_calls == 1
+    assert socket.exit_calls == 1
+    assert socket.close_calls == 0
     saved = json.loads((tmp_path / "websocket-message.schema.json").read_text(encoding="utf-8"))
     rendered = json.dumps(saved)
     assert set(saved["fields"]) == {"battery", "deviceId", "id", "lat", "status"}
@@ -189,6 +206,8 @@ def test_timeout_after_connect_is_safe_success_without_fixture(tmp_path):
     assert result["schema_written"] is False
     assert result["status"] == "websocket_timeout"
     assert "secret" not in json.dumps(result)
+    assert socket.enter_calls == 1
+    assert socket.exit_calls == 1
 
 
 def test_close_after_connect_is_safe_without_fixture(tmp_path):
@@ -200,6 +219,8 @@ def test_close_after_connect_is_safe_without_fixture(tmp_path):
     assert result["success"] is True
     assert result["status"] == "websocket_closed"
     assert socket.closed is True
+    assert socket.enter_calls == 1
+    assert socket.exit_calls == 1
 
 
 def test_no_session_makes_zero_core_or_websocket_calls(tmp_path):
@@ -280,3 +301,55 @@ def test_persist_failure_is_safe(tmp_path, monkeypatch):
     result, _, _ = _run(tmp_path, socket)
     assert result["error"] == "websocket_schema_persist_failed"
     assert "secret" not in json.dumps(result)
+    assert socket.enter_calls == 1
+    assert socket.exit_calls == 1
+
+
+def test_context_exit_runs_on_schema_failure(tmp_path, monkeypatch):
+    socket = RecordingSocket(frames=[json.dumps({"id": "secret", "status": "ok"})])
+    monkeypatch.setattr(probe, "schema_only", lambda value: (_ for _ in ()).throw(ValueError("secret")))
+    result, _, _ = _run(tmp_path, socket)
+    assert result["error"] == "websocket_schema_failed"
+    assert socket.enter_calls == 1
+    assert socket.exit_calls == 1
+    assert socket.close_calls == 0
+
+
+def test_connector_result_must_be_entered_as_context_manager(tmp_path):
+    class BareSocket:
+        def recv(self, *, timeout):
+            raise TimeoutError
+
+    result, _, _ = _run(tmp_path, BareSocket())
+    assert result["success"] is False
+    assert result["error"] == "websocket_transport_failed"
+
+
+def test_strict_context_manager_path_has_no_deprecation_warning(tmp_path):
+    class StrictSocket:
+        def __init__(self):
+            self.entered = False
+            self.exited = False
+            self.frames = [json.dumps({"id": "secret", "status": "ok"})]
+
+        def __enter__(self):
+            self.entered = True
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.exited = True
+            return False
+
+        def recv(self, *, timeout):
+            if self.frames:
+                return self.frames.pop(0)
+            raise TimeoutError("stop")
+
+    socket = StrictSocket()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        result, _, _ = _run(tmp_path, socket)
+
+    assert result["success"] is True
+    assert socket.entered is True
+    assert socket.exited is True

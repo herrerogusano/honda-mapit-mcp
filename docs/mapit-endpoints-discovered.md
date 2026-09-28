@@ -11,7 +11,7 @@ no se invocó ninguna operación de escritura.
 | Frontend | `https://app.mapit.me/` | HTML público; alta |
 | Core API | `https://core.prod.mapit.me` | bundle actual y ambos clientes Python; alta |
 | Geo API | `https://geo.prod.mapit.me` | bundle actual y ambos clientes Python; alta |
-| Device-state websocket (actual) | `wss://dsw.prod.mapit.me/accounts/{accountId}` | bundle `useDashboardSummary` actual; alta |
+| Device-state websocket (actual) | `wss://dsw.prod.mapit.me/accounts/{accountId}` | bundle `useDashboardSummary` actual + probe autorizado; alta |
 | Device-state websocket (fallback legado) | `wss://dsw.prod.mapit.me/devicestate/{deviceId}` | ambos clientes Python; media, pendiente de compatibilidad |
 | Cognito User Pool | `https://cognito-idp.eu-west-1.amazonaws.com/` | bundle/config y clientes; alta |
 | Cognito Identity Pool | `https://cognito-identity.eu-west-1.amazonaws.com/` | bundle/config y clientes; alta |
@@ -250,7 +250,8 @@ token de su contexto de autenticación y, si no está vacío, lo pasa como el
 único subprotocolo (`new WebSocket(url, [token])`); no lo coloca en query ni en
 `Authorization`. El bundle principal público muestra que el getter devuelve
 `fetchAuthSession().tokens?.idToken?.toString()`, por lo que el subprotocolo es
-el Cognito `IdToken`; la aceptación live todavía no se ha probado.
+el Cognito `IdToken`; el probe autorizado confirmó conexión y aceptación del
+subprotocolo para una sesión/cuenta, sin demostrar universalidad.
 
 No envía mensaje inicial. Solo procesa frames de texto JSON y descarta JSON
 inválido u objetos sin `id`/`deviceId` string. Normaliza `id` (preferido) o
@@ -265,6 +266,13 @@ intentos. No contiene heartbeat/ping de aplicación ni handler explícito de
 `error`. Al desmontar, deshabilitar o cambiar de cuenta cierra el socket y
 limpia el temporizador. El detalle, el probe acotado y las restricciones de
 retención están en [mapit-websocket-investigation.md](mapit-websocket-investigation.md).
+
+El probe schema-only autorizado conectó, observó al menos un frame de texto con
+forma válida y escribió únicamente
+`samples/anonymized/websocket-message.schema.json`. Terminó por el timeout local
+de diez segundos tras la conexión; esa finalización era esperada y no implicó
+reconexión ni mensaje enviado. El schema conserva solo nombres, tipos y
+nullabilidad de una captura, no valores ni semántica.
 
 Los dos clientes Home Assistant públicos abren en cambio una URL derivada/fallback de la forma:
 
@@ -283,48 +291,29 @@ Los endpoints Core/Geo no se llaman con bearer token. Los clientes obtienen cred
 
 ## Runtime discovery
 
-### Fallo reproducido en el discovery actual
+### Discovery vigente y corrección incorporada
 
-El comando público de diagnóstico (`PYTHONPATH=src; py scripts/discover_frontend.py`) devuelve la región y los hosts fallback, pero deja `user_pool_id`, `user_pool_client_id` e `identity_pool_id` a `null`.
+La observación inicial del 2026-09-23 mostró que el HTML no tenía
+`script[src]`: exponía `modulepreload` e import dinámico inline, y la versión
+anterior de `bundle_urls()` devolvía `[]`, por lo que el diagnóstico imprimía
+los identificadores Cognito como `null`. Esa descripción es histórica, no el
+estado actual del código.
 
-La causa está aislada en la extracción de URLs, no en las expresiones de configuración:
+`src/mapit/config.py` ya recoge `script[src]`,
+`link[rel="modulepreload"]`, `link[rel="preload"][as="script"]` e imports
+dinámicos inline `.js`; normaliza con `urljoin`, deduplica, prioriza bundles
+`main*`/`index*` y filtra por HTTPS y host del frontend. Los tests sintéticos
+de `tests/test_config.py` cubren preloads, imports inline, deduplicación y
+rechazo de hosts externos.
 
-- `bundle_urls()` solo recoge etiquetas `<script src="...">`.
-- El HTML vigente de `https://app.mapit.me/` contiene cero scripts externos con `src`.
-- En su lugar contiene seis `<link rel="modulepreload" href="/assets/<hash>.js">`, incluyendo el entry `main-<hash>.js`, y un `<script type="module">` inline que ejecuta `import("/assets/main-<hash>.js")`.
-- Por tanto, `bundle_urls(html)` devuelve `[]`, no se descarga ningún bundle y `extract_runtime_config()` recibe texto vacío.
+El discovery público actual fue verificado después de esa corrección: devuelve
+la región `eu-west-1`, los tres campos Cognito y los hosts Core/Geo, mientras
+que `scripts/discover_frontend.py` imprime solo `<discovered>` para los
+identificadores. No se usan credenciales ni se hacen llamadas a API de datos.
 
-Evidencia de control: al descargar directamente el entry bundle público vigente (764020 bytes en la observación del 2026-09-23) y pasarlo a `extract_runtime_config()`, se obtienen correctamente la región `eu-west-1`, los tres campos Cognito y ambos hosts API. Esto demuestra que los patrones actuales para `userPoolId`, `userPoolClientId`, `identityPoolId`, `https://core.*` y `https://geo.*` sí alcanzan el formato actual.
-
-### Propuesta mínima (pendiente de implementación)
-
-Ampliar `bundle_urls()` para recoger, además de `script[src]`:
-
-1. `<link rel="modulepreload" href="...js">`.
-2. `<link rel="preload" as="script" href="...js">` si aparece en otra variante del bundler.
-3. Como fallback, imports dinámicos inline `import("...js")`.
-
-Reutilizar la misma normalización `urljoin`, deduplicación, orden `main*`/`index*` y validación HTTPS/host que ya usa `fetch_public_runtime_config()`. El fixture sintético mínimo (sin IDs reales) debería ser:
-
-```html
-<link rel="modulepreload" href="/assets/main-test.js">
-<link rel="modulepreload" href="/assets/index-test.js">
-<script type="module">import("/assets/main-test.js")</script>
-```
-
-El test debe comprobar que `bundle_urls()` devuelve `main-test.js` primero, que deduplica la importación inline y que `discover_runtime_config()` extrae valores de un bundle sintético con campos Cognito y hosts `core.prod.mapit.me`/`geo.prod.mapit.me`. Debe conservarse el test fail-closed para hosts externos/maliciosos.
-
-### Flujo esperado tras el arreglo
-
-Las implementaciones públicas:
-
-1. descargan el HTML;
-2. extraen rutas `/assets/*.js` y priorizan nombres `main*`/`index*`;
-3. buscan `userPoolId`, `userPoolClientId`, `identityPoolId`, endpoints `https://core.*` y `https://geo.*`;
-4. derivan región desde Cognito si no hay un campo `region`;
-5. derivan el websocket reemplazando `core.` por `dsw.` y añadiendo `/devicestate` como fallback.
-
-El método es frágil frente a cambios de bundler o nombres de campos; debe incluir fallback configurable y tests con HTML/bundles congelados.
+Queda como riesgo normal el cambio futuro de bundler o de nombres de campos;
+la mitigación vigente es el fallback configurable, validación estricta de
+hosts y fixtures offline, no una nueva ampliación especulativa.
 
 ## Evidencia y referencias
 

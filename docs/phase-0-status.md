@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`141 passed`). Session and routes GUI failures are
+  closed. Offline tests pass (`146 passed` on the 2026-09-28 audit). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -107,13 +107,17 @@ and manual WebSocket investigation.
   `docs/mapit-websocket-investigation.md`: el frontend vigente usa
   `/accounts/{encodeURIComponent(account.id)}`, pasa el `IdToken` como único
   subprotocolo cuando está disponible, no envía mensaje inicial y reconecta
-  tras `close` con backoff. No se abrió conexión autenticada ni se retuvo un
-  mensaje; el probe schema-only acotado sigue pendiente de autorización.
+  tras `close` con backoff. El probe live fue aceptado, observó forma válida,
+  terminó por el timeout local esperado tras la conexión y retuvo únicamente
+  `samples/anonymized/websocket-message.schema.json`, sin valores, IDs ni raw
+  frames.
 - El probe account-level `scripts/probe_websocket.py` ya está implementado con
   `websockets` opcional y lazy. Queda limitado a una lectura de cuenta, una
   conexión, tres frames de texto y diez segundos; no envía mensajes ni
   reconecta. Solo un frame válido con `id`/`deviceId` produce el schema-only
-  fusionado. No se abrió conexión live ni se creó fixture.
+  fusionado. El fixture schema-only fue creado por la ejecución live
+  autorizada; handshake, close, timeout y demás diagnósticos siguen reducidos
+  a categorías seguras.
 - La investigación pública de zonas/geofences y alertas/eventos no encontró
   rutas GET dedicadas en los bundles vigentes ni en d3vv3/citylife4. El schema
   de `account-summary` sí contiene `geofenceAlertCritical` y flags de acceso,
@@ -142,17 +146,39 @@ and manual WebSocket investigation.
 - Evidence and documentation precede implementation.
 - Live probes are manual and never part of the default test suite.
 
+## Criterio de cierre de Fase 0 (auditoría 2026-09-28)
+
+| Área | Estado | Evidencia y límite restante |
+|---|---|---|
+| Autenticación Cognito + Identity Pool + SigV4 | COMPLETO para baseline; lifecycle PARCIAL | Flujo inicial y sesión guardada confirmados, con tests offline y almacenamiento fail-closed. Expiración/revocación natural y challenges de otras cuentas siguen abiertos. |
+| Vehículos | COMPLETO como descubrimiento schema-only | `account-summary` y un detalle de vehículo confirmados; solo una cuenta/probe, sin afirmar estabilidad cross-account ni capacidades de pago/alertas. |
+| Rutas e histórico | PARCIAL | Listado, dos ventanas mensuales y ausencia de cursor en esas respuestas confirmados; paginación universal, filtros completos, orden, unidades y profundidad histórica siguen abiertos. |
+| Detalle de ruta | COMPLETO como contrato estructural | Ruta actual con `includeStats=true` y GeoJSON confirmada; semántica/unidades de métricas no confirmadas. |
+| Frontend/runtime/endpoints | COMPLETO para los endpoints públicos observados | Discovery modulepreload/preload/import inline corregido y verificado; capacidades secundarias sin path primario permanecen fuera de contrato. |
+| Realtime | PARCIAL pero transporte confirmado | WebSocket account-level aceptado para una cuenta y schema-only fixture retenido; cobertura de eventos, ping/pong, cross-account y fallback legacy siguen abiertos. |
+| Capacidades adicionales | UNKNOWN/PARCIAL | Dealer metadata, alert settings y telemetría embebida confirmadas como estructura; geofences, eventos, mantenimiento, citas, conducción avanzada y endpoints dedicados no están evidenciados. |
+
+Antes de declarar Fase 0 cerrada, el supervisor debe aceptar explícitamente
+estos límites parciales y verificar que el conjunto final de docs, fixtures y
+tests no contiene valores, IDs o secretos. El trabajo imprescindible restante
+es documental/QA: reconciliar referencias obsoletas, ejecutar la suite offline,
+revisar `git diff --check` y conservar como preguntas abiertas únicamente la
+compatibilidad o cobertura que el plan realmente requiera. No es imprescindible
+probar endpoints secundarios sin una ruta GET respaldada por evidencia primaria.
+
 ## Next Steps
 
-1. Investigate route-list filters using evidence-led probes if needed.
-2. Si se autoriza, ejecutar el probe WebSocket schema-only acotado descrito en
-   `docs/mapit-websocket-investigation.md`.
+1. Mantener solo probes adicionales justificados por nueva evidencia primaria;
+   no hay un endpoint GET exacto para capacidades secundarias.
+2. Cerrar los criterios documentales de Fase 0 y reservar compatibilidad
+   legacy/variantes de cuenta para una fase posterior.
 
 ## Open Questions
 
 - Refresh behavior against the authorized account has not yet been exercised
   near token expiry, although the initial password flow required no challenge.
-- Exact live token/subprotocol contract accepted by the WebSocket.
+- Cobertura de frames/eventos WebSocket adicionales, ping/pong del servidor y
+  compatibilidad legacy `/devicestate/{deviceId}`.
 - Current endpoint inventory and route-history pagination/filter behavior.
 - Whether other account states trigger Cognito challenges not seen in the
   successful initial login.

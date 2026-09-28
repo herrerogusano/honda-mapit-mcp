@@ -1,7 +1,8 @@
 # MAPIT WebSocket investigation
 
-Estado: investigación pública y diseño de probe, 2026-09-28. No se abrió una
-conexión autenticada en esta investigación y no se conservaron mensajes.
+Estado: investigación pública y probe schema-only autorizado, 2026-09-28. La
+conexión live account-level fue aceptada y produjo solo el fixture de esquema;
+no se conservaron mensajes, valores ni identificadores.
 
 ## Contrato observado en el frontend vigente
 
@@ -23,8 +24,8 @@ chunk devuelve `fetchAuthSession().tokens?.idToken?.toString()`. Si existe,
 llama al constructor equivalente a
 `new WebSocket(url, [token])`: el token se envía como el único subprotocolo
 WebSocket, no como `Authorization` ni como query parameter. Por tanto es el
-Cognito `IdToken`; la aceptación live del subprotocolo queda pendiente. Si el
-getter no devuelve token, el
+Cognito `IdToken`; el probe live aceptó esta combinación para la cuenta
+autorizada. Si el getter no devuelve token, el
 frontend abre el socket sin lista de subprotocolos.
 
 No se envía ningún mensaje de aplicación al abrir. El frontend acepta solo
@@ -76,8 +77,8 @@ supervisor autorice una comparación.
 
 ## Probe manual mínimo recomendado
 
-Cuando el supervisor autorice una conexión autenticada, limitarla a una sola
-sesión y a un solo `accountId` obtenido en memoria:
+El diseño y límites del probe autorizado fueron una sola sesión y un único
+`accountId` obtenido en memoria:
 
 1. Reutilizar la sesión guardada; ejecutar `account-summary` únicamente para
    obtener `account.id` en memoria. No imprimirlo ni escribirlo.
@@ -91,10 +92,17 @@ sesión y a un solo `accountId` obtenido en memoria:
    estable sin URL, razón, cabeceras o cuerpo. No abrir el endpoint legado en
    el mismo probe.
 
-Este probe puede confirmar transporte, subprotocolo aceptado y si aparece un
-frame con la forma consumida por el frontend; no puede establecer semántica de
+El probe autorizado confirmó transporte y un frame válido account-level; su
+resultado se redujo a `samples/anonymized/websocket-message.schema.json` y
+terminó por el timeout local esperado tras la conexión, sin reconexión.
+Confirma solo la forma de un frame de una cuenta autorizada, no semántica de
 estado, unidades, frecuencia, cobertura de todos los dispositivos ni ausencia
 de heartbeat del servidor.
+
+El fixture observado contiene además campos de estado que el frontend actual
+no conserva al normalizar (`batteryConnectionStatus`, `lastBuzzTs`, `speed`,
+`voltage`, `version`, entre otros); se registran como estructura live, no como
+capacidad adicional ni como valores persistibles.
 
 ## Implementación local
 

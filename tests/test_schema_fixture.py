@@ -9,6 +9,7 @@ SCHEMA_PATHS = [
     SAMPLES_DIR / "account-summary.schema.json",
     SAMPLES_DIR / "routes-list.schema.json",
     SAMPLES_DIR / "route-detail.schema.json",
+    SAMPLES_DIR / "websocket-message.schema.json",
     SAMPLES_DIR / "vehicle-detail.schema.json",
 ]
 ALLOWED_KEYS = {"type", "nullable", "fields", "items", "types"}
