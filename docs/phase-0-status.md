@@ -137,6 +137,12 @@ and manual WebSocket investigation.
   en el detalle de ruta, sin envelope de estadísticas separado. Hard braking,
   acceleration, overspeed events, elevation, tire/oil y firmware telemetry no
   tienen evidencia primaria y no requieren probe adicional ahora.
+- Quedó diseñado, pero no ejecutado, un gate de cobertura histórica en
+  `docs/mapit-routes-investigation.md`: un GET sin filtros y hasta dos ventanas
+  mensuales de control, límite duro de respuesta, máximo tres GET Geo, sin
+  persistir conteos/fechas/IDs. Solo puede producir
+  `COMPLETE_FOR_RETURNED_RESPONSE`; la completitud universal sigue siendo
+  imposible sin contrato de total/paginación explícito.
 
 ## Active Constraints
 
@@ -152,7 +158,7 @@ and manual WebSocket investigation.
 |---|---|---|
 | Autenticación Cognito + Identity Pool + SigV4 | COMPLETO para baseline; lifecycle PARCIAL | Flujo inicial y sesión guardada confirmados, con tests offline y almacenamiento fail-closed. Expiración/revocación natural y challenges de otras cuentas siguen abiertos. |
 | Vehículos | COMPLETO como descubrimiento schema-only | `account-summary` y un detalle de vehículo confirmados; solo una cuenta/probe, sin afirmar estabilidad cross-account ni capacidades de pago/alertas. |
-| Rutas e histórico | PARCIAL | Listado, dos ventanas mensuales y ausencia de cursor en esas respuestas confirmados; paginación universal, filtros completos, orden, unidades y profundidad histórica siguen abiertos. |
+| Rutas e histórico | PARCIAL | Listado, dos ventanas mensuales y ausencia de cursor en esas respuestas confirmados; el gate sin filtros + hasta dos controles está diseñado pero no ejecutado. Paginación universal, filtros completos, orden, unidades y profundidad histórica siguen abiertos. |
 | Detalle de ruta | COMPLETO como contrato estructural | Ruta actual con `includeStats=true` y GeoJSON confirmada; semántica/unidades de métricas no confirmadas. |
 | Frontend/runtime/endpoints | COMPLETO para los endpoints públicos observados | Discovery modulepreload/preload/import inline corregido y verificado; capacidades secundarias sin path primario permanecen fuera de contrato. |
 | Realtime | PARCIAL pero transporte confirmado | WebSocket account-level aceptado para una cuenta y schema-only fixture retenido; cobertura de eventos, ping/pong, cross-account y fallback legacy siguen abiertos. |

@@ -197,6 +197,96 @@ route values, coordinates, or raw responses. This confirms acceptance of the
 two bounded `from`/`to` requests for that run only; it does not establish
 absence of pagination outside those responses or complete historical coverage.
 
+## Diseño de gate de cobertura histórica (no ejecutado)
+
+Objetivo del gate: obtener, para un único vehículo autorizado, una indicación
+efímera del número de rutas y de los extremos temporalmente más reciente y más
+antiguo, y comprobar si la lectura sin filtros parece contener las ventanas de
+control. Este diseño no afirma que se haya ejecutado ni que pueda demostrar la
+completitud del backend sin un contrato de total/paginación.
+
+### Secuencia mínima y límites
+
+1. Hacer un `GET /v1/account-summary` y seleccionar en memoria el primer
+   `vehicles[*].id` string no vacío, prefiriendo `device != null`. No mostrar ni
+   persistir el ID.
+2. Hacer un único GET sin filtros adicionales:
+
+   ```text
+   GET https://geo.prod.mapit.me/v1/routes?vehicleId={url-encoded-id}
+   ```
+
+   No enviar `limit`, `month`, `day`, `from`, `to` ni `includeInProgress`.
+   Aplicar timeout y límite duro de bytes (propuesto: 2 MiB); si el cuerpo
+   excede el límite, descartarlo y clasificar `response_too_large`, sin
+   intentar inferir cobertura.
+3. Solo si la respuesta sin filtros es válida, no está vacía y ofrece
+   `startedAt` string en sus rutas, calcular en memoria el mes UTC que contiene
+   la ruta más reciente y el mes UTC que contiene la más antigua. Hacer como
+   máximo dos GET adicionales, sin `limit`, uno para cada ventana mensual:
+
+   ```text
+   GET .../v1/routes?vehicleId={id}&from={month_start}&to={next_month_start}
+   ```
+
+   Las fechas exactas, el ID de vehículo, IDs de ruta, bodies, headers y URLs
+   firmadas se descartan inmediatamente después de cada comparación. No se
+   recorren meses intermedios, no se llama a route-detail y no se sigue ningún
+   cursor. Si ambos extremos caen en el mismo mes, hacer una sola ventana de
+   control y consumir como máximo dos GET Geo en total.
+
+El límite operativo es una cuenta, un vehículo y tres GET Geo como máximo
+(más el `account-summary` requerido para seleccionar el ID). No se permiten
+reintentos automáticos adicionales, salvo la recuperación 401/403 ya acotada
+por el cliente. Se retienen únicamente categorías, booleanos y el resultado de
+la clasificación; ningún schema, count, fecha, ID, métrica, geometría o raw
+payload se escribe en disco.
+
+### Inspección efímera y salida segura
+
+Imprescindible en memoria: longitud de `data`, `startedAt` para min/max,
+identificadores de ruta solo para comparar conjuntos entre respuestas, y la
+presencia de nombres de paginación permitidos (`lastEvaluatedKey`, `nextToken`,
+`cursor`, `offset`, `page`, `total`/`count`). Nunca se necesita abrir o mostrar
+coordenadas, nombres, labels, velocidad, distancia, odómetro, `endedAt` ni
+contenido de GeoJSON.
+
+Si el supervisor autoriza una salida efímera más informativa, puede mostrar una
+sola vez el número entero de rutas y los extremos reducidos a `YYYY-MM`; nunca
+los timestamps exactos, IDs, coordenadas ni valores de ruta. El modo por
+defecto debe poder reducirlo aún más a `route_count_observed`,
+`oldest_month_observed`, `newest_month_observed`,
+`pagination_metadata_observed` y `coverage_class`, sin guardar logs.
+
+### Criterio del gate
+
+- `COMPLETE_FOR_RETURNED_RESPONSE` (no completitud universal): respuesta sin
+  filtros válida y bajo el límite; sin metadata de paginación; ambas ventanas
+  de control válidas; todos sus IDs/timestamps están contenidos en la respuesta
+  sin filtros y sus meses coinciden con los extremos observados.
+- `PARTIAL`: aparece metadata de paginación, se supera el límite, una ventana
+  contiene una ruta ausente del resultado sin filtros, una respuesta falla o no
+  permite comparar timestamps/IDs. También es `PARTIAL` si el servidor no
+  devuelve datos en una ventana de control y no puede distinguirse “mes vacío”
+  de filtro no soportado.
+- `UNKNOWN`: respuesta vacía, envelope distinto, timestamps inválidos o
+  transporte/HTTP no clasificado.
+
+Con los contratos confirmados no existe una prueba honesta de `COMPLETE`
+universal: una respuesta sin cursor puede ser una página truncada sin metadata.
+El supervisor debe tratar `COMPLETE_FOR_RETURNED_RESPONSE` como una señal
+acotada para esta cuenta/vehículo/ejecución, no como garantía de historial.
+
+### Riesgos
+
+La lectura sin filtros puede incluir muchas geometrías y superar memoria,
+timeout o límites de gateway; el límite de 2 MiB falla cerrado y evita guardar
+un cuerpo grande. Tres lecturas cercanas pueden activar rate limiting; el gate
+no reintenta tras 429 y reporta solo `rate_limited`. Las ventanas mensuales
+pueden tener límites inclusivos, timezone o orden desconocidos, por lo que una
+comparación positiva no prueba semántica de fechas. Un backend que oculte
+paginación o cambie el envelope mantiene el resultado en `PARTIAL`/`UNKNOWN`.
+
 ## Route-detail contract and latest schema-only result
 
 The current public frontend is the primary contract for route detail:
