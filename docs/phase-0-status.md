@@ -8,6 +8,8 @@ and manual WebSocket investigation.
 
 ## Current State
 
+- Phase 0 is **COMPLETE** as of 2026-09-28 at the documented evidence level;
+  the closure table below preserves partial areas and explicit unknowns.
 - Phase 0 started on 2026-09-23.
 - Repository began empty with no commits or configured remote.
 - Persistent Researcher, Implementer, and Tester roles have been established.
@@ -22,7 +24,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`160 passed` on the 2026-09-28 audit). Session and routes GUI failures are
+  closed. Offline tests pass (`168 passed` on the 2026-09-28 audit). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -118,11 +120,12 @@ and manual WebSocket investigation.
   fusionado. El fixture schema-only fue creado por la ejecución live
   autorizada; handshake, close, timeout y demás diagnósticos siguen reducidos
   a categorías seguras.
-- El gate histórico `scripts/probe_route_history_coverage.py` está implementado
-  pero no live-ejecutado. Usa una lectura sin filtros limitada a 2 MiB y hasta
-  dos controles mensuales, sin persistir respuestas ni seguir cursores/detail;
-  la salida queda restringida a conteo observado, meses extremos, metadata de
-  paginación y clase `COMPLETE_FOR_RETURNED_RESPONSE`/`PARTIAL`/`UNKNOWN`.
+- El gate histórico `scripts/probe_route_history_coverage.py` fue ejecutado con
+  la sesión autorizada: la primera lectura sin filtros superó el límite de 2
+  MiB y terminó fail-closed como `response_too_large`, antes de decodificar
+  JSON. No hubo controles mensuales, inspección de conteo/fechas/paginación ni
+  persistencia. El supervisor acepta no aumentar bytes ni barrer meses; el
+  histórico queda `PARTIAL`.
 - La investigación pública de zonas/geofences y alertas/eventos no encontró
   rutas GET dedicadas en los bundles vigentes ni en d3vv3/citylife4. El schema
   de `account-summary` sí contiene `geofenceAlertCritical` y flags de acceso,
@@ -142,12 +145,12 @@ and manual WebSocket investigation.
   en el detalle de ruta, sin envelope de estadísticas separado. Hard braking,
   acceleration, overspeed events, elevation, tire/oil y firmware telemetry no
   tienen evidencia primaria y no requieren probe adicional ahora.
-- Quedó implementado, pero no live-ejecutado, el gate de cobertura histórica
-  `scripts/probe_route_history_coverage.py`: un GET sin filtros y hasta dos
-  ventanas mensuales de control, límite duro de respuesta, máximo tres GET
-  Geo, sin persistir conteos/fechas/IDs. Solo puede producir
-  `COMPLETE_FOR_RETURNED_RESPONSE`, `PARTIAL` o `UNKNOWN`; la completitud
-  universal sigue siendo imposible sin contrato de total/paginación explícito.
+- El gate de cobertura histórica queda documentado como lectura segura
+  acotada: un GET sin filtros y hasta dos ventanas mensuales de control, límite
+  duro de respuesta, máximo tres GET Geo y sin persistir conteos/fechas/IDs.
+  El run live falló antes de los controles por `response_too_large`; solo puede
+  producir `COMPLETE_FOR_RETURNED_RESPONSE`, `PARTIAL` o `UNKNOWN`, y la
+  completitud universal sigue siendo imposible sin contrato explícito.
 
 ## Active Constraints
 
@@ -163,26 +166,29 @@ and manual WebSocket investigation.
 |---|---|---|
 | Autenticación Cognito + Identity Pool + SigV4 | COMPLETO para baseline; lifecycle PARCIAL | Flujo inicial y sesión guardada confirmados, con tests offline y almacenamiento fail-closed. Expiración/revocación natural y challenges de otras cuentas siguen abiertos. |
 | Vehículos | COMPLETO como descubrimiento schema-only | `account-summary` y un detalle de vehículo confirmados; solo una cuenta/probe, sin afirmar estabilidad cross-account ni capacidades de pago/alertas. |
-| Rutas e histórico | PARCIAL | Listado, dos ventanas mensuales y ausencia de cursor en esas respuestas confirmados; el gate sin filtros + hasta dos controles está implementado y probado offline, pero no live-ejecutado. Paginación universal, filtros completos, orden, unidades y profundidad histórica siguen abiertos. |
+| Rutas e histórico | PARCIAL | Listado, dos ventanas mensuales y ausencia de cursor en esas respuestas confirmados. El gate live falló cerrado como `response_too_large` (>2 MiB) antes de decodificar la lectura sin filtros; no hubo controles ni conteo/extremos. El supervisor acepta no aumentar el límite ni barrer meses. Paginación universal, filtros completos, orden, unidades y profundidad histórica siguen abiertos. |
 | Detalle de ruta | COMPLETO como contrato estructural | Ruta actual con `includeStats=true` y GeoJSON confirmada; semántica/unidades de métricas no confirmadas. |
 | Frontend/runtime/endpoints | COMPLETO para los endpoints públicos observados | Discovery modulepreload/preload/import inline corregido y verificado; capacidades secundarias sin path primario permanecen fuera de contrato. |
 | Realtime | PARCIAL pero transporte confirmado | WebSocket account-level aceptado para una cuenta y schema-only fixture retenido; cobertura de eventos, ping/pong, cross-account y fallback legacy siguen abiertos. |
 | Capacidades adicionales | UNKNOWN/PARCIAL | Dealer metadata, alert settings y telemetría embebida confirmadas como estructura; geofences, eventos, mantenimiento, citas, conducción avanzada y endpoints dedicados no están evidenciados. |
 
-Antes de declarar Fase 0 cerrada, el supervisor debe aceptar explícitamente
-estos límites parciales y verificar que el conjunto final de docs, fixtures y
-tests no contiene valores, IDs o secretos. El trabajo imprescindible restante
-es documental/QA: reconciliar referencias obsoletas, ejecutar la suite offline,
-revisar `git diff --check` y conservar como preguntas abiertas únicamente la
-compatibilidad o cobertura que el plan realmente requiera. No es imprescindible
-probar endpoints secundarios sin una ruta GET respaldada por evidencia primaria.
+## Decisión de cierre (2026-09-28)
+
+El supervisor acepta los límites parciales, el resultado fail-closed del gate y
+la decisión de no aumentar bytes ni barrer meses. No queda trabajo
+imprescindible basado en la evidencia para el alcance de Fase 0: contratos,
+probes autorizados, fixtures schema-only y documentación están reconciliados a
+su nivel de confianza. Fase 0 queda **COMPLETE**. Esto no convierte en conocidas
+las capacidades secundarias ni garantiza completitud histórica; los unknowns
+siguen explícitos y cualquier lectura adicional, compatibilidad legacy o diseño
+de la siguiente fase requiere decisión separada.
 
 ## Next Steps
 
-1. Mantener solo probes adicionales justificados por nueva evidencia primaria;
-   no hay un endpoint GET exacto para capacidades secundarias.
-2. Cerrar los criterios documentales de Fase 0 y reservar compatibilidad
-   legacy/variantes de cuenta para una fase posterior.
+1. No quedan probes obligatorios de Fase 0; conservar el resultado histórico
+   como `PARTIAL` bajo el límite aceptado.
+2. Reservar para una fase posterior cualquier compatibilidad legacy, lectura
+   adicional o decisión de producto; no se diseñan tools aquí.
 
 ## Open Questions
 
@@ -190,7 +196,8 @@ probar endpoints secundarios sin una ruta GET respaldada por evidencia primaria.
   near token expiry, although the initial password flow required no challenge.
 - Cobertura de frames/eventos WebSocket adicionales, ping/pong del servidor y
   compatibilidad legacy `/devicestate/{deviceId}`.
-- Current endpoint inventory and route-history pagination/filter behavior.
+- Unfiltered route-history coverage for this account could not be assessed under
+  the accepted 2 MiB safety cap; pagination/filter semantics remain partial.
 - Whether other account states trigger Cognito challenges not seen in the
   successful initial login.
 - Saved-token resumption is live-confirmed; expiry/revocation fallback remains

@@ -65,7 +65,11 @@ El probe histórico autorizado aceptó exactamente dos ventanas mensuales
 acotadas con `from`/`to`, `vehicleId` y `limit=1`. Ninguna expuso
 `lastEvaluatedKey` y no se persistió ningún resultado; esto confirma solo esas
 dos lecturas y no la ausencia universal de paginación ni la cobertura completa
-del histórico.
+del histórico. El gate posterior de cobertura realizó una única lectura Geo sin
+filtros con límite duro de 2 MiB y terminó fail-closed como `response_too_large`
+antes de decodificar JSON. No ejecutó controles mensuales ni persistió datos;
+por decisión del supervisor no se aumenta el límite ni se barre el histórico.
+La cobertura histórica global queda `PARTIAL`.
 
 ## Zonas, geofences y alertas/eventos
 
@@ -329,5 +333,5 @@ hosts y fixtures offline, no una nueva ampliación especulativa.
 
 - ¿Debe el cliente inicial implementar solo lecturas actuales o conservar compatibilidad con `/v1/routes/{routeId}`?
 - ¿El websocket account-level funciona para todos los tenants/dispositivos o solo para el frontend actual?
-- ¿Hay paginación obligatoria (`lastEvaluatedKey`) o límites regionales para `/v1/routes`?
+- ¿Hay paginación obligatoria (`lastEvaluatedKey`) o límites regionales para `/v1/routes`? La lectura global autorizada superó 2 MiB antes de poder resolverlo; las dos ventanas mensuales no mostraron ese campo, pero no prueban ausencia universal.
 - ¿Qué estados HTTP y challenges Cognito deben mapearse en la UX sin filtrar detalles sensibles?

@@ -164,16 +164,21 @@ and whether the allowlisted `lastEvaluatedKey` field is present. It never
 follows that field, saves dates, IDs, counts, values, or payloads, and emits
 only safe status metadata.
 
-The historical coverage gate is implemented but deliberately not run by the
-default suite or against live MAPIT:
+The historical coverage gate has one authorized live result. It performed the
+unfiltered Geo read with an accepted 2 MiB stream cap and failed closed as
+`response_too_large` before JSON decoding. No monthly controls ran and no
+counts, dates, IDs, coordinates, values, or payloads were persisted. The
+supervisor accepted no larger cap and no month-by-month sweep, so history is
+`PARTIAL`; the two bounded monthly windows remain separately confirmed.
 
 ```powershell
 $env:PYTHONPATH = (Join-Path (Get-Location) "src")
 py scripts\probe_route_history_coverage.py
 ```
 
-It uses one saved-session account lookup, one unfiltered route read capped at
-2 MiB, and at most two monthly controls. It retains no response/schema/body;
+The gate is fail-closed: it uses one saved-session account lookup, one
+unfiltered route read capped at 2 MiB, and at most two monthly controls only if
+the unfiltered response is below the cap. It retains no response/schema/body;
 its successful output is limited to the observed route count, UTC oldest and
 newest months, pagination-metadata presence, and an allowlisted coverage class.
 

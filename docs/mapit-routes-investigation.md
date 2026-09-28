@@ -197,14 +197,15 @@ route values, coordinates, or raw responses. This confirms acceptance of the
 two bounded `from`/`to` requests for that run only; it does not establish
 absence of pagination outside those responses or complete historical coverage.
 
-## Diseño e implementación del gate de cobertura histórica (implementado; no live)
+## Diseño e implementación del gate de cobertura histórica (implementado; resultado live documentado)
 
 Objetivo del gate: obtener, para un único vehículo autorizado, una indicación
 efímera del número de rutas y de los extremos temporalmente más reciente y más
 antiguo, y comprobar si la lectura sin filtros parece contener las ventanas de
-control. `scripts/probe_route_history_coverage.py` implementa este diseño, pero
-no se ha ejecutado contra MAPIT y no puede demostrar la completitud del backend
-sin un contrato de total/paginación.
+control. `scripts/probe_route_history_coverage.py` implementa este diseño. El
+run autorizado documentado falló cerrado por el límite de 2 MiB antes de los
+controles; ningún run puede demostrar la completitud del backend sin un
+contrato de total/paginación.
 
 ### Secuencia mínima y límites
 
@@ -294,8 +295,23 @@ stream HTTP, antes de llamar a `json.loads`; el error es `response_too_large` y
 no se intenta una ventana de control. El resultado exitoso solo contiene los
 campos autorizados `route_count_observed`, `oldest_month_observed`,
 `newest_month_observed`, `pagination_metadata_observed` y `coverage_class`,
-además de `success` y `region`. El probe está cubierto offline y marcado como
-implemented-not-live.
+además de `success` y `region`. El comportamiento está cubierto offline.
+
+### Resultado live del gate (2026-09-28)
+
+La ejecución autorizada seleccionó el vehículo en memoria y realizó la primera
+lectura Geo sin filtros con el límite aceptado de 2 MiB. El stream superó ese
+límite y terminó fail-closed con `response_too_large`, antes de decodificar
+JSON. No se ejecutaron controles mensuales, no se inspeccionaron conteo,
+fechas extremas ni paginación, y no se persistió ningún payload, valor, fecha,
+ID o coordenada. Por tanto, este run no determina el número de rutas ni la
+antigüedad/completitud del histórico; solo demuestra que la lectura global sin
+filtros excedió el límite de seguridad para esa cuenta/vehículo/ejecución.
+
+El supervisor acepta no aumentar el límite de bytes y no barrer meses. Las dos
+ventanas mensuales acotadas confirmadas previamente siguen siendo evidencia
+válida de ese contrato, pero el histórico queda `PARTIAL`; no se infiere
+ausencia universal de paginación ni cobertura completa.
 
 ## Route-detail contract and latest schema-only result
 

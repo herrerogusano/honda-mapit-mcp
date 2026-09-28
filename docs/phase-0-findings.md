@@ -1,7 +1,8 @@
 # Phase 0 Findings
 
-Status: **IN PROGRESS** as of 2026-09-28. This document is a cumulative summary,
-not a declaration that Phase 0 is complete.
+Status: **COMPLETE** as of 2026-09-28. This cumulative summary records the
+scoped evidence and explicit unknowns; COMPLETE does not mean every backend
+capability or the full route history is known.
 
 ## Authentication
 
@@ -90,6 +91,14 @@ top-level pagination/count/cursor metadata; this does not establish defaults,
 history completeness, units, or cross-account stability. See
 `mapit-routes-investigation.md` and `mapit-data-inventory.md`.
 
+The authorized historical-coverage gate then made one unfiltered Geo read with
+the accepted 2 MiB stream cap. It failed closed as `response_too_large` before
+JSON decoding, so no monthly controls ran and no count, oldest/newest value,
+payload, ID, coordinate or other route value was retained. The supervisor
+accepted no larger cap and no month-by-month sweep. History therefore remains
+`PARTIAL`; the result does not establish route count, depth, universal
+pagination behavior or completeness.
+
 ## Realtime
 
 The current frontend uses
@@ -155,6 +164,14 @@ executed and is unrelated to service operations.
 The frontend contains a reverse-geocoding read endpoint and an account-preference
 write endpoint. The write endpoint is documented only as evidence and is out of
 scope for Phase 0 execution.
+
+## Phase 0 closure
+
+As of 2026-09-28, all scoped Phase 0 evidence, authorized bounded probes and
+schema-only fixtures have been reconciled in the documentation. Phase 0 is
+**COMPLETE** at the documented confidence level. Remaining unknowns are
+explicit above; any future reads, legacy compatibility, or product/tool design
+belong to a separately authorized next phase.
 
 ## Unknowns
 
