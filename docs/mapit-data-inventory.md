@@ -1,9 +1,9 @@
 # MAPIT Data Inventory
 
-Status: an authorized read-only probe produced a schema-only anonymized sample
-for `account-summary`. No values, counts, raw payload, headers, tokens, or
-identifiers were retained. Examples below are placeholders, not real account
-data.
+Status: authorized read-only probes produced schema-only anonymized samples for
+`account-summary`, vehicle detail, route listing, and route detail. No values,
+counts, raw payloads, headers, tokens, or identifiers were retained. Examples
+below are placeholders, not real account data.
 
 | Field | Endpoint/source | Type | Anonymized example | Meaning | Nullable | Historical/current | Status |
 |---|---|---:|---|---|---|---|---|
@@ -175,7 +175,7 @@ labels, speed/distance/odometer values, and the raw response are sensitive.
 Any future probe must retain schema-only information and discard those values
 before persistence.
 
-## Route-detail inventory (frontend contract; live read pending)
+## Route-detail inventory (authorized schema-only)
 
 The current public frontend constructs route detail as:
 
@@ -194,16 +194,43 @@ family used by route listing. The frontend parser expects a root object with:
 | `startedAt`, `endedAt` | optional strings, frontend-defaulted to empty strings | `FOUND_IN_FRONTEND` |
 | `avgSpeed`, `maxSpeed` | optional nullable numbers | `FOUND_IN_FRONTEND` |
 
-The request asks for `includeStats=true`, but the current parser does not
-enumerate separate statistics fields. Unknown fields may be discarded by the
-frontend parser; therefore no statistics capability or omission is inferred.
-No authorized route-detail schema fixture exists yet.
+The saved-session probe completed the current vehicle-scoped read with
+`includeStats=true` after selecting one route ID in memory from the confirmed
+`{data: [...]}` list response. The retained fixture,
+`samples/anonymized/route-detail.schema.json`, contains schema information
+only: field names, JSON types, nullability, and nesting. It contains no route
+values, counts, identifiers, coordinates, timestamps, headers, or raw body.
+
+The observed non-null root object has these top-level fields:
+
+| Group | Fields/types observed | Nullability/status |
+|---|---|---|
+| Metrics | `avgSpeed`, `distance`, `maxSpeed`: number | non-null in sample |
+| State | `complete`, `merged`, `startsAtLastKnown`: boolean | non-null in sample |
+| Timing | `createdAt`, `endedAt`, `startTz`, `startedAt`, `updatedAt`: string | non-null in sample |
+| Identity | `id`: string; `device.id`: string; `vehicle.id`: string | non-null in sample; sensitive |
+| Optional state | `continues`, `odometerStart`, `odometerEnd` | explicit `null` in this sample |
+| GeoJSON | `geoJSON.type`: string; `geoJSON.features`: array | non-null in sample |
+
+Each observed feature is a non-null object with non-null string `type`,
+`geometry`, and `properties`. Geometry has non-null string `type` and a
+non-null `coordinates` array whose item type is recorded as `mixed` (array or
+number). Properties contain non-null `inferred` (boolean), `label` (string),
+`name` (string), and `maxSpeed` (number), with `avgSpeed` and `distance`
+explicitly null in this sample. These are observed field types only; no metric
+units, GeoJSON semantics, statistics behavior, or universal nullability is
+inferred.
+
+Compared with the route-list fixture, detail adds top-level `merged` and
+feature-property `avgSpeed`, `distance`, and `maxSpeed`; the broad route,
+device/vehicle reference, timing, nullable state, and GeoJSON structure
+overlap. The successful read confirms that `includeStats=true` was accepted
+for this one authorized route, not what the flag computes or whether it changes
+the response for other routes/accounts.
 
 The older public clients also expose `GET /v1/routes/{routeId}` without a
 query string and consume a route-shaped object with `geoJSON` and timing fields.
-This is legacy evidence only. For a first detail probe, obtain one route ID in
-memory from the confirmed route-list response `{data: [...]}` and call only the
-current vehicle-scoped path. Route/vehicle IDs, GeoJSON coordinates, timing,
+This is legacy evidence only. Route/vehicle IDs, GeoJSON coordinates, timing,
 distance/speed values, stats, response body, and signed request material must
 be discarded before any persistence.
 

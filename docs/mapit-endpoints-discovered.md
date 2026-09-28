@@ -1,6 +1,6 @@
 # Mapit: endpoints descubiertos
 
-Estado de investigación: 2026-09-23. Los contratos se descubrieron en código
+Estado de investigación: 2026-09-28. Los contratos se descubrieron en código
 público; los probes autorizados de lectura conservaron solo schemas anónimos y
 no se invocó ninguna operación de escritura.
 
@@ -26,7 +26,7 @@ Los valores entre llaves son identificadores del usuario/tenant y se mantienen c
 | `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4; probe autorizado schema-only | **CONFIRMED_SCHEMA_ONLY**: lectura autorizada completada; no se retuvieron valores |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}` | bundle actual y clientes públicos; bounded probe autorizado | **CONFIRMED_SCHEMA_ONLY**: el host/path y la lectura con `vehicleId` más `limit=1` fueron aceptados; solo se retuvo el esquema de la respuesta |
 | `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual; `limit=1` también en el probe acotado | filtros opcionales observados; aceptación/semántica del resto pendiente |
-| `GET` | `https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true` | bundle actual vigente | **CONFIRMED_CONTRACT_ONLY**: detalle actual del frontend; una lectura Geo acotada sigue pendiente |
+| `GET` | `https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true` | bundle actual vigente; probe autorizado schema-only | **CONFIRMED_SCHEMA_ONLY**: lectura actual completada; `includeStats=true` aceptado y solo se retuvo la forma de la respuesta |
 | `GET` | `https://geo.prod.mapit.me/v1/routes/{routeId}` | d3vv3 y citylife4 | **LEGACY_PUBLIC_CONTRACT**: ruta de detalle histórica sin query; no asumir que sustituye a la actual |
 | `GET` | `https://geo.prod.mapit.me/v1/reverse-geocoding/{lat}/{lng}?lang={language}` | bundle actual | geocodificación inversa |
 
@@ -47,9 +47,15 @@ El detalle de ruta actual usa el host Geo, método `GET`, sin body y el único
 query parameter `includeStats=true`. El bundle valida un objeto raíz con `id`,
 `geoJSON` (FeatureCollection con features `Point`/`LineString`), distancia,
 marcas temporales y velocidades opcionales/nullables; no enumera campos de
-estadísticas separados. La ruta histórica `/v1/routes/{routeId}` aparece solo
-en los clientes Python públicos y sus consumidores esperan un objeto de ruta
-con `geoJSON`; se conserva como compatibilidad pendiente, no como primera
+estadísticas separados. El probe autorizado produjo
+`samples/anonymized/route-detail.schema.json`, con un objeto raíz no nulo,
+campos adicionales `complete`/`merged`, referencias `device`/`vehicle`,
+odómetros y `continues` nullables, y propiedades GeoJSON con `inferred`,
+`label`, `name`, `maxSpeed` y `avgSpeed`/`distance` observados como null.
+Esto confirma estructura y nullabilidad de una sola lectura, no semántica,
+unidades ni universalidad. La ruta histórica `/v1/routes/{routeId}` aparece
+solo en los clientes Python públicos y sus consumidores esperan un objeto de
+ruta con `geoJSON`; se conserva como compatibilidad pendiente, no como primera
 opción de probe.
 
 ## Detalle de vehículo: contrato público y primer probe

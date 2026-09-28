@@ -62,7 +62,13 @@ frontend validator expects a root object with `id`, FeatureCollection GeoJSON,
 distance/timing fields, and optional nullable speed fields; it does not
 enumerate separate statistics fields. The older `/v1/routes/{routeId}` path is
 legacy evidence from the public Python clients and is not the first probe
-target.
+target. The authorized detail probe then completed exactly one current detail
+read with `includeStats=true` and retained only
+`samples/anonymized/route-detail.schema.json`. Its root object contains the
+route-list fields plus non-null `merged`, while GeoJSON feature properties add
+`maxSpeed` and explicitly nullable `avgSpeed`/`distance`. The fixture confirms
+structure and sample nullability only; it does not establish units, statistics
+semantics, or cross-route stability.
 An authorized bounded read using the saved session (`session_valid=true`) and
 one in-memory vehicle completed with `GET /v1/routes?vehicleId=...&limit=1`.
 Only `samples/anonymized/routes-list.schema.json` was retained. It confirms a
@@ -83,8 +89,11 @@ an authorized manual probe.
 
 ## Statistics, Geofences, Alerts, Maintenance, and Appointments
 
-Not yet confirmed. No capability will be claimed until frontend or response
-evidence is recorded.
+Route-detail response structure was observed after requesting
+`includeStats=true`, but the frontend does not enumerate separate statistics
+fields and no metric semantics or computation behavior is confirmed. No
+statistics capability beyond that structural observation is claimed. Geofences,
+alerts, maintenance, and appointments remain unconfirmed.
 
 ## Other Discoveries
 
@@ -96,8 +105,8 @@ scope for Phase 0 execution.
 
 - Cognito challenges for the authorized account.
 - Live acceptance of the observed signing/header contract.
-- Full account, vehicle, route-detail, and realtime schemas; the account,
-  vehicle-detail, and bounded route-list probes establish only one-account
+- Full account, vehicle, and realtime schemas; the account, vehicle-detail,
+  bounded route-list, and one route-detail probes establish only one-account
   schema-only samples.
 - Whether all account-summary substructures and nullable fields are stable
   across accounts; the current account-summary evidence is schema-only for one

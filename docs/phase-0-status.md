@@ -91,8 +91,11 @@ and manual WebSocket investigation.
   `scripts/probe_route_detail.py`. It is bounded to account-summary, one
   routes-list request (`vehicleId` + `limit=1`), and one current detail GET
   (`includeStats=true`), with strict segment encoding and immediate
-  schema-only atomic persistence. It has not been executed against MAPIT and
-  no route-detail fixture is claimed.
+  schema-only atomic persistence. The authorized live run completed and
+  retained only `samples/anonymized/route-detail.schema.json`; no route values,
+  counts, IDs, coordinates, headers, tokens, or raw payload were retained.
+  The fixture confirms the root route-detail shape and sample nullability, but
+  not statistics semantics, units, or cross-account stability.
 
 ## Active Constraints
 
@@ -104,9 +107,8 @@ and manual WebSocket investigation.
 
 ## Next Steps
 
-1. Investigate and probe one route detail using the current frontend contract.
-2. Investigate route-list pagination and filters using evidence-led probes.
-3. Investigate the current account-level WebSocket.
+1. Investigate route-list pagination and filters using evidence-led probes.
+2. Investigate the current account-level WebSocket.
 
 ## Open Questions
 

@@ -6,8 +6,12 @@ authorized run on 2026-09-28 completed the Core `account-summary` read and the
 Geo routes request with `vehicleId` plus `limit=1`. It produced only the
 schema-only fixture `samples/anonymized/routes-list.schema.json`; no route
 values, counts, identifiers, coordinates, or raw payload were retained.
-An earlier attempt had only the generic `routes_list_request_failed` category;
-the latest run is the current evidence.
+The subsequent bounded route-detail read also completed with
+`includeStats=true` and produced only
+`samples/anonymized/route-detail.schema.json`; no route values, counts,
+identifiers, coordinates, or raw payload were retained. An earlier attempt had
+only the generic `routes_list_request_failed` category; these latest schema-only
+runs are the current evidence.
 
 ## Current Evidence
 
@@ -19,8 +23,10 @@ GET https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&mont
 GET https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true
 ```
 
-Older public clients use `GET /v1/routes/{routeId}` for detail. Treat it as a
-legacy candidate until an authorized read confirms it still works.
+The current vehicle-scoped detail path is now confirmed for this authorized
+account/route selection by a schema-only read. Older public clients use
+`GET /v1/routes/{routeId}` for detail; treat that path as a legacy candidate
+until a separate authorized read confirms it still works.
 
 The smallest semantic request has one required query parameter: `vehicleId`.
 The ID must be selected in memory from the already-authorized
@@ -108,7 +114,7 @@ item and is explicitly `null` in this schema sample; it is not treated as
 pagination metadata. Pagination behavior, ordering, units, date semantics and
 whether additional fields appear on another page remain open.
 
-## Route-detail contract and probe decision
+## Route-detail contract and latest schema-only result
 
 The current public frontend is the primary contract for route detail:
 
@@ -140,7 +146,42 @@ not enumerate any separate stats fields. Unknown response fields may be
 stripped by the frontend schema parser, so this is not evidence that the
 backend omits statistics or that `includeStats` has no effect. The expected
 detail shape is a root object, not a documented `{data: ...}` envelope, but a
-live response is still required to confirm the raw contract.
+live response is now available for one authorized route below.
+
+### Latest authorized route-detail schema
+
+The saved-session probe selected the first valid route ID from the in-memory
+`data` array returned by the confirmed bounded list read, then issued exactly
+one current vehicle-scoped detail GET with `includeStats=true`. The retained
+fixture is a non-null root object with these observed fields:
+
+| Field/group | Type/nullability in fixture |
+|---|---|
+| `avgSpeed`, `distance`, `maxSpeed` | non-null number |
+| `complete`, `merged`, `startsAtLastKnown` | non-null boolean |
+| `createdAt`, `endedAt`, `startTz`, `startedAt`, `updatedAt` | non-null string |
+| `id` | non-null string |
+| `continues`, `odometerStart`, `odometerEnd` | nullable `null` in this sample |
+| `device.id`, `vehicle.id` | non-null strings within non-null objects |
+| `geoJSON.type`, `geoJSON.features` | non-null string and non-null array |
+
+Each observed `geoJSON.features` item is a non-null object with non-null string
+`type`, non-null `geometry`, and non-null `properties`. The geometry contains a
+non-null string `type` and a non-null `coordinates` array whose item type is
+recorded as `mixed` (`array` or `number`). The properties contain non-null
+`inferred` (boolean), `label` (string), `name` (string), and `maxSpeed`
+(number), plus `avgSpeed` and `distance` explicitly null in this sample.
+These are field names/types only; they do not establish metric units, stats
+semantics, coordinate geometry meaning, or universal nullability.
+
+Compared with the bounded route-list fixture, the detail fixture adds the
+top-level `merged` field and the nested feature-property fields `avgSpeed`,
+`distance`, and `maxSpeed`; both fixtures otherwise show the same broad route,
+device/vehicle reference, timing, metric, nullable odometer/`continues`, and
+GeoJSON structure. This is a one-route comparison only, not a universal schema
+promise. The successful HTTP response confirms that `includeStats=true` was
+accepted for this run; it does not prove which fields are computed by that
+flag or that they are absent when it is omitted.
 
 The older d3vv3 and citylife4 clients use the legacy candidate
 `GET https://geo.prod.mapit.me/v1/routes/{routeId}` with no query parameters.
@@ -150,19 +191,19 @@ GPX export. That establishes a public historical path and consumer
 expectations only; it does not outweigh the current frontend path for a first
 probe. Do not call both paths in the same probe.
 
-### Minimal authorized detail probe
+### Minimal authorized detail probe (completed)
 
-Prioritize the current frontend path. Using the already-valid saved session,
-the probe should:
+The probe prioritized the current frontend path and used the already-valid
+saved session:
 
-1. read `account-summary` in memory and select the first usable vehicle ID as
+1. It read `account-summary` in memory and selected the first usable vehicle ID as
    already specified for the route-list probe (prefer a vehicle with non-null
    `device`, require a non-empty string `id`);
-2. issue one bounded route-list read with that vehicle and `limit=1`;
-3. inspect only the in-memory `data` array, select its first item whose `id` is
-   a non-empty string, and stop with a sanitized no-route result if none exists;
-4. issue exactly one current route-detail GET with the selected IDs and
-   `includeStats=true`, then immediately convert the response to field names,
+2. It issued one bounded route-list read with that vehicle and `limit=1`;
+3. It inspected only the in-memory `data` array and selected its first item whose `id` is
+   a non-empty string; it would stop with a sanitized no-route result if none existed;
+4. It issued exactly one current route-detail GET with the selected IDs and
+   `includeStats=true`, then immediately converted the response to field names,
    JSON types, nullability, and nesting.
 
 The vehicle ID and route ID must never be printed, logged, persisted, hashed,
@@ -272,8 +313,8 @@ only to study default page size; it must not retain counts or values.
 | Date boundary semantics | Controlled `from`/`to`, `month`, and `day` reads | PENDING |
 | Units for distance/speed/duration | Payload plus frontend formatting code | PENDING |
 | In-progress routes | `includeInProgress` comparison when safely observable | PENDING |
-| Detail GeoJSON shapes | Frontend parser plus one current detail response | `PARTIAL_CONTRACT_ONLY`: Point/LineString validation is known; raw detail values/types pending |
-| Statistics source | `includeStats=true` response versus derivable route values | PENDING |
+| Detail GeoJSON shapes | Frontend parser plus one current detail response | `CONFIRMED_SCHEMA_ONLY` for one route; cross-route geometry/nullability remains open |
+| Statistics source | `includeStats=true` response versus derivable route values | `PARTIAL_SCHEMA_ONLY`: fields observed; semantics and effect of flag remain open |
 
 ## Probe Discipline
 
@@ -307,7 +348,7 @@ prefix. Local-write and other unexpected failures retain the generic
 have their own `routes_list_schema_failed` and `routes_list_persist_failed`
 categories. No exception text, URL, body, headers, or vehicle ID is returned.
 
-## Local route-detail probe (implemented; not executed here)
+## Local route-detail probe (implemented; live schema-only result)
 
 `scripts/probe_route_detail.py` is the bounded non-interactive continuation of
 the routes-list probe. It first calls `SessionManager.login_saved()` using only
@@ -326,11 +367,12 @@ Both identifiers are encoded as single URL path segments. The probe does not
 follow cursors, call legacy detail paths, retry outside the client's existing
 recovery, or persist the intermediate responses. It immediately converts the
 detail response to `schema_only` and atomically writes only
-`samples/anonymized/route-detail.schema.json`. Output is limited to success,
-region, safe path, and schema top-level keys; failures use stage-specific
-allowlisted categories for session, account, list, missing data, detail,
-schema, or persistence. No live run or fixture is claimed by this
-implementation.
+`samples/anonymized/route-detail.schema.json`. The authorized live run
+completed successfully and this fixture is the only retained result. Output is
+limited to success, region, safe path, and schema top-level keys; failures use
+stage-specific allowlisted categories for session, account, list, missing data,
+detail, schema, or persistence. No route values, counts, identifiers,
+coordinates, headers, tokens, or raw payload were retained.
 
 ## Evidence references
 
