@@ -21,6 +21,20 @@ class MapitHTTPError(RuntimeError):
         self.url = url
 
 
+class MapitTransportError(RuntimeError):
+    """A MAPIT request failed before a response was available."""
+
+    def __init__(self, _detail: str | None = None) -> None:
+        super().__init__("MAPIT transport failed")
+
+
+class MapitResponseError(RuntimeError):
+    """A MAPIT response could not be decoded as the expected JSON."""
+
+    def __init__(self, _detail: str | None = None) -> None:
+        super().__init__("MAPIT response is invalid JSON")
+
+
 Transport = Callable[[str, str, Mapping[str, str]], Any]
 
 
@@ -82,6 +96,13 @@ class MapitClient:
                 return self.transport("GET", url, headers)
             except MapitHTTPError:
                 raise
+            except urllib.error.HTTPError as exc:
+                # HTTPError inherits URLError, so this must remain first.
+                raise MapitHTTPError(exc.code, url) from None
+            except (urllib.error.URLError, TimeoutError, OSError):
+                raise MapitTransportError("MAPIT transport failed") from None
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                raise MapitResponseError("MAPIT response is invalid JSON") from None
         request = urllib.request.Request(url, headers=dict(headers), method="GET")
         try:
             with urllib.request.urlopen(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - URL is allowlisted before this call.
@@ -90,4 +111,9 @@ class MapitClient:
                     return None
                 return json.loads(raw.decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise MapitHTTPError(exc.code, url) from exc
+            # HTTPError inherits URLError, so this must remain first.
+            raise MapitHTTPError(exc.code, url) from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise MapitTransportError("MAPIT transport failed") from None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise MapitResponseError("MAPIT response is invalid JSON") from None

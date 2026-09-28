@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta, timezone
+import json
+import urllib.error
 
 import pytest
 
 from mapit.auth import MapitSession, TemporaryCredentials
-from mapit.client import MapitClient, MapitHTTPError
+from mapit.client import MapitClient, MapitHTTPError, MapitResponseError, MapitTransportError
 from mapit.config import MapitConfig
 from mapit.signing import canonical_query, canonical_request, sign_get
 
@@ -82,3 +84,39 @@ def test_client_does_not_retry_after_second_auth_failure():
     assert exc_info.value.status == 403
     assert len(attempts) == 2
     assert refreshed == [True]
+
+
+@pytest.mark.parametrize("failure", [urllib.error.URLError("url-secret"), TimeoutError("body-secret"), OSError("body-secret")])
+def test_client_sanitizes_transport_failures(failure):
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, session(lambda current: None), transport=lambda method, url, headers: (_ for _ in ()).throw(failure))
+    with pytest.raises(MapitTransportError) as caught:
+        client.get_core("/v1/account-summary")
+    assert str(caught.value) == "MAPIT transport failed"
+    assert "secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        UnicodeDecodeError("utf-8", b"\\xff", 0, 1, "body-secret"),
+        json.JSONDecodeError("body-secret", "{", 0),
+    ],
+)
+def test_client_sanitizes_invalid_response_failures(failure):
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, session(), transport=lambda method, url, headers: (_ for _ in ()).throw(failure))
+    with pytest.raises(MapitResponseError) as caught:
+        client.get_core("/v1/account-summary")
+    assert str(caught.value) == "MAPIT response is invalid JSON"
+    assert "secret" not in str(caught.value)
+
+
+def test_client_keeps_http_status_separate_from_transport_and_hides_body():
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    failure = urllib.error.HTTPError("https://core.prod.mapit.me/v1/account-summary?secret=id", 403, "body-secret", {}, None)
+    client = MapitClient(config, session(lambda current: None), transport=lambda method, url, headers: (_ for _ in ()).throw(failure))
+    with pytest.raises(MapitHTTPError) as caught:
+        client.get_core("/v1/account-summary")
+    assert caught.value.status == 403
+    assert "body-secret" not in str(caught.value)

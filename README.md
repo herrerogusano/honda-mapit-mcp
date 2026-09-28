@@ -115,6 +115,8 @@ It selects a vehicle in memory, performs one Geo `GET /v1/routes` with only
 `vehicleId` and `limit=1`, and writes only
 `samples/anonymized/routes-list.schema.json`. It does not follow cursors,
 request route detail, persist IDs/counts/raw payloads, or print signed URLs.
+HTTP, transport, and invalid-response failures are reduced to safe allowlisted
+categories without URL, body, header, or ID details.
 On Windows, install the optional `.[windows-auth]` extra to enable the
 fail-closed native Credential Manager backend. The GUI first tries the saved
 refresh token and, if none is available, tells you to run

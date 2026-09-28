@@ -8,7 +8,7 @@ from .auth import (
     TemporaryCredentials,
     UnsupportedCognitoChallenge,
 )
-from .client import MapitClient, MapitHTTPError
+from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitTransportError
 from .config import MapitConfig, RuntimeConfig, discover_runtime_config
 from .session import ManagedSession, RefreshTokenStore, SessionManager, SessionManagerError, WindowsKeyringRefreshTokenStore
 
@@ -18,6 +18,8 @@ __all__ = [
     "MapitClient",
     "MapitConfig",
     "MapitHTTPError",
+    "MapitTransportError",
+    "MapitResponseError",
     "MapitSession",
     "SessionRefreshError",
     "RuntimeConfig",

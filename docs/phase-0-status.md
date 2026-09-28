@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`84 passed`). Session and routes GUI failures are
+  closed. Offline tests pass (`94 passed`). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -65,7 +65,10 @@ and manual WebSocket investigation.
   a value-free schema at `samples/anonymized/routes-list.schema.json`. Its
   final Geo HTTP status, when available, is reduced to an allowlisted category
   (`routes_list_http_400`, `_401`, `_403`, `_404`, `_429`, `_5xx`, or generic)
-  without exposing URL, body, headers, or IDs.
+  without exposing URL, body, headers, or IDs. Transport and invalid-response
+  failures are separately reduced to `routes_list_transport_failed` or
+  `routes_list_invalid_response` (with `account_summary_` equivalents before
+  vehicle selection).
 - Session enrollment is now separated into `scripts/session_setup_gui.py`;
   it performs only discovery plus `USER_PASSWORD_AUTH` and persists the refresh
   token. `scripts/check_saved_session.py` validates discovery plus the saved

@@ -1,8 +1,10 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from mapit.auth import MapitSession, TemporaryCredentials
-from mapit.client import MapitHTTPError
+from mapit.client import MapitHTTPError, MapitResponseError, MapitTransportError
 from mapit.config import MapitConfig, RuntimeConfig
 from mapit.session import SessionManagerError
 from scripts.routes_list_prompt_gui import (
@@ -256,7 +258,63 @@ def test_routes_core_http_error_is_not_misclassified_as_geo_status(tmp_path):
         client_factory=FailingClient,
         save_path=tmp_path / "routes.schema.json",
     )
-    assert result == {"success": False, "region": "eu-west-1", "error": "account_summary_request_failed"}
+    assert result == {"success": False, "region": "eu-west-1", "error": "account_summary_http_403"}
     assert calls == ["/v1/account-summary"]
     rendered = json.dumps(result)
     assert "vehicle-id" not in rendered and "body-secret" not in rendered
+
+
+@pytest.mark.parametrize(
+    "failure, expected",
+    [
+        (MapitTransportError("https://geo.prod.mapit.me/body-secret"), "routes_list_transport_failed"),
+        (MapitResponseError("body-secret"), "routes_list_invalid_response"),
+    ],
+)
+def test_routes_probe_sanitizes_transport_and_response_errors(tmp_path, failure, expected):
+    class FailingClient:
+        def __init__(self, config, session):
+            pass
+
+        def get_core(self, path):
+            return {"vehicles": [{"id": "vehicle-secret", "device": {}}]}
+
+        def get_geo(self, path, *, params):
+            raise failure
+
+    result = perform_routes_list_with_session(
+        MapitConfig(),
+        _session(),
+        client_factory=FailingClient,
+        save_path=tmp_path / "routes.schema.json",
+    )
+    assert result == {"success": False, "region": "eu-west-1", "error": expected}
+    assert "secret" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    "failure, expected",
+    [
+        (MapitTransportError("https://core.prod.mapit.me/body-secret"), "account_summary_transport_failed"),
+        (MapitResponseError("body-secret"), "account_summary_invalid_response"),
+    ],
+)
+def test_routes_probe_sanitizes_account_summary_errors(tmp_path, failure, expected):
+    class FailingClient:
+        def __init__(self, config, session):
+            pass
+
+        def get_core(self, path):
+            raise failure
+
+        def get_geo(self, path, *, params):
+            raise AssertionError("Geo must not be called")
+
+    result = perform_routes_list_with_session(
+        MapitConfig(),
+        _session(),
+        client_factory=FailingClient,
+        save_path=tmp_path / "routes.schema.json",
+    )
+    assert result == {"success": False, "region": "eu-west-1", "error": expected}
+    assert "secret" not in json.dumps(result)

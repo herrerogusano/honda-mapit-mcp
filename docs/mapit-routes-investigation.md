@@ -188,9 +188,12 @@ and value-free. The 2026-09-28 authorized run reached the Geo request but
 returned the sanitized category `routes_list_request_failed`; no schema fixture
 was produced. A `MapitHTTPError` from the Geo request now exposes only one of
 `routes_list_http_400`, `_401`, `_403`, `_404`, `_429`, `_5xx`, or the generic
-`routes_list_http_error`; transport, JSON, and local-write failures retain the
-generic `routes_list_request_failed` category. No exception text, URL, body,
-headers, or vehicle ID is returned.
+`routes_list_http_error`; transport and invalid-JSON failures are exposed as
+`routes_list_transport_failed` and `routes_list_invalid_response`. Before a
+vehicle is selected, the equivalent categories use the `account_summary_`
+prefix. Local-write and other unexpected failures retain the generic
+`routes_list_request_failed` category. No exception text, URL, body, headers,
+or vehicle ID is returned.
 
 ## Evidence references
 

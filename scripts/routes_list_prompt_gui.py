@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover - host dependent.
 
 from mapit.anonymizer import schema_only  # noqa: E402
 from mapit.auth import CognitoAuthenticator, MapitSession  # noqa: E402
-from mapit.client import MapitClient, MapitHTTPError  # noqa: E402
+from mapit.client import MapitClient, MapitHTTPError, MapitResponseError, MapitTransportError  # noqa: E402
 from mapit.config import MapitConfig, RuntimeConfig, fetch_public_runtime_config  # noqa: E402
 from mapit.session import ManagedSession, SessionManager, SessionManagerError, WindowsKeyringRefreshTokenStore  # noqa: E402
 
@@ -57,6 +57,15 @@ def _routes_http_category(status: Any) -> str:
     if 500 <= status <= 599:
         return "routes_list_http_5xx"
     return "routes_list_http_error"
+
+
+def _http_category(prefix: str, status: Any) -> str:
+    return f"{prefix}_http_{_routes_http_category(status).removeprefix('routes_list_http_')}"
+
+
+def _request_failure_category(*, vehicle_id: str | None, kind: str) -> str:
+    prefix = "routes_list" if vehicle_id is not None else "account_summary"
+    return f"{prefix}_{kind}"
 
 
 def _select_vehicle_id(summary: Any) -> str | None:
@@ -107,10 +116,15 @@ def perform_routes_list_with_session(
     except SessionManagerError as exc:
         return safe_error_summary(region=region, category=_safe_session_category(exc.category))
     except MapitHTTPError as exc:
-        if vehicle_id is None:
-            return safe_error_summary(region=region, category="account_summary_request_failed")
-        return safe_error_summary(region=region, category=_routes_http_category(exc.status))
-    except Exception as exc:
+        return safe_error_summary(
+            region=region,
+            category=_routes_http_category(exc.status) if vehicle_id is not None else _http_category("account_summary", exc.status),
+        )
+    except MapitTransportError:
+        return safe_error_summary(region=region, category=_request_failure_category(vehicle_id=vehicle_id, kind="transport_failed"))
+    except MapitResponseError:
+        return safe_error_summary(region=region, category=_request_failure_category(vehicle_id=vehicle_id, kind="invalid_response"))
+    except Exception:
         category = "routes_list_request_failed" if vehicle_id is not None else "account_summary_request_failed"
         return safe_error_summary(region=region, category=category)
     finally:
