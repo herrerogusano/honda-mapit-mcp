@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover - host dependent.
 
 from mapit.anonymizer import schema_only  # noqa: E402
 from mapit.auth import CognitoAuthenticator, MapitSession  # noqa: E402
-from mapit.client import MapitClient  # noqa: E402
+from mapit.client import MapitClient, MapitHTTPError  # noqa: E402
 from mapit.config import MapitConfig, RuntimeConfig, fetch_public_runtime_config  # noqa: E402
 from mapit.session import ManagedSession, SessionManager, SessionManagerError, WindowsKeyringRefreshTokenStore  # noqa: E402
 
@@ -46,6 +46,17 @@ SAFE_SESSION_CATEGORIES = frozenset(
 
 def _safe_session_category(value: Any) -> str:
     return value if isinstance(value, str) and value in SAFE_SESSION_CATEGORIES else "authentication_failed"
+
+
+def _routes_http_category(status: Any) -> str:
+    """Map only an HTTP status to a stable, value-free routes category."""
+    if not isinstance(status, int) or isinstance(status, bool):
+        return "routes_list_http_error"
+    if status in {400, 401, 403, 404, 429}:
+        return f"routes_list_http_{status}"
+    if 500 <= status <= 599:
+        return "routes_list_http_5xx"
+    return "routes_list_http_error"
 
 
 def _select_vehicle_id(summary: Any) -> str | None:
@@ -95,6 +106,10 @@ def perform_routes_list_with_session(
         return {"success": True, "region": region, "path": str(Path(save_path)), "top_level_keys": list(fields.keys())}
     except SessionManagerError as exc:
         return safe_error_summary(region=region, category=_safe_session_category(exc.category))
+    except MapitHTTPError as exc:
+        if vehicle_id is None:
+            return safe_error_summary(region=region, category="account_summary_request_failed")
+        return safe_error_summary(region=region, category=_routes_http_category(exc.status))
     except Exception as exc:
         category = "routes_list_request_failed" if vehicle_id is not None else "account_summary_request_failed"
         return safe_error_summary(region=region, category=category)

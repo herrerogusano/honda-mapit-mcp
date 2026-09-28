@@ -2,9 +2,15 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from mapit.auth import MapitSession, TemporaryCredentials
+from mapit.client import MapitHTTPError
 from mapit.config import MapitConfig, RuntimeConfig
 from mapit.session import SessionManagerError
-from scripts.routes_list_prompt_gui import _safe_session_category, perform_routes_list_probe, perform_routes_list_with_session
+from scripts.routes_list_prompt_gui import (
+    _routes_http_category,
+    _safe_session_category,
+    perform_routes_list_probe,
+    perform_routes_list_with_session,
+)
 
 
 def _session():
@@ -189,3 +195,68 @@ def test_routes_probe_surfaces_refresh_store_failure_before_data_call(tmp_path):
 def test_routes_saved_session_category_is_allowlisted():
     assert _safe_session_category("credential_store_failed") == "credential_store_failed"
     assert _safe_session_category({"secret": "refresh-token"}) == "authentication_failed"
+
+
+def test_routes_http_status_category_is_allowlisted_and_redacted(tmp_path):
+    for status, expected in (
+        (400, "routes_list_http_400"),
+        (401, "routes_list_http_401"),
+        (403, "routes_list_http_403"),
+        (404, "routes_list_http_404"),
+        (429, "routes_list_http_429"),
+        (500, "routes_list_http_5xx"),
+        (503, "routes_list_http_5xx"),
+        (418, "routes_list_http_error"),
+    ):
+        class FailingClient:
+            def __init__(self, config, session):
+                pass
+
+            def get_core(self, path):
+                return {"vehicles": [{"id": "vehicle-secret", "device": {}}]}
+
+            def get_geo(self, path, *, params):
+                raise MapitHTTPError(status, "https://geo.prod.mapit.me/v1/routes?vehicleId=vehicle-secret", "body-secret")
+
+        result = perform_routes_list_with_session(
+            MapitConfig(),
+            _session(),
+            client_factory=FailingClient,
+            save_path=tmp_path / f"routes-{status}.schema.json",
+        )
+        assert result == {"success": False, "region": "eu-west-1", "error": expected}
+        rendered = json.dumps(result)
+        assert "vehicle-secret" not in rendered
+        assert "body-secret" not in rendered
+        assert "geo.prod" not in rendered
+
+
+def test_routes_http_category_rejects_non_integer_status():
+    assert _routes_http_category("403") == "routes_list_http_error"
+    assert _routes_http_category(True) == "routes_list_http_error"
+
+
+def test_routes_core_http_error_is_not_misclassified_as_geo_status(tmp_path):
+    calls = []
+
+    class FailingClient:
+        def __init__(self, config, session):
+            pass
+
+        def get_core(self, path):
+            calls.append(path)
+            raise MapitHTTPError(403, "https://core.prod.mapit.me/v1/account-summary?secret=vehicle-id", "body-secret")
+
+        def get_geo(self, path, *, params):
+            raise AssertionError("Geo must not be called after account-summary failure")
+
+    result = perform_routes_list_with_session(
+        MapitConfig(),
+        _session(),
+        client_factory=FailingClient,
+        save_path=tmp_path / "routes.schema.json",
+    )
+    assert result == {"success": False, "region": "eu-west-1", "error": "account_summary_request_failed"}
+    assert calls == ["/v1/account-summary"]
+    rendered = json.dumps(result)
+    assert "vehicle-id" not in rendered and "body-secret" not in rendered
