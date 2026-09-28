@@ -197,13 +197,14 @@ route values, coordinates, or raw responses. This confirms acceptance of the
 two bounded `from`/`to` requests for that run only; it does not establish
 absence of pagination outside those responses or complete historical coverage.
 
-## Diseño de gate de cobertura histórica (no ejecutado)
+## Diseño e implementación del gate de cobertura histórica (implementado; no live)
 
 Objetivo del gate: obtener, para un único vehículo autorizado, una indicación
 efímera del número de rutas y de los extremos temporalmente más reciente y más
 antiguo, y comprobar si la lectura sin filtros parece contener las ventanas de
-control. Este diseño no afirma que se haya ejecutado ni que pueda demostrar la
-completitud del backend sin un contrato de total/paginación.
+control. `scripts/probe_route_history_coverage.py` implementa este diseño, pero
+no se ha ejecutado contra MAPIT y no puede demostrar la completitud del backend
+sin un contrato de total/paginación.
 
 ### Secuencia mínima y límites
 
@@ -262,8 +263,9 @@ defecto debe poder reducirlo aún más a `route_count_observed`,
 
 - `COMPLETE_FOR_RETURNED_RESPONSE` (no completitud universal): respuesta sin
   filtros válida y bajo el límite; sin metadata de paginación; ambas ventanas
-  de control válidas; todos sus IDs/timestamps están contenidos en la respuesta
-  sin filtros y sus meses coinciden con los extremos observados.
+  de control válidas; cada control devuelve exactamente el conjunto de IDs del
+  resultado sin filtros para su mes (sin duplicados ni faltantes) y sus meses
+  coinciden con los extremos observados.
 - `PARTIAL`: aparece metadata de paginación, se supera el límite, una ventana
   contiene una ruta ausente del resultado sin filtros, una respuesta falla o no
   permite comparar timestamps/IDs. También es `PARTIAL` si el servidor no
@@ -286,6 +288,14 @@ no reintenta tras 429 y reporta solo `rate_limited`. Las ventanas mensuales
 pueden tener límites inclusivos, timezone o orden desconocidos, por lo que una
 comparación positiva no prueba semántica de fechas. Un backend que oculte
 paginación o cambie el envelope mantiene el resultado en `PARTIAL`/`UNKNOWN`.
+
+La implementación aplica el límite de 2 MiB en `MapitClient` mientras lee el
+stream HTTP, antes de llamar a `json.loads`; el error es `response_too_large` y
+no se intenta una ventana de control. El resultado exitoso solo contiene los
+campos autorizados `route_count_observed`, `oldest_month_observed`,
+`newest_month_observed`, `pagination_metadata_observed` y `coverage_class`,
+además de `success` y `region`. El probe está cubierto offline y marcado como
+implemented-not-live.
 
 ## Route-detail contract and latest schema-only result
 

@@ -5,7 +5,7 @@ import urllib.error
 import pytest
 
 from mapit.auth import MapitSession, TemporaryCredentials
-from mapit.client import MapitClient, MapitHTTPError, MapitResponseError, MapitTransportError
+from mapit.client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
 from mapit.config import MapitConfig
 from mapit.signing import canonical_query, canonical_request, sign_get
 
@@ -120,3 +120,97 @@ def test_client_keeps_http_status_separate_from_transport_and_hides_body():
         client.get_core("/v1/account-summary")
     assert caught.value.status == 403
     assert "body-secret" not in str(caught.value)
+
+
+def test_client_response_byte_limit_applies_before_json_materialization():
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, session(), transport=lambda method, url, headers: b'{"secret":"payload"}')
+    with pytest.raises(MapitResponseTooLarge):
+        client.get_geo("/v1/routes", max_response_bytes=4)
+
+    client.transport = lambda method, url, headers: b'{"ok":true}'
+    assert client.get_geo("/v1/routes", max_response_bytes=64) == {"ok": True}
+
+
+def test_client_response_limit_keeps_single_auth_recovery():
+    attempts = []
+    refreshed = []
+    current = session(lambda current: refreshed.append(True))
+
+    def transport(method, url, headers):
+        attempts.append(url)
+        if len(attempts) == 1:
+            raise MapitHTTPError(401, url)
+        return b'{"ok":true}'
+
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, current, transport=transport)
+    assert client.get_geo("/v1/routes", max_response_bytes=64) == {"ok": True}
+    assert len(attempts) == 2
+    assert refreshed == [True]
+
+
+def test_urlopen_response_limit_reads_before_json_parse(monkeypatch):
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, session())
+    reads = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, size=-1):
+            reads.append(size)
+            return b"x" * 8
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: Response())
+    with pytest.raises(MapitResponseTooLarge):
+        client.get_geo("/v1/routes", max_response_bytes=4)
+    assert reads == [5]
+
+
+def test_urlopen_response_limit_accepts_exact_boundary_and_fragmented_body(monkeypatch):
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, session())
+    body = b'{"ok":true}'
+
+    class Response:
+        def __init__(self):
+            self.parts = [body[:3], body[3:]]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, size=-1):
+            return self.parts.pop(0) if self.parts else b""
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: Response())
+    assert client.get_geo("/v1/routes", max_response_bytes=len(body)) == {"ok": True}
+
+
+def test_urlopen_response_limit_allows_empty_at_zero_and_rejects_invalid_limits(monkeypatch):
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, session())
+
+    class EmptyResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, size=-1):
+            return b""
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: EmptyResponse())
+    assert client.get_geo("/v1/routes", max_response_bytes=0) is None
+    with pytest.raises(ValueError):
+        client.get_geo("/v1/routes", max_response_bytes=-1)
+    with pytest.raises(ValueError):
+        client.get_geo("/v1/routes", max_response_bytes=True)

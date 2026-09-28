@@ -443,6 +443,9 @@ sesión guardada y obtiene el `account.id` únicamente desde un
 `account-summary` en memoria. No abre el socket si la sesión no es válida; el
 `IdToken` se pasa solo como subprotocolo y nunca se imprime ni persiste.
 
+El gate histórico `scripts/probe_route_history_coverage.py` también exige una
+sesión guardada; si no existe o falla, termina antes de cualquier lectura Geo.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.

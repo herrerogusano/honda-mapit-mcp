@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`146 passed` on the 2026-09-28 audit). Session and routes GUI failures are
+  closed. Offline tests pass (`160 passed` on the 2026-09-28 audit). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -118,6 +118,11 @@ and manual WebSocket investigation.
   fusionado. El fixture schema-only fue creado por la ejecución live
   autorizada; handshake, close, timeout y demás diagnósticos siguen reducidos
   a categorías seguras.
+- El gate histórico `scripts/probe_route_history_coverage.py` está implementado
+  pero no live-ejecutado. Usa una lectura sin filtros limitada a 2 MiB y hasta
+  dos controles mensuales, sin persistir respuestas ni seguir cursores/detail;
+  la salida queda restringida a conteo observado, meses extremos, metadata de
+  paginación y clase `COMPLETE_FOR_RETURNED_RESPONSE`/`PARTIAL`/`UNKNOWN`.
 - La investigación pública de zonas/geofences y alertas/eventos no encontró
   rutas GET dedicadas en los bundles vigentes ni en d3vv3/citylife4. El schema
   de `account-summary` sí contiene `geofenceAlertCritical` y flags de acceso,
@@ -137,12 +142,12 @@ and manual WebSocket investigation.
   en el detalle de ruta, sin envelope de estadísticas separado. Hard braking,
   acceleration, overspeed events, elevation, tire/oil y firmware telemetry no
   tienen evidencia primaria y no requieren probe adicional ahora.
-- Quedó diseñado, pero no ejecutado, un gate de cobertura histórica en
-  `docs/mapit-routes-investigation.md`: un GET sin filtros y hasta dos ventanas
-  mensuales de control, límite duro de respuesta, máximo tres GET Geo, sin
-  persistir conteos/fechas/IDs. Solo puede producir
-  `COMPLETE_FOR_RETURNED_RESPONSE`; la completitud universal sigue siendo
-  imposible sin contrato de total/paginación explícito.
+- Quedó implementado, pero no live-ejecutado, el gate de cobertura histórica
+  `scripts/probe_route_history_coverage.py`: un GET sin filtros y hasta dos
+  ventanas mensuales de control, límite duro de respuesta, máximo tres GET
+  Geo, sin persistir conteos/fechas/IDs. Solo puede producir
+  `COMPLETE_FOR_RETURNED_RESPONSE`, `PARTIAL` o `UNKNOWN`; la completitud
+  universal sigue siendo imposible sin contrato de total/paginación explícito.
 
 ## Active Constraints
 
@@ -158,7 +163,7 @@ and manual WebSocket investigation.
 |---|---|---|
 | Autenticación Cognito + Identity Pool + SigV4 | COMPLETO para baseline; lifecycle PARCIAL | Flujo inicial y sesión guardada confirmados, con tests offline y almacenamiento fail-closed. Expiración/revocación natural y challenges de otras cuentas siguen abiertos. |
 | Vehículos | COMPLETO como descubrimiento schema-only | `account-summary` y un detalle de vehículo confirmados; solo una cuenta/probe, sin afirmar estabilidad cross-account ni capacidades de pago/alertas. |
-| Rutas e histórico | PARCIAL | Listado, dos ventanas mensuales y ausencia de cursor en esas respuestas confirmados; el gate sin filtros + hasta dos controles está diseñado pero no ejecutado. Paginación universal, filtros completos, orden, unidades y profundidad histórica siguen abiertos. |
+| Rutas e histórico | PARCIAL | Listado, dos ventanas mensuales y ausencia de cursor en esas respuestas confirmados; el gate sin filtros + hasta dos controles está implementado y probado offline, pero no live-ejecutado. Paginación universal, filtros completos, orden, unidades y profundidad histórica siguen abiertos. |
 | Detalle de ruta | COMPLETO como contrato estructural | Ruta actual con `includeStats=true` y GeoJSON confirmada; semántica/unidades de métricas no confirmadas. |
 | Frontend/runtime/endpoints | COMPLETO para los endpoints públicos observados | Discovery modulepreload/preload/import inline corregido y verificado; capacidades secundarias sin path primario permanecen fuera de contrato. |
 | Realtime | PARCIAL pero transporte confirmado | WebSocket account-level aceptado para una cuenta y schema-only fixture retenido; cobertura de eventos, ping/pong, cross-account y fallback legacy siguen abiertos. |

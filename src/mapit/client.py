@@ -35,6 +35,13 @@ class MapitResponseError(RuntimeError):
         super().__init__("MAPIT response is invalid JSON")
 
 
+class MapitResponseTooLarge(RuntimeError):
+    """A response exceeded the caller's hard byte limit before JSON parsing."""
+
+    def __init__(self) -> None:
+        super().__init__("MAPIT response exceeds the configured byte limit")
+
+
 Transport = Callable[[str, str, Mapping[str, str]], Any]
 
 
@@ -54,25 +61,57 @@ class MapitClient:
             "geo": self.config.geo_api_url.rstrip("/"),
         }
 
-    def get(self, url_or_path: str, *, params: Mapping[str, Any] | None = None) -> Any:
+    def get(
+        self,
+        url_or_path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        max_response_bytes: int | None = None,
+    ) -> Any:
+        if max_response_bytes is not None and (
+            not isinstance(max_response_bytes, int)
+            or isinstance(max_response_bytes, bool)
+            or max_response_bytes < 0
+        ):
+            raise ValueError("max_response_bytes must be a non-negative integer")
         url = self._resolve_url(url_or_path, params=params)
         recovered = False
         while True:
             self.session.refresh_if_needed()
             headers = self.signer.sign_get(url, self.session.credentials, self.session.id_token)
             try:
-                return self._send_get(url, headers)
+                return self._send_get(url, headers, max_response_bytes=max_response_bytes)
             except MapitHTTPError as exc:
                 if exc.status not in (401, 403) or recovered:
                     raise
                 recovered = True
                 self.session.refresh_if_needed(force=True)
 
-    def get_core(self, path: str, *, params: Mapping[str, Any] | None = None) -> Any:
-        return self.get(self._base_urls["core"] + "/" + path.lstrip("/"), params=params)
+    def get_core(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        max_response_bytes: int | None = None,
+    ) -> Any:
+        return self.get(
+            self._base_urls["core"] + "/" + path.lstrip("/"),
+            params=params,
+            max_response_bytes=max_response_bytes,
+        )
 
-    def get_geo(self, path: str, *, params: Mapping[str, Any] | None = None) -> Any:
-        return self.get(self._base_urls["geo"] + "/" + path.lstrip("/"), params=params)
+    def get_geo(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        max_response_bytes: int | None = None,
+    ) -> Any:
+        return self.get(
+            self._base_urls["geo"] + "/" + path.lstrip("/"),
+            params=params,
+            max_response_bytes=max_response_bytes,
+        )
 
     def _resolve_url(self, value: str, *, params: Mapping[str, Any] | None) -> str:
         parsed = urlparse(value)
@@ -90,10 +129,27 @@ class MapitClient:
             value += ("&" if parsed.query else "?") + query
         return value
 
-    def _send_get(self, url: str, headers: Mapping[str, str]) -> Any:
+    def _send_get(
+        self,
+        url: str,
+        headers: Mapping[str, str],
+        *,
+        max_response_bytes: int | None = None,
+    ) -> Any:
         if self.transport:
             try:
-                return self.transport("GET", url, headers)
+                result = self.transport("GET", url, headers)
+                if max_response_bytes is not None:
+                    if isinstance(result, bytes):
+                        if len(result) > max_response_bytes:
+                            raise MapitResponseTooLarge()
+                        return json.loads(result.decode("utf-8")) if result else None
+                    if isinstance(result, str):
+                        raw = result.encode("utf-8")
+                        if len(raw) > max_response_bytes:
+                            raise MapitResponseTooLarge()
+                        return json.loads(result) if result else None
+                return result
             except MapitHTTPError:
                 raise
             except urllib.error.HTTPError as exc:
@@ -106,7 +162,20 @@ class MapitClient:
         request = urllib.request.Request(url, headers=dict(headers), method="GET")
         try:
             with urllib.request.urlopen(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - URL is allowlisted before this call.
-                raw = response.read()
+                if max_response_bytes is None:
+                    raw = response.read()
+                else:
+                    chunks: list[bytes] = []
+                    total = 0
+                    while True:
+                        chunk = response.read(min(64 * 1024, max_response_bytes + 1 - total))
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_response_bytes:
+                            raise MapitResponseTooLarge()
+                        chunks.append(chunk)
+                    raw = b"".join(chunks)
                 if not raw:
                     return None
                 return json.loads(raw.decode("utf-8"))
