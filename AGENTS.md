@@ -2,16 +2,19 @@
 
 ## Scope
 
-This repository is in Phase 0: MAPIT research, API discovery, and a reusable
-standalone Python client. Do not implement an MCP server, MCP tools, Telegram,
-an agent UI, a frontend, a project database, project-owned AWS infrastructure,
-or Home Assistant integration during this phase.
+Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
+client) is complete. Phase 1 is limited to the local, read-only MCP core
+defined by `docs/phase-1-mcp-contracts.md` (the approved Phase 1 MCP core).
+Do not expand beyond that contract or implement Telegram, an agent UI, a
+frontend, a project database, project-owned AWS infrastructure, Home Assistant,
+or a persistent realtime service.
 
 Phase 0 is read-only against MAPIT. Do not send `POST`, `PUT`, `PATCH`, or
 `DELETE` requests except the Cognito calls strictly required for authentication.
 Never commit credentials, tokens, AWS keys, or real personal/device/location IDs.
 
-Before implementing MCP, agents, tools, evaluations, or AWS integration, read:
+Before expanding the MCP core, agents, tools, evaluations, or AWS integration,
+read:
 
 - `C:\Users\herre\OneDrive\Desktop\herrerogusano's vault\04 Knowledge\AI Engineering\AI Engineering.md`
 - the task-relevant guides linked from that index

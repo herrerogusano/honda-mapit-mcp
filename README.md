@@ -1,14 +1,15 @@
-# MAPIT read-only client (Phase 0)
+# Honda MAPIT read-only MCP
 
-This repository contains the bounded Phase 0 foundation for a standalone,
-synchronous Python client. It discovers public runtime configuration, performs
+Phase 0 produced the standalone synchronous client. Phase 1 now adds a local
+stdio MCP server with six read-only tools over a separate application-service
+layer. The project discovers public runtime configuration, performs
 the Cognito authentication flow when explicitly requested, obtains temporary
 Identity Pool credentials, signs Core/Geo `GET` requests with AWS SigV4, and
 recovers one time from an expired/invalid session.
 
-The reusable client does not implement an MCP server or account/routing writes;
-realtime support is limited to the optional bounded WebSocket probe and is not a
-general subscription service. The test suite makes no real requests. The explicit
+The reusable client and MCP server do not implement account/routing writes.
+Realtime support is limited to the optional bounded WebSocket probe and is not a
+general subscription service. The test suite makes no real MAPIT requests. The explicit
 local read-only probe scripts are separate from the normal client workflow. The reusable library
 reads environment credentials only when explicitly requested, while the local
 session setup GUI keeps them in memory and persists only a refresh token in the
@@ -27,6 +28,44 @@ py -m venv .venv
 pip install -e ".[test]"
 pytest
 ```
+
+## MCP server (Phase 1)
+
+The server uses the refresh token already held in Windows Credential Manager;
+it never asks an MCP client or model for an email, password, token, or AWS key.
+Install the Windows credential-store extra and start the stdio server with:
+
+```powershell
+pip install -e ".[windows-auth]"
+mapit-mcp
+```
+
+Exposed tools:
+
+- `get_vehicle_status`
+- `get_vehicle_details`
+- `list_routes`
+- `get_route_detail`
+- `get_distance`
+- `compare_distance_periods`
+
+All six tools carry MCP `readOnlyHint` and `idempotentHint` annotations. Date
+ranges accept ISO 8601 dates or timezone-aware datetimes, use an inclusive
+`from_time` and exclusive `to_time`, and are limited to 366 days. Route reads
+are split into at most 13 monthly UTC windows; a two-period comparison can make
+at most 26 Geo reads. Route lists return at most 500 normalized routes.
+
+This phase intentionally reports route metric units as
+`mapit_native_unconfirmed` and history completeness as `unverified`. It fails
+closed on an upstream cursor, an oversized response, or a route whose distance
+is missing when calculating totals. The server currently selects the first
+eligible vehicle in the account. MCP outputs can contain private vehicle data
+(including position, VIN, registration, route geometry, and dealer contact
+details), so the supported deployment in this phase is local stdio only; the
+server does not log or persist tool results.
+
+See [the Phase 1 contracts](docs/phase-1-mcp-contracts.md) and
+[implementation status](docs/phase-1-status.md).
 
 Public runtime discovery does not use credentials:
 

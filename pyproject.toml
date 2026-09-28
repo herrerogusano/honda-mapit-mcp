@@ -4,11 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mapit-client"
-version = "0.1.0"
-description = "Small read-only Python client for the MAPIT service"
+version = "0.2.0"
+description = "Read-only MAPIT client and MCP server"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "mcp>=2.2,<2.3",
+    "pydantic>=2.11,<3",
+]
+
+[project.scripts]
+mapit-mcp = "mapit.mcp_server:main"
 
 [project.optional-dependencies]
 test = ["pytest>=8,<9"]

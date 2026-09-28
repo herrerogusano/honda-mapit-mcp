@@ -2,7 +2,7 @@
 
 ## Current status
 - Phase 0 — MAPIT Discovery & Client Foundation: COMPLETED
-- Phase 1 — MCP Core & Read-Only Tools: PLANNED
+- Phase 1 — MCP Core & Read-Only Tools: COMPLETED
 - Phase 2 — Route Analytics & Aggregations: PLANNED
 - Phase 3 — Realtime State & Event Layer: PLANNED
 - Phase 4 — Conversational Agent Integration: PLANNED

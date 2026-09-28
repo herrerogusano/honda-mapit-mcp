@@ -154,7 +154,9 @@ and manual WebSocket investigation.
 
 ## Active Constraints
 
-- No MCP server or MCP tool design yet.
+- Historical Phase 0 constraint (now closed): MCP server and tool design was
+  deferred during research. Phase 1 is separately limited to the local,
+  read-only MCP core defined in `docs/phase-1-mcp-contracts.md`.
 - No write operations against MAPIT except required Cognito authentication calls.
 - No secrets or real identifiers in source, logs, docs, tests, fixtures, or commits.
 - Evidence and documentation precede implementation.
