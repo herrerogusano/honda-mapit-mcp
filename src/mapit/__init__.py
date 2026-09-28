@@ -8,6 +8,7 @@ from .auth import (
     TemporaryCredentials,
     UnsupportedCognitoChallenge,
 )
+from .agent import AgentAdapterError, AgentAnswer, AgentRunOutcome, run_agent_once
 from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
 from .config import MapitConfig, RuntimeConfig, discover_runtime_config
 from .realtime import (
@@ -26,6 +27,9 @@ from .session import ManagedSession, RefreshTokenStore, SessionManager, SessionM
 
 __all__ = [
     "CognitoAuthenticator",
+    "AgentAdapterError",
+    "AgentAnswer",
+    "AgentRunOutcome",
     "CognitoHTTPError",
     "MapitClient",
     "MapitConfig",
@@ -44,6 +48,7 @@ __all__ = [
     "SessionManagerError",
     "WindowsKeyringRefreshTokenStore",
     "discover_runtime_config",
+    "run_agent_once",
     "RealtimeClient",
     "RealtimeError",
     "RealtimeFactoryError",

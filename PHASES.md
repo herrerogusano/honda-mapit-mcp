@@ -5,7 +5,7 @@
 - Phase 1 — MCP Core & Read-Only Tools: COMPLETED
 - Phase 2 — Route Analytics & Aggregations: COMPLETED
 - Phase 3 — Realtime State & Event Layer: COMPLETED
-- Phase 4 — Conversational Agent Integration: PLANNED
+- Phase 4 — Conversational Agent Integration: IN PROGRESS
 - Phase 5 — Telegram Interface: PLANNED
 - Phase 6 — Persistence & Historical Intelligence: PLANNED
 - Phase 7 — Hardening, Observability & Release: PLANNED

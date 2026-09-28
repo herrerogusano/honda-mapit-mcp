@@ -3,9 +3,10 @@
 ## Scope
 
 Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
-client), Phase 1 (local read-only MCP core), and Phase 2 (route analytics) are
-complete. Phase 3 is limited to the reusable read-only realtime component in
-`docs/phase-3-realtime-contracts.md`. Do not expand beyond that contract or
+client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), and
+Phase 3 (the reusable read-only realtime component) are complete. Phase 4 is
+limited to the local conversational-agent adapter and deterministic evaluation
+contract in `docs/phase-4-agent-contracts.md`. Do not expand beyond that contract or
 implement Telegram, an agent UI, a frontend, a project database, project-owned
 AWS infrastructure, Home Assistant, or persistence for realtime state.
 
@@ -21,7 +22,7 @@ read:
 
 ## Persistent Roles
 
-Reuse these three roles across Phase 0. Do not create fresh agents for routine
+Reuse these three roles across project phases. Do not create fresh agents for routine
 work.
 
 - `researcher`: investigate MAPIT, public implementations, frontend bundles,
@@ -57,6 +58,8 @@ incrementally, especially:
 - `docs/mapit-routes-investigation.md`
 - `docs/phase-0-findings.md`
 - `docs/phase-0-status.md`
+- `docs/phase-3-status.md`
+- `docs/phase-4-agent-contracts.md`
 
 Distinguish confirmed facts, evidence found in frontend/code, hypotheses, and
 open questions. Do not invent capabilities or brute-force endpoints.

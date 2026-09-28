@@ -19,7 +19,8 @@ mapit-mcp = "mapit.mcp_server:main"
 [project.optional-dependencies]
 test = ["pytest>=8,<9"]
 windows-auth = ["keyring>=25.6,<26; sys_platform == 'win32'"]
-realtime = ["websockets>=17.1,<18"]
+realtime = ["websockets>=15,<17"]
+agent = ["openai-agents==0.22.3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

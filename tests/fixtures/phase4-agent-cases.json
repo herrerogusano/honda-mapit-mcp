@@ -1,0 +1,230 @@
+[
+  {
+    "case_id": "direct-status-01",
+    "class_name": "direct_single_tool",
+    "question": "What is the current vehicle status?",
+    "allowed_tools": ["get_vehicle_status"],
+    "required_tools": ["get_vehicle_status"],
+    "forbidden_tools": [],
+    "required_caveats": ["read-only"],
+    "forbidden_claims": ["real-time"],
+    "needs_clarification": false,
+    "max_tool_calls": 1,
+    "argument_constraints": [],
+    "synthetic_run": {
+      "answer": {"answer": "Core returned the requested vehicle status.", "caveats": ["This is a read-only result."], "needs_clarification": false},
+      "used_tool_names": ["get_vehicle_status"],
+      "tool_calls": [{"name": "get_vehicle_status", "args": {}}],
+      "tool_results": [{"name": "get_vehicle_status", "status": "ok"}]
+    }
+  },
+  {
+    "case_id": "direct-details-01",
+    "class_name": "direct_single_tool",
+    "question": "Which vehicle details are available?",
+    "allowed_tools": ["get_vehicle_details"],
+    "required_tools": ["get_vehicle_details"],
+    "forbidden_tools": [],
+    "required_caveats": ["read-only"],
+    "forbidden_claims": ["km/h"],
+    "needs_clarification": false,
+    "max_tool_calls": 1,
+    "argument_constraints": [],
+    "synthetic_run": {
+      "answer": {"answer": "The available vehicle details are shown by MAPIT.", "caveats": ["This is a read-only result."], "needs_clarification": false},
+      "used_tool_names": ["get_vehicle_details"],
+      "tool_calls": [{"name": "get_vehicle_details", "args": {}}],
+      "tool_results": [{"name": "get_vehicle_details", "status": "ok"}]
+    }
+  },
+  {
+    "case_id": "multi-status-details-01",
+    "class_name": "multi_tool",
+    "question": "Give me current status and stable vehicle details.",
+    "allowed_tools": ["get_vehicle_status", "get_vehicle_details"],
+    "required_tools": ["get_vehicle_status", "get_vehicle_details"],
+    "forbidden_tools": [],
+    "required_caveats": ["read-only"],
+    "forbidden_claims": ["complete history"],
+    "needs_clarification": false,
+    "max_tool_calls": 2,
+    "argument_constraints": [],
+    "synthetic_run": {
+      "answer": {"answer": "The two requested read-only views were retrieved.", "caveats": ["read-only"], "needs_clarification": false},
+      "used_tool_names": ["get_vehicle_status", "get_vehicle_details"],
+      "tool_calls": [{"name": "get_vehicle_status", "args": {}}, {"name": "get_vehicle_details", "args": {}}],
+      "tool_results": [{"name": "get_vehicle_status", "status": "ok"}, {"name": "get_vehicle_details", "status": "ok"}]
+    }
+  },
+  {
+    "case_id": "multi-breakdown-extremes-01",
+    "class_name": "multi_tool",
+    "question": "Summarize a bounded period and identify route extremes.",
+    "allowed_tools": ["get_distance_breakdown", "get_route_extremes"],
+    "required_tools": ["get_distance_breakdown", "get_route_extremes"],
+    "forbidden_tools": [],
+    "required_caveats": ["mapit_native_unconfirmed"],
+    "forbidden_claims": ["kilometers"],
+    "needs_clarification": false,
+    "max_tool_calls": 2,
+    "argument_constraints": [{"tool": "get_distance_breakdown", "args": {"group_by": "month", "from_time": "2026-01-01T00:00:00Z", "to_time": "2026-02-01T00:00:00Z"}}],
+    "synthetic_run": {
+      "answer": {"answer": "The bounded summaries preserve the MAPIT native metric metadata.", "caveats": ["mapit_native_unconfirmed"], "needs_clarification": false},
+      "used_tool_names": ["get_distance_breakdown", "get_route_extremes"],
+      "tool_calls": [{"name": "get_distance_breakdown", "args": {"group_by": "month", "from_time": "2026-01-01T00:00:00+00:00", "to_time": "2026-02-01T00:00:00+00:00"}}, {"name": "get_route_extremes", "args": {"from_time": "2026-01-01", "to_time": "2026-02-01"}}],
+      "tool_results": [{"name": "get_distance_breakdown", "status": "ok"}, {"name": "get_route_extremes", "status": "ok"}]
+    }
+  },
+  {
+    "case_id": "period-comparison-01",
+    "class_name": "period_comparison",
+    "question": "Compare these two exact periods.",
+    "allowed_tools": ["compare_route_periods"],
+    "required_tools": ["compare_route_periods"],
+    "forbidden_tools": [],
+    "required_caveats": ["completeness=unverified"],
+    "forbidden_claims": ["km/h"],
+    "needs_clarification": false,
+    "max_tool_calls": 1,
+    "argument_constraints": [{"tool": "compare_route_periods", "args": {"period_a": {"from_time": "2026-01-01T00:00:00Z", "to_time": "2026-01-02T00:00:00Z"}, "period_b": {"from_time": "2026-01-02T00:00:00Z", "to_time": "2026-01-03T00:00:00Z"}}}],
+    "synthetic_run": {
+      "answer": {"answer": "The two requested periods can be compared without extending the data claim.", "caveats": ["completeness=unverified"], "needs_clarification": false},
+      "used_tool_names": ["compare_route_periods"],
+      "tool_calls": [{"name": "compare_route_periods", "args": {"period_a": {"from_time": "2026-01-01", "to_time": "2026-01-02"}, "period_b": {"from_time": "2026-01-02", "to_time": "2026-01-03"}}}],
+      "tool_results": [{"name": "compare_route_periods", "status": "ok"}]
+    }
+  },
+  {
+    "case_id": "period-comparison-02",
+    "class_name": "period_comparison",
+    "question": "Compare two supplied date ranges using route analytics.",
+    "allowed_tools": ["compare_distance_periods"],
+    "required_tools": ["compare_distance_periods"],
+    "forbidden_tools": [],
+    "required_caveats": ["unverified"],
+    "forbidden_claims": ["complete history"],
+    "needs_clarification": false,
+    "max_tool_calls": 1,
+    "argument_constraints": [{"tool": "compare_distance_periods", "args": {"period_a": {"from_time": "2026-02-01T00:00:00Z", "to_time": "2026-02-02T00:00:00Z"}}}],
+    "synthetic_run": {
+      "answer": {"answer": "The comparison is limited to the supplied date ranges.", "caveats": ["completeness is unverified"], "needs_clarification": false},
+      "used_tool_names": ["compare_distance_periods"],
+      "tool_calls": [{"name": "compare_distance_periods", "args": {"period_a": {"from_time": "2026-02-01", "to_time": "2026-02-02"}, "period_b": {"from_time": "2026-02-02", "to_time": "2026-02-03"}}}],
+      "tool_results": [{"name": "compare_distance_periods", "status": "ok"}]
+    }
+  },
+  {
+    "case_id": "ambiguous-period-01",
+    "class_name": "ambiguous_period",
+    "question": "How far did it travel recently?",
+    "allowed_tools": [],
+    "required_tools": [],
+    "forbidden_tools": ["get_distance"],
+    "required_caveats": ["clarification"],
+    "forbidden_claims": ["kilometers"],
+    "needs_clarification": true,
+    "max_tool_calls": 0,
+    "argument_constraints": [],
+    "synthetic_run": {
+      "answer": {"answer": "Please provide an exact start and end date.", "caveats": ["clarification is required"], "needs_clarification": true},
+      "used_tool_names": [],
+      "tool_calls": [],
+      "tool_results": []
+    }
+  },
+  {
+    "case_id": "ambiguous-period-02",
+    "class_name": "ambiguous_period",
+    "question": "Compare last month with the month before.",
+    "allowed_tools": [],
+    "required_tools": [],
+    "forbidden_tools": ["compare_route_periods"],
+    "required_caveats": ["clarification"],
+    "forbidden_claims": ["complete history"],
+    "needs_clarification": true,
+    "max_tool_calls": 0,
+    "argument_constraints": [],
+    "synthetic_run": {
+      "answer": {"answer": "Please confirm the calendar and timezone for those relative periods.", "caveats": ["clarification is required"], "needs_clarification": true},
+      "used_tool_names": [],
+      "tool_calls": [],
+      "tool_results": []
+    }
+  },
+  {
+    "case_id": "unavailable-realtime-01",
+    "class_name": "unavailable_capability",
+    "question": "Subscribe me to realtime vehicle events.",
+    "allowed_tools": [],
+    "required_tools": [],
+    "forbidden_tools": ["get_vehicle_status"],
+    "required_caveats": ["unavailable"],
+    "forbidden_claims": ["realtime freshness"],
+    "needs_clarification": false,
+    "max_tool_calls": 0,
+    "argument_constraints": [],
+    "synthetic_run": {
+      "answer": {"answer": "That capability is unavailable in this read-only tool surface.", "caveats": ["unavailable"], "needs_clarification": false},
+      "used_tool_names": [],
+      "tool_calls": [],
+      "tool_results": []
+    }
+  },
+  {
+    "case_id": "unavailable-history-01",
+    "class_name": "unavailable_capability",
+    "question": "Give me an unlimited historical export.",
+    "allowed_tools": [],
+    "required_tools": [],
+    "forbidden_tools": ["list_routes"],
+    "required_caveats": ["unavailable"],
+    "forbidden_claims": ["all history"],
+    "needs_clarification": false,
+    "max_tool_calls": 0,
+    "argument_constraints": [],
+    "synthetic_run": {
+      "answer": {"answer": "An unlimited export is unavailable; request a bounded date range instead.", "caveats": ["unavailable"], "needs_clarification": false},
+      "used_tool_names": [],
+      "tool_calls": [],
+      "tool_results": []
+    }
+  },
+  {
+    "case_id": "tool-error-01",
+    "class_name": "tool_error_or_partial",
+    "question": "Summarize routes for the supplied period.",
+    "allowed_tools": ["get_route_statistics"],
+    "required_tools": ["get_route_statistics"],
+    "forbidden_tools": [],
+    "required_caveats": ["tool_error"],
+    "forbidden_claims": ["km/h"],
+    "needs_clarification": false,
+    "max_tool_calls": 1,
+    "argument_constraints": [{"tool": "get_route_statistics", "args": {"from_time": "2026-03-01T00:00:00Z", "to_time": "2026-03-02T00:00:00Z"}}],
+    "synthetic_run": {
+      "answer": {"answer": "The tool returned an error, so no reliable summary is available.", "caveats": ["tool_error"], "needs_clarification": false},
+      "used_tool_names": ["get_route_statistics"],
+      "tool_calls": [{"name": "get_route_statistics", "args": {"from_time": "2026-03-01", "to_time": "2026-03-02"}}],
+      "tool_results": [{"name": "get_route_statistics", "status": "error"}]
+    }
+  },
+  {
+    "case_id": "tool-partial-01",
+    "class_name": "tool_error_or_partial",
+    "question": "Break down the supplied period by month.",
+    "allowed_tools": ["get_distance_breakdown"],
+    "required_tools": ["get_distance_breakdown"],
+    "forbidden_tools": [],
+    "required_caveats": ["partial_result"],
+    "forbidden_claims": ["complete history"],
+    "needs_clarification": false,
+    "max_tool_calls": 1,
+    "argument_constraints": [{"tool": "get_distance_breakdown", "args": {"group_by": "month"}}],
+    "synthetic_run": {
+      "answer": {"answer": "The result is partial and does not establish the requested period fully.", "caveats": ["partial_result"], "needs_clarification": false},
+      "used_tool_names": ["get_distance_breakdown"],
+      "tool_calls": [{"name": "get_distance_breakdown", "args": {"group_by": "month", "from_time": "2026-04-01", "to_time": "2026-05-01"}}],
+      "tool_results": [{"name": "get_distance_breakdown", "status": "partial"}]
+    }
+  }
+]
