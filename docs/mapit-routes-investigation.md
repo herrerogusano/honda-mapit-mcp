@@ -1,11 +1,13 @@
 # MAPIT Routes Investigation
 
 Status: public contract discovery plus a bounded local probe implementation.
-The saved-session check reported `session_valid=true`; a separated authorized
-run on 2026-09-28 completed the Core
-`account-summary` read and then classified the Geo routes request as
-`routes_list_request_failed`. The live diagnostic did not retain a status,
-body, route values, counts, identifiers, coordinates, or raw payload.
+The saved-session check reported `session_valid=true`; the latest separated
+authorized run on 2026-09-28 completed the Core `account-summary` read and the
+Geo routes request with `vehicleId` plus `limit=1`. It produced only the
+schema-only fixture `samples/anonymized/routes-list.schema.json`; no route
+values, counts, identifiers, coordinates, or raw payload were retained.
+An earlier attempt had only the generic `routes_list_request_failed` category;
+the latest run is the current evidence.
 
 ## Current Evidence
 
@@ -45,20 +47,20 @@ The first probe must not add `month`, `day`, `from`, `to`, or
 request is sufficient to establish the top-level response shape and any
 pagination metadata without attempting route history discovery.
 
-The existing evidence indicates a collection named `data` in the route-list
-response, but does not establish whether the complete envelope is an object,
-which metadata keys are present, or whether pagination uses a cursor, token,
-offset, or no pagination. `lastEvaluatedKey` is an open hypothesis from the
-broader API inventory, not a confirmed route response field. Treat the response
-as an unknown JSON object: inventory object/array/scalar/null types and nesting,
-including `data` if present, while ignoring all values. Do not assume that one
-bounded response represents complete history.
+The latest schema-only fixture confirms a non-null object envelope with one
+non-null `data` array. Each observed array item is a non-null route object;
+the complete field inventory is recorded below. No pagination/cursor/count
+metadata field appears in this response, so `lastEvaluatedKey` remains an
+unconfirmed hypothesis rather than an observed contract. Absence in one
+bounded response does not prove that all pages or accounts lack pagination.
+Treat all values as discarded and do not assume that one bounded response
+represents complete history.
 
 Observed optional filters and their current evidence level:
 
 | Query parameter | Evidence | First-probe policy |
 |---|---|---|
-| `limit` | Frontend query construction | Use only `limit=1` as a bounded probe; default/maximum unknown |
+| `limit` | Frontend query construction; accepted by latest authorized probe | Use only `limit=1` as a bounded probe; default/maximum unknown |
 | `month`, `day` | Frontend query construction | Defer; calendar semantics and required combinations unknown |
 | `from`, `to` | Frontend query construction | Defer; timezone, format, inclusivity, and pairing unknown |
 | `includeInProgress` | Frontend query construction | Defer; boolean encoding and behavior unknown |
@@ -66,6 +68,45 @@ Observed optional filters and their current evidence level:
 These observations establish parameter names only. They do not establish route
 history completeness, units, ordering, pagination, date semantics, or the
 meaning of any returned route field.
+
+## Latest schema-only route-list result
+
+The authorized `vehicleId` + `limit=1` read produced a root object with this
+observed structure:
+
+```text
+{
+  data: Route[]
+}
+```
+
+The root `data` is a non-null array; each observed item is a non-null object
+with these fields and types:
+
+| Field | Type/nullability in fixture |
+|---|---|
+| `avgSpeed`, `distance`, `maxSpeed` | non-null number |
+| `complete`, `startsAtLastKnown` | non-null boolean |
+| `createdAt`, `endedAt`, `startTz`, `startedAt`, `updatedAt` | non-null string |
+| `id` | non-null string |
+| `legacyId` | non-null number |
+| `odometerStart`, `odometerEnd`, `continues` | nullable `null` in this sample |
+| `device`, `vehicle` | non-null object containing non-null string `id` |
+| `geoJSON` | non-null object; `type` is a non-null string and `features` is a non-null array |
+
+Each observed `geoJSON.features` item is a non-null object with non-null string
+`type`, a `geometry` object, and a `properties` object. `geometry.type` is a
+non-null string and `geometry.coordinates` is a non-null array whose item type
+is recorded as `mixed`; `properties` contains non-null boolean `inferred` and
+non-null string `label` and `name`. This is only a structural description:
+there are no retained geometry values, coordinate dimensionality, route IDs,
+timestamps, metric values, or counts, and no geometry semantics are inferred.
+
+The fixture contains no top-level cursor, token, offset, count, or
+`lastEvaluatedKey` field. The observed `continues` field is part of each route
+item and is explicitly `null` in this schema sample; it is not treated as
+pagination metadata. Pagination behavior, ordering, units, date semantics and
+whether additional fields appear on another page remain open.
 
 The probe's persisted artifact, if any, must be schema-only: field names, JSON
 types, nullability, and nesting. It must contain no route/vehicle IDs, item
@@ -115,22 +156,24 @@ Current hypotheses, ordered by the evidence available without another call:
 
 | Hypothesis | Why it is plausible | Safe discriminator |
 |---|---|---|
-| `limit=1` is rejected or differs from the historical contract | Both public route clients omit `limit`; the failed local request included it | One bounded retry with only `vehicleId` |
-| Geo requires browser-origin headers or a different signed-header subset | Public clients transmit Origin/Referer and sign only `accept;host;x-amz-date`; local client omits Origin/Referer and signs more headers | Compare only sanitized final HTTP status after a single request using the reference header/signing shape; do not capture headers/body |
-| Account/vehicle has no route permission or route service rejects the selected vehicle | `account-summary` success does not establish route entitlement or route history | Final HTTP status category; no alternate vehicle in the first diagnostic |
+| `limit=1` is rejected or differs from the historical contract | Both public route clients omit `limit`, but the latest authorized run accepted `limit=1` and returned a schema | Keep default/maximum semantics open; no extra live call required for this question |
+| Geo requires browser-origin headers or a different signed-header subset | Public clients transmit Origin/Referer and sign only `accept;host;x-amz-date`; local client omits Origin/Referer and signs more headers | Latest success shows the local shape works for this account/run; cross-account/variant behavior remains unconfirmed |
+| Account/vehicle has no route permission or route service rejects the selected vehicle | `account-summary` success alone would not establish route entitlement, but the latest route schema proves this selected run was accepted | Do not generalize beyond this authorized account/vehicle |
 | Geo returned non-JSON or a transport error | Current probe collapses JSON/transport/write failures into one category | Sanitized category `invalid_json`, `timeout`, `dns`, `tls`, or `http_4xx/5xx` |
 
-These remain hypotheses. No public source proves that `limit` is invalid, that
-Geo requires Origin/Referer, or that an account with a valid vehicle has route
-history.
+The latest schema-only success removes the earlier `limit` failure hypothesis
+for this run and demonstrates that the local Geo host/path/query/signing
+contract can return JSON for the selected account/vehicle. It does not prove
+default limits, route history completeness, cross-account behavior, or that
+Origin/Referer are universally unnecessary.
 
-## Minimal live diagnostic (future authorized run)
+## Minimal live diagnostic (completed; safe result policy)
 
-The next diagnostic should use the already-valid saved session and the first
-eligible in-memory vehicle only. It should issue one request matching the
-public-client contract (`vehicleId` only), with the existing bounded 401/403
-retry, then stop. It must not try another vehicle, add date filters, follow a
-cursor, call route detail, or retry across header variants in the same run.
+The latest diagnostic used the already-valid saved session and one eligible
+in-memory vehicle. It issued one bounded request with `vehicleId` and
+`limit=1`, with the existing bounded 401/403 retry, then stopped. It did not
+try another vehicle, add date filters, follow a cursor, call route detail, or
+retry across header variants.
 
 The only permitted result is sanitized metadata, for example:
 
@@ -149,9 +192,9 @@ Never emit the URL, query string, vehicle ID, response body, response headers,
 signature, token, credential, exception text, or counts. If HTTP 200 is
 returned, immediately convert the body to schema-only and retain only field
 names, types, nullability, and nesting; do not print top-level values or item
-counts. If the request with only `vehicleId` succeeds, the earlier failure is
-consistent with an optional-parameter (`limit`) issue but is not proof without
-a controlled comparison.
+counts. The successful schema-only result confirms the bounded probe contract
+for this run. A future unfiltered (`vehicleId` only) request would be needed
+only to study default page size; it must not retain counts or values.
 
 ## Questions to Answer with Authorized Reads
 
@@ -159,11 +202,11 @@ a controlled comparison.
 |---|---|---|
 | Default number of routes | Count and response metadata from an unfiltered request | PENDING |
 | Oldest/newest recoverable route | Repeated evidenced page/filter reads | PENDING |
-| Pagination contract | Response keys and frontend use of cursor/token/offset | PENDING |
+| List envelope and pagination metadata | Root response keys in the bounded schema-only fixture | `CONFIRMED_SCHEMA_ONLY` for `{data: Route[]}`; pagination behavior remains PENDING |
 | Date boundary semantics | Controlled `from`/`to`, `month`, and `day` reads | PENDING |
 | Units for distance/speed/duration | Payload plus frontend formatting code | PENDING |
 | In-progress routes | `includeInProgress` comparison when safely observable | PENDING |
-| Detail GeoJSON shapes | Inventory of every feature geometry/properties type | PENDING |
+| Detail GeoJSON shapes | Inventory of every feature geometry/properties type | `PARTIAL_SCHEMA_ONLY` for list-item GeoJSON nesting; detail shapes PENDING |
 | Statistics source | `includeStats=true` response versus derivable route values | PENDING |
 
 ## Probe Discipline
@@ -184,9 +227,11 @@ and makes exactly one `GET /v1/routes` with `vehicleId` and `limit=1`. It does
 not follow cursors or request route detail. The response is converted
 immediately with `schema_only` and atomically written only to
 `samples/anonymized/routes-list.schema.json`; UI/error output is categorized
-and value-free. The 2026-09-28 authorized run reached the Geo request but
-returned the sanitized category `routes_list_request_failed`; no schema fixture
-was produced. A `MapitHTTPError` from the Geo request now exposes only one of
+and value-free. The 2026-09-28 authorized run reached the Geo request with
+`vehicleId` and `limit=1` and produced that schema-only fixture. An earlier
+attempt returned only the sanitized category `routes_list_request_failed`; the
+latest result is authoritative for the bounded schema contract. A
+`MapitHTTPError` from the Geo request now exposes only one of
 `routes_list_http_400`, `_401`, `_403`, `_404`, `_429`, `_5xx`, or the generic
 `routes_list_http_error`; transport and invalid-JSON failures are exposed as
 `routes_list_transport_failed` and `routes_list_invalid_response`. Before a

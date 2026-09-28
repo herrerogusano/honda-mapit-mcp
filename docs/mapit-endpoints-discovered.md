@@ -24,8 +24,8 @@ Los valores entre llaves son identificadores del usuario/tenant y se mantienen c
 |---|---|---|---|
 | `GET` | `https://core.prod.mapit.me/v1/account-summary` | bundle actual (`bG`), d3vv3, citylife4; authorized schema-only probe | **CONFIRMED**: HTTP 200 read completed; only anonymized schema retained |
 | `GET` | `https://core.prod.mapit.me/v1/vehicles/{vehicleId}` | d3vv3 y citylife4; probe autorizado schema-only | **CONFIRMED_SCHEMA_ONLY**: lectura autorizada completada; no se retuvieron valores |
-| `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}` | bundle actual y clientes públicos; filtros adicionales en bundle | **OBSERVED_READ_CONTRACT**: host/path y parámetro requerido observados; probe autorizado de rutas pendiente |
-| `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual | filtros opcionales observados; no usar en el primer probe salvo `limit=1` |
+| `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}` | bundle actual y clientes públicos; bounded probe autorizado | **CONFIRMED_SCHEMA_ONLY**: el host/path y la lectura con `vehicleId` más `limit=1` fueron aceptados; solo se retuvo el esquema de la respuesta |
+| `GET` | `https://geo.prod.mapit.me/v1/routes?vehicleId={vehicleId}&limit={limit}&month={month}&day={day}&from={from}&to={to}&includeInProgress={bool}` | bundle actual; `limit=1` también en el probe acotado | filtros opcionales observados; aceptación/semántica del resto pendiente |
 | `GET` | `https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true` | bundle actual | detalle actual del frontend |
 | `GET` | `https://geo.prod.mapit.me/v1/routes/{routeId}` | d3vv3 y citylife4 | ruta de detalle legado; no asumir que sustituye a la actual |
 | `GET` | `https://geo.prod.mapit.me/v1/reverse-geocoding/{lat}/{lng}?lang={language}` | bundle actual | geocodificación inversa |
@@ -34,9 +34,14 @@ La lectura autorizada de `account-summary` confirmó una respuesta con `account`
 `vehicles` y estructuras adicionales de pagos/catálogo, capacidades, dealer,
 alert settings y estado detallado del dispositivo. Solo se retuvo el schema
 anónimo (`samples/anonymized/account-summary.schema.json`), sin valores,
-conteos ni identificadores. El listado de rutas usa una colección `data`; los
-detalles de rutas contienen `geoJSON`, marcas temporales y métricas. Los
-esquemas de rutas y demás endpoints siguen pendientes de fixtures autorizados.
+conteos ni identificadores. El probe autorizado acotado de rutas reutilizó un
+vehículo seleccionado en memoria y ejecutó una sola lectura Geo con
+`vehicleId` y `limit=1`; produjo `samples/anonymized/routes-list.schema.json`.
+La respuesta observada es un objeto `{data: Route[]}` con objetos de ruta,
+referencias `device`/`vehicle`, métricas, marcas temporales y un `geoJSON`
+anidado. No se observaron metadatos de paginación en ese fixture; el tamaño
+por defecto, cursores, completitud histórica y semántica de campos siguen
+pendientes. No se retuvieron valores, conteos, IDs ni geometrías.
 
 ## Detalle de vehículo: contrato público y primer probe
 

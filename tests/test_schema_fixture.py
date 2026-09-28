@@ -7,6 +7,7 @@ import pytest
 SAMPLES_DIR = Path(__file__).parents[1] / "samples" / "anonymized"
 SCHEMA_PATHS = [
     SAMPLES_DIR / "account-summary.schema.json",
+    SAMPLES_DIR / "routes-list.schema.json",
     SAMPLES_DIR / "vehicle-detail.schema.json",
 ]
 ALLOWED_KEYS = {"type", "nullable", "fields", "items", "types"}

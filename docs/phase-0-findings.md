@@ -57,8 +57,17 @@ only and do not establish any capability or payment/alert operation. See
 
 The frontend exposes vehicle route listing with `limit`, calendar/date range, and
 in-progress filters, plus a vehicle-scoped detail route with optional statistics.
-Actual schemas, limits, pagination, units, oldest recoverable data, and GeoJSON
-feature types remain pending. See `mapit-routes-investigation.md`.
+An authorized bounded read using the saved session (`session_valid=true`) and
+one in-memory vehicle completed with `GET /v1/routes?vehicleId=...&limit=1`.
+Only `samples/anonymized/routes-list.schema.json` was retained. It confirms a
+non-null root object with a non-null `data` array of route objects. Observed
+route fields include string IDs/timestamps/timezone, a numeric legacy ID and
+speed/distance metrics, boolean completion/last-known flags, nullable
+`continues` and odometer fields, non-null `device.id`/`vehicle.id`, and nested
+`geoJSON.features[].geometry`/`properties` structures. The fixture contains no
+top-level pagination/count/cursor metadata; this does not establish defaults,
+history completeness, units, or cross-account stability. See
+`mapit-routes-investigation.md` and `mapit-data-inventory.md`.
 
 ## Realtime
 
@@ -81,9 +90,9 @@ scope for Phase 0 execution.
 
 - Cognito challenges for the authorized account.
 - Live acceptance of the observed signing/header contract.
-- Full account, vehicle, route, route-detail, and realtime schemas; the account
-  and vehicle-detail probes currently establish only one-account schema-only
-  samples.
+- Full account, vehicle, route-detail, and realtime schemas; the account,
+  vehicle-detail, and bounded route-list probes establish only one-account
+  schema-only samples.
 - Whether all account-summary substructures and nullable fields are stable
   across accounts; the current account-summary evidence is schema-only for one
   authorized account.

@@ -11,6 +11,7 @@ _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 _JWT = re.compile(r"^[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$")
 _OPAQUE_ID = re.compile(r"^[A-Za-z0-9_-]{16,}$")
 _IDENTIFIER_PREFIX = re.compile(r"^(?:id|account|vehicle|device|subscription|user|vin|imei)(?:[-_:0-9]|$)", re.I)
+_MIXED_TYPES = frozenset({"object", "array", "string", "number", "boolean", "null", "unknown"})
 
 
 def safe_field_name(name: Any) -> str:
@@ -50,6 +51,17 @@ def _primitive_type(value: Any) -> str:
     return "unknown"
 
 
+def _allowed_types(node: dict[str, Any]) -> set[str]:
+    node_type = node.get("type")
+    if node_type != "mixed":
+        return {node_type} if node_type in _MIXED_TYPES else {"unknown"}
+    types = node.get("types")
+    if not isinstance(types, list):
+        return {"unknown"}
+    allowed = {item for item in types if isinstance(item, str) and item in _MIXED_TYPES}
+    return allowed or {"unknown"}
+
+
 def _merge(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     """Merge schemas without retaining values, counts, lengths, or examples."""
     left_type = left["type"]
@@ -63,8 +75,10 @@ def _merge(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
         result = dict(left)
         result["nullable"] = True
         return result
+    if left_type == "mixed" or right_type == "mixed":
+        return {"type": "mixed", "types": sorted(_allowed_types(left) | _allowed_types(right)), "nullable": nullable}
     if left_type != right_type:
-        types = set(left.get("types", [left_type])) | set(right.get("types", [right_type]))
+        types = _allowed_types(left) | _allowed_types(right)
         return {"type": "mixed", "types": sorted(types), "nullable": nullable}
     if left_type == "object":
         fields: dict[str, dict[str, Any]] = {}

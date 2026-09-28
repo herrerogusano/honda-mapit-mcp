@@ -136,6 +136,45 @@ frontend defaults if that distinction matters. Unknown server fields may exist;
 the first probe must not persist them merely because the frontend currently
 strips them during validation.
 
+## Route-list inventory (authorized schema-only)
+
+The saved-session, bounded Geo read `GET /v1/routes?vehicleId={vehicleId}&limit=1`
+completed successfully on 2026-09-28. The retained fixture,
+`samples/anonymized/routes-list.schema.json`, contains schema information only:
+field names, JSON types, nullability, and nesting. It contains no route values,
+counts, identifiers, coordinates, timestamps, headers, or raw response.
+
+The observed response envelope is a non-null object with one non-null `data`
+array. Each observed `data` item is a non-null route object with this shape:
+
+| Group | Fields/types observed | Nullability/status |
+|---|---|---|
+| Identity references | `id`: string; `legacyId`: number; `device.id`: string; `vehicle.id`: string | non-null; `CONFIRMED_SCHEMA_ONLY` |
+| Timing/state | `createdAt`, `endedAt`, `startTz`, `startedAt`, `updatedAt`: string; `complete`, `startsAtLastKnown`: boolean | non-null in sample |
+| Metrics | `avgSpeed`, `distance`, `maxSpeed`: number | non-null in sample; values/units unknown |
+| Optional state | `continues`, `odometerStart`, `odometerEnd`: explicit `null` | nullable in this sample only |
+| GeoJSON container | `geoJSON.type`: string; `geoJSON.features`: array | non-null in sample |
+
+Each observed `geoJSON.features` item is a non-null object. It contains
+non-null string `type`, a non-null `geometry` object, and a non-null
+`properties` object. `geometry.type` is a string and
+`geometry.coordinates` is an array whose item type is recorded as `mixed`.
+`properties` contains non-null boolean `inferred` and non-null strings `label`
+and `name`. This records nesting and types only; it does not establish
+GeoJSON geometry semantics, coordinate dimensionality, route naming, or
+address meaning.
+
+No top-level cursor, token, offset, count, or `lastEvaluatedKey` field was
+observed in this bounded fixture. The route-item field `continues` is not
+treated as pagination metadata. This is not evidence that pagination is absent
+from other responses, nor that the one-item response represents complete route
+history, a default page size, or stable cross-account shape.
+
+Route IDs, legacy/device/vehicle IDs, timestamps, coordinates and location
+labels, speed/distance/odometer values, and the raw response are sensitive.
+Any future probe must retain schema-only information and discard those values
+before persistence.
+
 ## Vehicle detail inventory (authorized schema-only)
 
 The public Python clients also issue the following Core read after obtaining a

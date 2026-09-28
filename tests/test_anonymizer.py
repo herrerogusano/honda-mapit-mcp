@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from mapit.anonymizer import schema_only
 
@@ -107,3 +108,24 @@ def test_schema_only_merges_null_and_type_changes_without_values_or_counts():
     assert "secret-value" not in rendered
     assert "42" not in rendered
     assert "count" not in rendered and "length" not in rendered
+
+
+def test_schema_only_preserves_types_when_mixed_nodes_are_merged_successively():
+    schema = schema_only([{"coordinates": [[1.0, 2.0], 3.0]}, {"coordinates": 4.0}])
+    node = schema["items"]["fields"]["coordinates"]
+    assert node == {"type": "mixed", "types": ["array", "number"], "nullable": False}
+    rendered = json.dumps(schema, sort_keys=True)
+    assert "1.0" not in rendered and "4.0" not in rendered
+
+
+def test_routes_fixture_coordinates_mixed_node_matches_anonymizer_output():
+    raw = {"data": [{"geoJSON": {"features": [{"geometry": {"coordinates": [[1.0, 2.0], 3.0]}}]}}]}
+    generated = schema_only(raw)
+    generated_node = generated["fields"]["data"]["items"]["fields"]["geoJSON"]["fields"]["features"]["items"]["fields"]["geometry"]["fields"]["coordinates"]["items"]
+    expected = {"type": "mixed", "types": ["array", "number"], "nullable": False}
+    assert generated_node == expected
+
+    fixture_path = Path(__file__).parents[1] / "samples" / "anonymized" / "routes-list.schema.json"
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    fixture_node = fixture["fields"]["data"]["items"]["fields"]["geoJSON"]["fields"]["features"]["items"]["fields"]["geometry"]["fields"]["coordinates"]["items"]
+    assert fixture_node == expected
