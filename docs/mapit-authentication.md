@@ -366,6 +366,20 @@ la autenticación se ejecutan en un hilo daemon; la cola y `after` reservan las
 actualizaciones de widgets para el hilo principal. El resultado visible usa el
 mismo resumen redactado y el cierre de la ventana no persiste los valores.
 
+### Setup persistente separado de los probes de datos
+
+`scripts/session_setup_gui.py` es el único formulario destinado a enrolar una
+sesión persistente. Muestra el email, enmascara la contraseña y ejecuta
+únicamente discovery público y `USER_PASSWORD_AUTH`; tras una respuesta completa
+guarda solo el refresh token mediante `SessionManager` y el backend v1 de
+Credential Manager. No importa ni instancia `MapitClient`, Core o Geo. En éxito
+imprime únicamente `{"success":true,"saved":true}` y cierra; en fallo deja el
+formulario disponible y muestra/imprime solo una categoría segura.
+
+`scripts/check_saved_session.py` valida una sesión existente con discovery,
+`REFRESH_TOKEN_AUTH`, `GetId` y `GetCredentialsForIdentity`. Su salida contiene
+solo booleanos y categoría; no devuelve tokens, IDs, expiraciones ni payloads.
+
 ## Probe `account-summary` schema-only
 
 La GUI `scripts/account_summary_prompt_gui.py` reutiliza discovery y Cognito,
@@ -399,13 +413,12 @@ estado, claves top-level seguras y ruta. Se ejecutó manualmente con éxito el
 2026-09-23; el fixture resultante contiene únicamente estructura y tipos.
 
 La GUI de rutas intenta primero `REFRESH_TOKEN_AUTH` con el token guardado. Si
-falta, el backend no es nativo o la reanudación falla, muestra el formulario sin
-hacer llamadas de datos. Solo un rechazo HTTP 4xx explícito de Cognito borra la
-entrada; fallos transitorios o no clasificados la conservan.
-El login manual guarda únicamente el refresh token tras una respuesta completa;
-si Cognito rota el token, la entrada se actualiza. El botón `Forget saved
-session` ejecuta un borrado explícito e idempotente. Sin sesión válida no se
-realiza ninguna llamada de datos.
+falta, indica `Primero ejecuta session_setup_gui.py` y no muestra formulario ni
+hace llamadas de datos; el enrolamiento está deliberadamente separado. Solo un
+rechazo HTTP 4xx explícito de Cognito borra la entrada; fallos transitorios o no
+clasificados la conservan. El botón `Borrar sesión guardada` ejecuta un borrado
+explícito e idempotente. Sin sesión válida no se realiza ninguna llamada de
+datos.
 
 ## Evidencia pública
 

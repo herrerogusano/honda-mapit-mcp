@@ -6,11 +6,14 @@ the Cognito authentication flow when explicitly requested, obtains temporary
 Identity Pool credentials, signs Core/Geo `GET` requests with AWS SigV4, and
 recovers one time from an expired/invalid session.
 
-The client does not implement an MCP server, account/routing probes, writes,
-WebSocket support, persistence, or real requests in its test suite. Credentials
-are read only from the process environment (`MAPIT_EMAIL` and
-`MAPIT_PASSWORD`) and are never logged. Cognito identifiers may be supplied as
-environment overrides; no real identifiers belong in this repository.
+The reusable client does not implement an MCP server, account/routing writes,
+or WebSocket support; the test suite makes no real requests. The explicit local
+read-only probe scripts are separate from the client library. The reusable library
+reads environment credentials only when explicitly requested, while the local
+session setup GUI keeps them in memory and persists only a refresh token in the
+approved Windows store. Credentials are never logged. Cognito identifiers may
+be supplied as environment overrides; no real identifiers belong in this
+repository.
 Core/Geo endpoint overrides are fail-closed: only HTTPS `core*.mapit.me` and
 `geo*.mapit.me` base hosts without userinfo, non-standard ports, query strings,
 fragments, or base paths are accepted.
@@ -58,6 +61,20 @@ py scripts\auth_prompt_gui.py
 The GUI performs the same redacted probe in a daemon worker and updates its
 widgets only on the Tk main thread. Closing the window does not persist input.
 
+To establish the reusable saved session for the data probes, use the dedicated
+setup GUI:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\session_setup_gui.py
+```
+
+It performs only public discovery plus `USER_PASSWORD_AUTH`, persists only the
+refresh token in the fail-closed Windows Credential Manager store, and prints
+only `{"success":true,"saved":true}` on success. Failures are categorized
+without exception text or tokens. To validate an existing saved session
+without any Core/Geo call, run `py scripts\check_saved_session.py`.
+
 To make the first authorized, read-only account-summary inspection, use the
 schema-only GUI:
 
@@ -100,9 +117,10 @@ It selects a vehicle in memory, performs one Geo `GET /v1/routes` with only
 request route detail, persist IDs/counts/raw payloads, or print signed URLs.
 On Windows, install the optional `.[windows-auth]` extra to enable the
 fail-closed native Credential Manager backend. The GUI first tries the saved
-refresh token, falls back to the masked form if unavailable/rejected, saves
-only a new refresh token after successful manual login, and provides
-`Forget saved session`.
+refresh token and, if none is available, tells you to run
+`session_setup_gui.py`; it never asks for credentials or enrolls a session.
+It provides `Borrar sesión guardada` and makes no data call without a valid
+saved session.
 Failures are shown only as stable categories such as `discovery_failed`,
 `authentication_rejected`/`authentication_failed`, or
 `credential_store_failed`; exception text, response bodies, and URLs are never

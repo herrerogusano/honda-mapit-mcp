@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`71 passed`). Session and routes GUI failures are
+  closed. Offline tests pass (`81 passed`). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -63,9 +63,15 @@ and manual WebSocket investigation.
 - The bounded routes-list GUI probe is implemented but not executed live: it
   performs only `vehicleId` plus `limit=1`, follows no cursor, and persists only
   a value-free schema at `samples/anonymized/routes-list.schema.json`.
+- Session enrollment is now separated into `scripts/session_setup_gui.py`;
+  it performs only discovery plus `USER_PASSWORD_AUTH` and persists the refresh
+  token. `scripts/check_saved_session.py` validates discovery plus the saved
+  refresh/Identity Pool exchange without Core/Geo. The routes GUI no longer
+  asks for credentials; without a valid saved session it instructs the user to
+  run the setup GUI and makes no data call.
 - Refresh-token persistence is implemented as an optional Windows-only,
   fail-closed native keyring backend. The routes GUI attempts a saved refresh
-  session first, falls back to masked manual login, and exposes explicit forget;
+  session first and exposes explicit forget; it does not enroll sessions;
   no vault or live-data call is used by CI.
 
 ## Active Constraints

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from mapit.auth import MapitSession, TemporaryCredentials
 from mapit.config import MapitConfig, RuntimeConfig
 from mapit.session import SessionManagerError
-from scripts.routes_list_prompt_gui import perform_routes_list_probe, perform_routes_list_with_session
+from scripts.routes_list_prompt_gui import _safe_session_category, perform_routes_list_probe, perform_routes_list_with_session
 
 
 def _session():
@@ -184,3 +184,8 @@ def test_routes_probe_surfaces_refresh_store_failure_before_data_call(tmp_path):
     )
     assert result == {"success": False, "region": "eu-west-1", "error": "credential_store_failed"}
     assert data_calls == []
+
+
+def test_routes_saved_session_category_is_allowlisted():
+    assert _safe_session_category("credential_store_failed") == "credential_store_failed"
+    assert _safe_session_category({"secret": "refresh-token"}) == "authentication_failed"
