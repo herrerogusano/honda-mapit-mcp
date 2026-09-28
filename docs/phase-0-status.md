@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`100 passed`). Session and routes GUI failures are
+  closed. Offline tests pass (`112 passed`). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -87,6 +87,12 @@ and manual WebSocket investigation.
   fail-closed native keyring backend. The routes GUI attempts a saved refresh
   session first and exposes explicit forget; it does not enroll sessions;
   no vault or live-data call is used by CI.
+- A non-interactive saved-session route-detail probe is implemented in
+  `scripts/probe_route_detail.py`. It is bounded to account-summary, one
+  routes-list request (`vehicleId` + `limit=1`), and one current detail GET
+  (`includeStats=true`), with strict segment encoding and immediate
+  schema-only atomic persistence. It has not been executed against MAPIT and
+  no route-detail fixture is claimed.
 
 ## Active Constraints
 
@@ -98,8 +104,8 @@ and manual WebSocket investigation.
 
 ## Next Steps
 
-1. Investigate route-list pagination and filters using evidence-led probes.
-2. Investigate route detail.
+1. Investigate and probe one route detail using the current frontend contract.
+2. Investigate route-list pagination and filters using evidence-led probes.
 3. Investigate the current account-level WebSocket.
 
 ## Open Questions
@@ -110,5 +116,6 @@ and manual WebSocket investigation.
 - Current endpoint inventory and route-history pagination/filter behavior.
 - Whether other account states trigger Cognito challenges not seen in the
   successful initial login.
-- Live confirmation that the real app client accepts saved-token resumption;
-  the password and all short-lived session/AWS credentials remain memory-only.
+- Saved-token resumption is live-confirmed; expiry/revocation fallback remains
+  to be observed naturally. The password and all short-lived session/AWS
+  credentials remain memory-only.

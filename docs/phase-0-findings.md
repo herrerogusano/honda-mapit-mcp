@@ -56,7 +56,13 @@ only and do not establish any capability or payment/alert operation. See
 ## Routes, Route Detail, and Historical Data
 
 The frontend exposes vehicle route listing with `limit`, calendar/date range, and
-in-progress filters, plus a vehicle-scoped detail route with optional statistics.
+in-progress filters, plus the current vehicle-scoped detail route
+`/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true`. The current
+frontend validator expects a root object with `id`, FeatureCollection GeoJSON,
+distance/timing fields, and optional nullable speed fields; it does not
+enumerate separate statistics fields. The older `/v1/routes/{routeId}` path is
+legacy evidence from the public Python clients and is not the first probe
+target.
 An authorized bounded read using the saved session (`session_valid=true`) and
 one in-memory vehicle completed with `GET /v1/routes?vehicleId=...&limit=1`.
 Only `samples/anonymized/routes-list.schema.json` was retained. It confirms a

@@ -108,6 +108,72 @@ item and is explicitly `null` in this schema sample; it is not treated as
 pagination metadata. Pagination behavior, ordering, units, date semantics and
 whether additional fields appear on another page remain open.
 
+## Route-detail contract and probe decision
+
+The current public frontend is the primary contract for route detail:
+
+```text
+GET https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true
+```
+
+The current bundle observed on 2026-09-28 calls `sendRequest` with method
+`GET`, the Geo endpoint above, and only the query parameter
+`includeStats=true`; it supplies no request body. It invokes this read only
+when both `vehicleId` and `routeId` are present in the dashboard route state.
+The request therefore uses the same authenticated frontend transport as the
+route list (Cognito ID token plus temporary Identity Pool credentials and
+SigV4); no separate detail token, service, or host is evidenced.
+
+The frontend validates the response as a non-null root object with this known
+shape:
+
+| Field | Frontend validation evidence |
+|---|---|
+| `id` | required string |
+| `geoJSON` | required `FeatureCollection`; features are `Point` or `LineString` with numeric coordinate arrays of at least two numbers; feature properties are optional records |
+| `distance` | optional number, frontend default `0` |
+| `startedAt`, `endedAt` | optional strings, frontend defaults empty string |
+| `avgSpeed`, `maxSpeed` | optional nullable numbers |
+
+The same parser is used after requesting `includeStats=true`; the bundle does
+not enumerate any separate stats fields. Unknown response fields may be
+stripped by the frontend schema parser, so this is not evidence that the
+backend omits statistics or that `includeStats` has no effect. The expected
+detail shape is a root object, not a documented `{data: ...}` envelope, but a
+live response is still required to confirm the raw contract.
+
+The older d3vv3 and citylife4 clients use the legacy candidate
+`GET https://geo.prod.mapit.me/v1/routes/{routeId}` with no query parameters.
+Their consumers treat the response as a route object and read `id`,
+`startedAt`, `endedAt`, and `geoJSON.features`, selecting a `LineString` for
+GPX export. That establishes a public historical path and consumer
+expectations only; it does not outweigh the current frontend path for a first
+probe. Do not call both paths in the same probe.
+
+### Minimal authorized detail probe
+
+Prioritize the current frontend path. Using the already-valid saved session,
+the probe should:
+
+1. read `account-summary` in memory and select the first usable vehicle ID as
+   already specified for the route-list probe (prefer a vehicle with non-null
+   `device`, require a non-empty string `id`);
+2. issue one bounded route-list read with that vehicle and `limit=1`;
+3. inspect only the in-memory `data` array, select its first item whose `id` is
+   a non-empty string, and stop with a sanitized no-route result if none exists;
+4. issue exactly one current route-detail GET with the selected IDs and
+   `includeStats=true`, then immediately convert the response to field names,
+   JSON types, nullability, and nesting.
+
+The vehicle ID and route ID must never be printed, logged, persisted, hashed,
+or included in an error message; the signed request URL exists only in memory
+for the call. Do not retain item counts, timestamps, metrics, coordinates,
+GeoJSON values, stats values, headers, signed URLs, tokens, or raw body. A
+non-JSON or HTTP failure is only a sanitized stage/category/status;
+the bounded 401/403 recovery may run once, with no legacy-path fallback in the
+same probe. A schema-only artifact may be added only if it contains no values
+or counts.
+
 The probe's persisted artifact, if any, must be schema-only: field names, JSON
 types, nullability, and nesting. It must contain no route/vehicle IDs, item
 counts, timestamps, coordinates, addresses, GeoJSON coordinates, speed,
@@ -206,7 +272,7 @@ only to study default page size; it must not retain counts or values.
 | Date boundary semantics | Controlled `from`/`to`, `month`, and `day` reads | PENDING |
 | Units for distance/speed/duration | Payload plus frontend formatting code | PENDING |
 | In-progress routes | `includeInProgress` comparison when safely observable | PENDING |
-| Detail GeoJSON shapes | Inventory of every feature geometry/properties type | `PARTIAL_SCHEMA_ONLY` for list-item GeoJSON nesting; detail shapes PENDING |
+| Detail GeoJSON shapes | Frontend parser plus one current detail response | `PARTIAL_CONTRACT_ONLY`: Point/LineString validation is known; raw detail values/types pending |
 | Statistics source | `includeStats=true` response versus derivable route values | PENDING |
 
 ## Probe Discipline
@@ -241,8 +307,34 @@ prefix. Local-write and other unexpected failures retain the generic
 have their own `routes_list_schema_failed` and `routes_list_persist_failed`
 categories. No exception text, URL, body, headers, or vehicle ID is returned.
 
+## Local route-detail probe (implemented; not executed here)
+
+`scripts/probe_route_detail.py` is the bounded non-interactive continuation of
+the routes-list probe. It first calls `SessionManager.login_saved()` using only
+the approved Windows refresh-token store. With a valid session it performs
+exactly this sequence (apart from the client's single bounded 401/403 recovery):
+
+1. `GET /v1/account-summary`, selecting the first non-empty vehicle ID and
+   preferring an entry whose `device` is non-null.
+2. `GET /v1/routes` with only `vehicleId` and `limit=1`, selecting the first
+   non-empty string ID in `data`.
+3. One current Geo detail GET at
+   `/v1/vehicles/{encodedVehicleId}/routes/{encodedRouteId}` with the query
+   parameter `includeStats=true`.
+
+Both identifiers are encoded as single URL path segments. The probe does not
+follow cursors, call legacy detail paths, retry outside the client's existing
+recovery, or persist the intermediate responses. It immediately converts the
+detail response to `schema_only` and atomically writes only
+`samples/anonymized/route-detail.schema.json`. Output is limited to success,
+region, safe path, and schema top-level keys; failures use stage-specific
+allowlisted categories for session, account, list, missing data, detail,
+schema, or persistence. No live run or fixture is claimed by this
+implementation.
+
 ## Evidence references
 
+- [Current public frontend entry bundle](https://app.mapit.me/assets/main-CqxnPnTm.js) — observed 2026-09-28; route-list query construction, current route-detail path, `includeStats=true`, and frontend response validators.
 - [d3vv3 `api.py`, route method at commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — Geo host/path, `vehicleId`-only query, `data` extraction, and shared SigV4/header construction.
 - [citylife4 `api.py`, route method at commit 4bc092b](https://github.com/citylife4/Honda-Mapit-HA/blob/4bc092bab6125d0f7cb8e59780d04fe8ee90dda9/custom_components/mapit_tracker/api.py) — same Geo route contract and shared Core/Geo transport.
 - Local `src/mapit/client.py` and `src/mapit/signing.py` — allowlisted Geo host, query encoding, SigV4 service/region, bounded 401/403 recovery, and current header/signing differences described above.

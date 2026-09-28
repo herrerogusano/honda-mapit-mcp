@@ -175,6 +175,38 @@ labels, speed/distance/odometer values, and the raw response are sensitive.
 Any future probe must retain schema-only information and discard those values
 before persistence.
 
+## Route-detail inventory (frontend contract; live read pending)
+
+The current public frontend constructs route detail as:
+
+```text
+GET https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true
+```
+
+This is a `GET` with no body and the same authenticated Core/Geo transport
+family used by route listing. The frontend parser expects a root object with:
+
+| Field | Observed frontend shape | Status |
+|---|---|---|
+| `id` | required string | `FOUND_IN_FRONTEND` |
+| `geoJSON` | required FeatureCollection; features are Point or LineString; numeric coordinate arrays have at least two numbers | `FOUND_IN_FRONTEND` |
+| `distance` | optional number, defaulted by frontend to `0` | `FOUND_IN_FRONTEND` |
+| `startedAt`, `endedAt` | optional strings, frontend-defaulted to empty strings | `FOUND_IN_FRONTEND` |
+| `avgSpeed`, `maxSpeed` | optional nullable numbers | `FOUND_IN_FRONTEND` |
+
+The request asks for `includeStats=true`, but the current parser does not
+enumerate separate statistics fields. Unknown fields may be discarded by the
+frontend parser; therefore no statistics capability or omission is inferred.
+No authorized route-detail schema fixture exists yet.
+
+The older public clients also expose `GET /v1/routes/{routeId}` without a
+query string and consume a route-shaped object with `geoJSON` and timing fields.
+This is legacy evidence only. For a first detail probe, obtain one route ID in
+memory from the confirmed route-list response `{data: [...]}` and call only the
+current vehicle-scoped path. Route/vehicle IDs, GeoJSON coordinates, timing,
+distance/speed values, stats, response body, and signed request material must
+be discarded before any persistence.
+
 ## Vehicle detail inventory (authorized schema-only)
 
 The public Python clients also issue the following Core read after obtaining a

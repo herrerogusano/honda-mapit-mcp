@@ -420,6 +420,12 @@ clasificados la conservan. El botón `Borrar sesión guardada` ejecuta un borrad
 explícito e idempotente. Sin sesión válida no se realiza ninguna llamada de
 datos.
 
+El probe no interactivo `scripts/probe_route_detail.py` reutiliza exactamente
+esa sesión guardada: no solicita contraseña, no hace enrolamiento y no llama a
+Core/Geo si `login_saved()` no devuelve una sesión válida. Sus fallos de sesión
+son categorías estables y su salida nunca incluye tokens, IDs ni mensajes de
+excepción.
+
 ## Evidencia pública
 
 - [d3vv3/hass-honda-mapit, `api.py`, commit 034a467](https://github.com/d3vv3/hass-honda-mapit/blob/034a467b75e3e59003a3bd82a8ea46953772b2cf/custom_components/honda_mapit/api.py) — flujo Cognito, SigV4, descubrimiento del bundle y fallback.

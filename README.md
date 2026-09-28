@@ -133,6 +133,22 @@ The Windows store uses a bounded UTF-8-fragmented `mapit-refresh-v1` manifest
 with up to eight 1024-byte chunks and an alternate staging bank; legacy
 single-entry data is migrated only after the new set is verified.
 
+For a non-interactive route-detail probe using only the saved session, run:
+
+```powershell
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\probe_route_detail.py
+```
+
+It reads `account-summary` once, lists routes once with only `vehicleId` and
+`limit=1`, then reads exactly one current
+`/v1/vehicles/{vehicleId}/routes/{routeId}` with `includeStats=true`. IDs are
+encoded as single path segments. The response is converted immediately to a
+schema-only document and written atomically to
+`samples/anonymized/route-detail.schema.json`; raw data, IDs, values, counts,
+URLs, headers, and bodies are never printed or persisted. Without a valid
+saved session the script makes no Core/Geo request.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and
