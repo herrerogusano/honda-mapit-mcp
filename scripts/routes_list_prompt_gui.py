@@ -68,6 +68,14 @@ def _request_failure_category(*, vehicle_id: str | None, kind: str) -> str:
     return f"{prefix}_{kind}"
 
 
+def _stage_failure_category(*, stage: str, vehicle_id: str | None) -> str:
+    if stage == "schema":
+        return "routes_list_schema_failed"
+    if stage == "persist":
+        return "routes_list_persist_failed"
+    return "routes_list_request_failed" if vehicle_id is not None else "account_summary_request_failed"
+
+
 def _select_vehicle_id(summary: Any) -> str | None:
     """Prefer a non-null device, then fall back to the first valid ID."""
     if not isinstance(summary, dict) or not isinstance(summary.get("vehicles"), list):
@@ -100,6 +108,7 @@ def perform_routes_list_with_session(
     summary_payload: Any = None
     routes_payload: Any = None
     vehicle_id: str | None = None
+    stage = "account_summary_request"
     try:
         client = client_factory(config, session)
         summary_payload = client.get_core("/v1/account-summary")
@@ -107,9 +116,12 @@ def perform_routes_list_with_session(
         summary_payload = None
         if vehicle_id is None:
             return safe_error_summary(region=region, category="routes_list_missing_vehicle")
+        stage = "routes_list_request"
         routes_payload = client.get_geo("/v1/routes", params={"vehicleId": vehicle_id, "limit": 1})
+        stage = "schema"
         schema = schema_only(routes_payload)
         routes_payload = None
+        stage = "persist"
         atomic_write_schema(schema, Path(save_path))
         fields = schema.get("fields", {}) if schema.get("type") == "object" else {}
         return {"success": True, "region": region, "path": str(Path(save_path)), "top_level_keys": list(fields.keys())}
@@ -118,15 +130,14 @@ def perform_routes_list_with_session(
     except MapitHTTPError as exc:
         return safe_error_summary(
             region=region,
-            category=_routes_http_category(exc.status) if vehicle_id is not None else _http_category("account_summary", exc.status),
+            category=_routes_http_category(exc.status) if stage == "routes_list_request" else _http_category("account_summary", exc.status),
         )
     except MapitTransportError:
         return safe_error_summary(region=region, category=_request_failure_category(vehicle_id=vehicle_id, kind="transport_failed"))
     except MapitResponseError:
         return safe_error_summary(region=region, category=_request_failure_category(vehicle_id=vehicle_id, kind="invalid_response"))
     except Exception:
-        category = "routes_list_request_failed" if vehicle_id is not None else "account_summary_request_failed"
-        return safe_error_summary(region=region, category=category)
+        return safe_error_summary(region=region, category=_stage_failure_category(stage=stage, vehicle_id=vehicle_id))
     finally:
         summary_payload = None
         routes_payload = None

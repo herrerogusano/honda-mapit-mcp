@@ -22,7 +22,7 @@ and manual WebSocket investigation.
   Core/Geo read-only client. Endpoint overrides/discovery are fail-closed to
   HTTPS MAPIT Core/Geo hosts, unsupported Cognito challenges fail before any
   Identity Pool call, and expired sessions without a refresh callback fail
-  closed. Offline tests pass (`94 passed`). Session and routes GUI failures are
+  closed. Offline tests pass (`97 passed`). Session and routes GUI failures are
   now exposed only as stable public categories (`discovery_failed`,
   `authentication_rejected`/`authentication_failed`, or
   `credential_store_failed`); keyring size/backend failures remain fail-closed
@@ -53,6 +53,9 @@ and manual WebSocket investigation.
   `samples/anonymized/account-summary.schema.json`. On 2026-09-23 the owner ran
   it successfully; the live SigV4/header contract was accepted and only the
   value-free schema was retained.
+- The value-free anonymizer now merges heterogeneous array objects safely,
+  retaining only one-sided fields, nullability, and mixed primitive types;
+  source values, counts, and examples remain excluded.
 - The vehicle-detail GUI probe was completed successfully on 2026-09-23. It
   selected the first eligible vehicle in memory, URL-encoded one detail path
   segment, and retained only the value-free schema at
@@ -68,7 +71,8 @@ and manual WebSocket investigation.
   without exposing URL, body, headers, or IDs. Transport and invalid-response
   failures are separately reduced to `routes_list_transport_failed` or
   `routes_list_invalid_response` (with `account_summary_` equivalents before
-  vehicle selection).
+  vehicle selection); schema and persistence failures are categorized as
+  `routes_list_schema_failed` and `routes_list_persist_failed`.
 - Session enrollment is now separated into `scripts/session_setup_gui.py`;
   it performs only discovery plus `USER_PASSWORD_AUTH` and persists the refresh
   token. `scripts/check_saved_session.py` validates discovery plus the saved

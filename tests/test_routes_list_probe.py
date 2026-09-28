@@ -7,6 +7,7 @@ from mapit.auth import MapitSession, TemporaryCredentials
 from mapit.client import MapitHTTPError, MapitResponseError, MapitTransportError
 from mapit.config import MapitConfig, RuntimeConfig
 from mapit.session import SessionManagerError
+import scripts.routes_list_prompt_gui as routes_gui
 from scripts.routes_list_prompt_gui import (
     _routes_http_category,
     _safe_session_category,
@@ -317,4 +318,34 @@ def test_routes_probe_sanitizes_account_summary_errors(tmp_path, failure, expect
         save_path=tmp_path / "routes.schema.json",
     )
     assert result == {"success": False, "region": "eu-west-1", "error": expected}
+    assert "secret" not in json.dumps(result)
+
+
+def test_routes_probe_distinguishes_schema_and_persistence_failures(tmp_path, monkeypatch):
+    class Client:
+        def __init__(self, config, session):
+            pass
+
+        def get_core(self, path):
+            return {"vehicles": [{"id": "vehicle-secret", "device": {}}]}
+
+        def get_geo(self, path, *, params):
+            return {"data": [{"secret": "route-secret"}]}
+
+    def invalid_schema(payload):
+        raise ValueError("body-secret")
+
+    monkeypatch.setattr(routes_gui, "schema_only", invalid_schema)
+    result = perform_routes_list_with_session(
+        MapitConfig(), _session(), client_factory=Client, save_path=tmp_path / "schema.json"
+    )
+    assert result == {"success": False, "region": "eu-west-1", "error": "routes_list_schema_failed"}
+    assert "secret" not in json.dumps(result)
+
+    monkeypatch.setattr(routes_gui, "schema_only", lambda payload: {"type": "object", "nullable": False, "fields": {}})
+    monkeypatch.setattr(routes_gui, "atomic_write_schema", lambda schema, path: (_ for _ in ()).throw(OSError("path-secret")))
+    result = perform_routes_list_with_session(
+        MapitConfig(), _session(), client_factory=Client, save_path=tmp_path / "persist.json"
+    )
+    assert result == {"success": False, "region": "eu-west-1", "error": "routes_list_persist_failed"}
     assert "secret" not in json.dumps(result)

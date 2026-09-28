@@ -71,8 +71,10 @@ def _merge(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
         for key in sorted(set(left.get("fields", {})) | set(right.get("fields", {}))):
             if key in left.get("fields", {}) and key in right.get("fields", {}):
                 fields[key] = _merge(left["fields"][key], right["fields"][key])
+            elif key in left.get("fields", {}):
+                fields[key] = dict(left["fields"][key])
             else:
-                fields[key] = left.get("fields", {}).get(key, right["fields"][key])
+                fields[key] = dict(right["fields"][key])
         return {"type": "object", "nullable": nullable, "fields": fields}
     if left_type == "array":
         left_items = left.get("items", {"type": "unknown", "nullable": False})

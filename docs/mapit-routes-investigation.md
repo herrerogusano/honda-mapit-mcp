@@ -192,8 +192,9 @@ was produced. A `MapitHTTPError` from the Geo request now exposes only one of
 `routes_list_transport_failed` and `routes_list_invalid_response`. Before a
 vehicle is selected, the equivalent categories use the `account_summary_`
 prefix. Local-write and other unexpected failures retain the generic
-`routes_list_request_failed` category. No exception text, URL, body, headers,
-or vehicle ID is returned.
+`routes_list_request_failed` category; schema conversion and atomic persistence
+have their own `routes_list_schema_failed` and `routes_list_persist_failed`
+categories. No exception text, URL, body, headers, or vehicle ID is returned.
 
 ## Evidence references
 

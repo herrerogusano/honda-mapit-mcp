@@ -71,3 +71,39 @@ def test_schema_only_neutralizes_short_and_tenant_style_dynamic_keys():
     assert "id1" not in fields
     assert "1234-ABC" not in fields
     assert "status" in fields
+
+
+def test_schema_only_merges_heterogeneous_objects_with_one_sided_fields():
+    raw = [
+        {"only_left": "left-secret", "mixed": None, "nested": {"left_nested": 1}},
+        {"only_right": "right-secret", "mixed": 7, "nested": {"right_nested": "value-secret"}},
+    ]
+    schema = schema_only(raw)
+    rendered = json.dumps(schema, sort_keys=True)
+    assert "left-secret" not in rendered
+    assert "right-secret" not in rendered
+    assert "value-secret" not in rendered
+    fields = schema["items"]["fields"]
+    assert fields["only_left"] == {"type": "string", "nullable": False}
+    assert fields["only_right"] == {"type": "string", "nullable": False}
+    assert fields["mixed"] == {"type": "number", "nullable": True}
+    assert fields["nested"]["type"] == "object"
+    assert set(fields["nested"]["fields"]) == {"left_nested", "right_nested"}
+
+
+def test_schema_only_merges_null_and_type_changes_without_values_or_counts():
+    schema = schema_only([
+        {"field": None},
+        {"field": "secret-value"},
+        {"field": 42},
+        {"field": True},
+    ])
+    assert schema["items"]["fields"]["field"] == {
+        "type": "mixed",
+        "types": ["boolean", "number", "string"],
+        "nullable": True,
+    }
+    rendered = json.dumps(schema, sort_keys=True)
+    assert "secret-value" not in rendered
+    assert "42" not in rendered
+    assert "count" not in rendered and "length" not in rendered
