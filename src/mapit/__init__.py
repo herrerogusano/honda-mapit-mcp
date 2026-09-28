@@ -10,6 +10,18 @@ from .auth import (
 )
 from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
 from .config import MapitConfig, RuntimeConfig, discover_runtime_config
+from .realtime import (
+    RealtimeClient,
+    RealtimeError,
+    RealtimeFactoryError,
+    RealtimeAuthenticationError,
+    RealtimeService,
+    RealtimeState,
+    account_socket_url,
+    create_realtime_service,
+    normalize_realtime_message,
+    realtime_service_from_saved_session,
+)
 from .session import ManagedSession, RefreshTokenStore, SessionManager, SessionManagerError, WindowsKeyringRefreshTokenStore
 
 __all__ = [
@@ -32,4 +44,14 @@ __all__ = [
     "SessionManagerError",
     "WindowsKeyringRefreshTokenStore",
     "discover_runtime_config",
+    "RealtimeClient",
+    "RealtimeError",
+    "RealtimeFactoryError",
+    "RealtimeAuthenticationError",
+    "RealtimeService",
+    "RealtimeState",
+    "account_socket_url",
+    "create_realtime_service",
+    "normalize_realtime_message",
+    "realtime_service_from_saved_session",
 ]

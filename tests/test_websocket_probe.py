@@ -177,6 +177,8 @@ def test_connector_wrapper_signature_matches_probe_and_websockets_sync_api(monke
                 "close_timeout": 1.0,
                 "max_size": 64 * 1024,
                 "max_queue": 4,
+                "ping_interval": 20.0,
+                "ping_timeout": 20.0,
             },
         )
     ]

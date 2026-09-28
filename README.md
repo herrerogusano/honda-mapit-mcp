@@ -3,15 +3,18 @@
 Phase 0 produced the standalone synchronous client. Phase 1 now adds a local
 stdio MCP server with ten read-only tools over a separate application-service
 layer. Phase 2 adds bounded route analytics over the same monthly retrieval
-path. The project discovers public runtime configuration, performs
+path, and Phase 3 adds a reusable in-process realtime state service without a
+new MCP tool. The project discovers public runtime configuration, performs
 the Cognito authentication flow when explicitly requested, obtains temporary
 Identity Pool credentials, signs Core/Geo `GET` requests with AWS SigV4, and
 recovers one time from an expired/invalid session.
 
 The reusable client and MCP server do not implement account/routing writes.
-Realtime support is limited to the optional bounded WebSocket probe and is not a
-general subscription service. The test suite makes no real MAPIT requests. The explicit
-local read-only probe scripts are separate from the normal client workflow. The reusable library
+Realtime support is the reusable in-process state service plus an optional
+bounded WebSocket gate; it is not exposed as an MCP realtime tool and does not
+define persistence or application event semantics. See the [Phase 3
+contract](docs/phase-3-realtime-contracts.md) and [status](docs/phase-3-status.md).
+The test suite makes no real MAPIT requests. The explicit local read-only probe scripts are separate from the normal client workflow. The reusable library
 reads environment credentials only when explicitly requested, while the local
 session setup GUI keeps them in memory and persists only a refresh token in the
 approved Windows store. Credentials are never logged. Cognito identifiers may
@@ -268,6 +271,27 @@ contains the URL, subprotocol, IDs, values, close reason, or raw frame.
 The bounded authorized run connected successfully and produced the current
 schema-only fixture; this is one-account evidence, not a universal realtime
 contract.
+
+The reusable Phase 3 realtime component is available to later local layers as
+`mapit.realtime.RealtimeService`. It uses only the allowlisted account-level
+`wss://dsw.prod.mapit.me/accounts/{encodedAccountId}` endpoint, checks token
+freshness before each handshake and refreshes only if needed, sends no
+application messages, keeps an immutable in-memory cache of at most 64
+normalized identities, and reconnects with bounded backoff. It exposes
+lifecycle categories and snapshots but does not add an MCP tool or persist
+realtime state.
+
+The bounded Phase 3 live gate can be run locally after installing `.[realtime]`:
+
+```powershell
+py scripts\smoke_realtime_phase3.py
+```
+
+It waits at most ten seconds for one valid normalized state, always stops the
+service, and prints only booleans and allowlisted categories. It never prints
+or persists realtime state, IDs, frames, URLs, or credentials. A successful
+gate is evidence for the local saved-session account only; see the [Phase 3
+status](docs/phase-3-status.md) for the recorded result and limitations.
 
 ## CI and environments
 

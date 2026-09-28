@@ -48,7 +48,7 @@ def create_server(provider: ServiceProvider | None = None) -> MCPServer:
             "All tools are read-only. MAPIT route metric units and route-history completeness are not yet confirmed; "
             "preserve the explicit metadata returned by each tool."
         ),
-        version="0.3.0",
+        version="0.4.0",
     )
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
