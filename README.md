@@ -295,6 +295,14 @@ status](docs/phase-3-status.md) for the recorded result and limitations.
 
 ## Optional conversational agent (Phase 4, not complete)
 
+For normal interactive use, Codex can launch the local `mapit-mcp` stdio server
+directly. The registered local server is started on demand by Codex and uses the
+saved MAPIT session; it does not need an OpenAI API key. Model usage follows the
+signed-in Codex account's normal allowance. The 2026-09-29 live E2E confirmed a
+grounded `get_vehicle_status` call with GPT-6 Sol at medium reasoning. A separate
+Codex-path discrepancy for `get_distance` is still being investigated, so Phase
+4 remains in progress; see the [Phase 4 status](docs/phase-4-status.md).
+
 The optional Agents SDK adapter is lazy: the base client and MCP server do not
 require `openai-agents` or an OpenAI key. Install the compatible extras for
 local work:
