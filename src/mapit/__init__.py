@@ -9,6 +9,14 @@ from .auth import (
     UnsupportedCognitoChallenge,
 )
 from .agent import AgentAdapterError, AgentAnswer, AgentRunOutcome, run_agent_once
+from .codex_cli_backend import (
+    CodexCliBackend,
+    CodexCliError,
+    CodexCliResult,
+    CodexProcessResult,
+    CodexRunner,
+    build_codex_child_env,
+)
 from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
 from .config import MapitConfig, RuntimeConfig, discover_runtime_config
 from .realtime import (
@@ -24,12 +32,28 @@ from .realtime import (
     realtime_service_from_saved_session,
 )
 from .session import ManagedSession, RefreshTokenStore, SessionManager, SessionManagerError, WindowsKeyringRefreshTokenStore
+from .telegram_adapter import (
+    PrivateTelegramPolicy,
+    TelegramAccessPolicy,
+    TelegramAdapter,
+    TelegramBackend,
+    TelegramDispatchResult,
+    TelegramSender,
+    TelegramUpdate,
+    format_agent_answer,
+)
 
 __all__ = [
     "CognitoAuthenticator",
     "AgentAdapterError",
     "AgentAnswer",
     "AgentRunOutcome",
+    "CodexCliBackend",
+    "CodexCliError",
+    "CodexCliResult",
+    "CodexProcessResult",
+    "CodexRunner",
+    "build_codex_child_env",
     "CognitoHTTPError",
     "MapitClient",
     "MapitConfig",
@@ -59,4 +83,12 @@ __all__ = [
     "create_realtime_service",
     "normalize_realtime_message",
     "realtime_service_from_saved_session",
+    "PrivateTelegramPolicy",
+    "TelegramAccessPolicy",
+    "TelegramAdapter",
+    "TelegramBackend",
+    "TelegramDispatchResult",
+    "TelegramSender",
+    "TelegramUpdate",
+    "format_agent_answer",
 ]

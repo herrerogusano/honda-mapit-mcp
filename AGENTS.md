@@ -3,16 +3,23 @@
 ## Scope
 
 Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
-client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), and
-Phase 3 (the reusable read-only realtime component) are complete. Phase 4 is
-limited to the local conversational-agent adapter and deterministic evaluation
-contract in `docs/phase-4-agent-contracts.md`. Do not expand beyond that contract or
-implement Telegram, an agent UI, a frontend, a project database, project-owned
-AWS infrastructure, Home Assistant, or persistence for realtime state.
+client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), Phase 3
+(the reusable read-only realtime component), and Phase 4 (the local
+Codex-to-MCP conversational-agent adapter and deterministic evaluation) are
+complete. Phase 5 is ACTIVE only for the private local Telegram prototype
+contract, implementation, and offline tests in
+`docs/phase-5-telegram-contracts.md`. Do not make Telegram calls, create a bot,
+send messages, or use real bot tokens/chat IDs/user IDs until an explicit
+external gate authorizes it. Do not expand into an agent UI, frontend, project
+database, project-owned AWS infrastructure, webhook deployment, Home Assistant,
+or persistence.
 
-Phase 0 is read-only against MAPIT. Do not send `POST`, `PUT`, `PATCH`, or
-`DELETE` requests except the Cognito calls strictly required for authentication.
-Never commit credentials, tokens, AWS keys, or real personal/device/location IDs.
+MAPIT remains read-only in Phase 5. Do not send `POST`, `PUT`, `PATCH`, or
+`DELETE` requests to MAPIT except the Cognito calls strictly required for
+authentication. The only future Telegram write in the Phase 5 contract is the
+bounded `sendMessage` operation, which is not implemented or authorized yet.
+Never commit credentials, tokens, AWS keys, Telegram bot tokens, or real
+personal/device/location/chat/user IDs.
 
 Before expanding the MCP core, agents, tools, evaluations, or AWS integration,
 read:
@@ -60,6 +67,8 @@ incrementally, especially:
 - `docs/phase-0-status.md`
 - `docs/phase-3-status.md`
 - `docs/phase-4-agent-contracts.md`
+- `docs/phase-5-telegram-contracts.md`
+- `docs/phase-5-status.md`
 
 Distinguish confirmed facts, evidence found in frontend/code, hypotheses, and
 open questions. Do not invent capabilities or brute-force endpoints.

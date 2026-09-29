@@ -338,6 +338,16 @@ limits the run to six turns and 60 seconds, and never passes provider or MAPIT
 credentials to the child. See the [Phase 4 contract](docs/phase-4-agent-contracts.md)
 and [Phase 4 status](docs/phase-4-status.md).
 
+## Phase 5 Telegram prototype (active, no live Telegram)
+
+Phase 5 is limited to a private local polling contract and offline prototype
+implementation/tests; “no polling” means no live polling. It does not call Telegram, create a bot, send messages, use real bot
+tokens/chat IDs/user IDs, persist state, deploy webhooks/AWS, or change the
+read-only MAPIT boundary. The only future Telegram write is a bounded,
+allowlisted `sendMessage`; it is not live-authorized. See the
+[Phase 5 contract](docs/phase-5-telegram-contracts.md) and
+[Phase 5 status](docs/phase-5-status.md).
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and
