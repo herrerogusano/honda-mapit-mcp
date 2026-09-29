@@ -4,6 +4,7 @@ import asyncio
 import json
 import tomllib
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,8 @@ from mapit.codex_cli_backend import (
     CodexProcessResult,
     build_codex_child_env,
 )
+
+REPOSITORY_DIR = Path.cwd().resolve()
 
 
 def _jsonl(*, calls=(), answer=None, items=(), turn=True):
@@ -59,7 +62,7 @@ class FakeRunner:
 
 
 def _backend(runner):
-    return CodexCliBackend(runner=runner, parent_env={"PATH": "safe", "OPENAI_API_KEY": "secret"}, repository_dir="C:\\repo")
+    return CodexCliBackend(runner=runner, parent_env={"PATH": "safe", "OPENAI_API_KEY": "secret"}, repository_dir=REPOSITORY_DIR)
 
 
 def test_command_uses_stdin_no_shell_shape_and_scrubs_environment():
@@ -82,7 +85,7 @@ def test_command_uses_stdin_no_shell_shape_and_scrubs_environment():
     assert runner.calls[1][1] != "status question"
     assert "<untrusted_user_input>" in runner.calls[1][1]
     assert "status question" in runner.calls[1][1]
-    assert runner.calls[1][3] != "C:\\repo"
+    assert runner.calls[1][3] != str(REPOSITORY_DIR)
     assert any("features.shell_tool=false" in part for part in command)
     assert any("features.multi_agent=false" in part for part in command)
     assert any("mcp_servers.mapit-local.command" in part and "mapit-local" not in part.split("=", 1)[-1] for part in command)
@@ -113,7 +116,7 @@ def test_effective_config_values_are_typed_toml_and_mcp_is_pinned():
     assert "tool_timeout_sec=30" not in config
     env_config = next(value for value in config if value.startswith("mcp_servers.mapit-local.env="))
     parsed_env = tomllib.loads(env_config.split("=", 1)[0] + " = " + env_config.split("=", 1)[1])
-    assert parsed_env["mcp_servers"]["mapit-local"]["env"] == {"PYTHONPATH": "C:\\repo\\src"}
+    assert parsed_env["mcp_servers"]["mapit-local"]["env"] == {"PYTHONPATH": str(REPOSITORY_DIR / "src")}
 
 
 def test_prompt_has_injected_host_date_timezone_and_raw_payload_wording():
