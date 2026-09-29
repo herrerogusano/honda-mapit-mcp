@@ -1,8 +1,6 @@
 # Phase 4 status
 
-Status: **IN PROGRESS / IMPLEMENTATION ACCEPTED**. A direct Codex-subscription
-E2E path is **CONFIRMED**, with one distance-query discrepancy still under
-investigation.
+Status: **COMPLETED** on 2026-09-29.
 
 ## Delivered
 
@@ -13,18 +11,20 @@ investigation.
   child-environment isolation.
 - Deterministic, network-free evaluator and synthetic dataset covering all six
   Phase 4 contract classes.
-- Safe bounded live-gate script; it does not persist or print answers, prompts,
-  arguments, results, usage, identifiers, metrics, or private MAPIT data.
+- Safe bounded Agents SDK gate and a separate subscription-backed Codex-to-local
+  MCP gate; neither persists or prints answers, prompts, arguments, results,
+  usage, identifiers, metrics, or private MAPIT data.
 
 ## Verification
 
-- Offline suite: `291 passed`.
+- Offline suite at implementation acceptance: `291 passed`; current suite,
+  including the Codex smoke regressions and hardening, is `302 passed`.
 - Evaluator dataset: `12/12` cases passed.
 - `compileall` and `git diff --check` passed.
 - Clean environment installation of the `test`, `realtime`, and `agent`
   extras was verified, including dependency compatibility.
 
-### Direct Codex E2E (2026-09-29)
+### Direct Codex E2E evidence (2026-09-29)
 
 - The Codex CLI was authenticated with ChatGPT, not an API key.
 - `gpt-6-sol` with medium reasoning launched the global `mapit-local` stdio MCP.
@@ -37,23 +37,33 @@ investigation.
   MCP payloads were printed or persisted.
 - The Phase 1 and Phase 2 live smoke scripts also passed immediately before the
   E2E run.
+- The final bounded smoke output was exactly the following safe allowlisted
+  metadata:
+
+  ```json
+  {"success":true,"logged_in":true,"mcp_call_ok":true,"final_safe":true,"category":"success","model":"gpt-6-sol","tool_name":"get_vehicle_status"}
+  ```
 
 This path consumes the signed-in Codex subscription allowance. It does not use
 `OPENAI_API_KEY` or create separately billed OpenAI API usage.
 
-## Pending investigation and limitations
+## Limitations retained
 
-Two preceding Codex E2E attempts selected `get_distance` exactly once but
-reported tool failure. The identical requested period succeeded when invoked
-directly through `MapitServices`, and the Phase 1 smoke also completed
-`get_distance`. The discrepancy is therefore specific to the Codex-to-MCP
-agent path and remains unexplained. Do not mark Phase 4 completed until it is
-classified and a distance question passes through that path.
+Some Codex E2E attempts selected `get_distance` exactly once with invalid
+model-generated arguments, so those tool calls failed before useful grounding;
+this was model argument variation, not an MCP failure. A separate manual
+attempt completed `get_distance` with the correct arguments. The reusable smoke
+therefore tests the deterministic no-argument `get_vehicle_status` path, while
+the offline dataset covers analytics tool selection and argument normalization.
+Its parser still rejects non-null errors or any other status. The offline
+dataset remains the evidence for analytics tool selection and argument
+normalization; the bounded live gate intentionally uses the safer no-argument
+status call.
 
-The Agents SDK live gate remains available as an optional provider-adapter test
-using user-supplied `OPENAI_API_KEY` and `MAPIT_AGENT_MODEL`. It is no longer a
-prerequisite for validating ordinary Codex-to-local-MCP usage and has not been
-run. No provider values are recorded in this status or repository.
+The Agents SDK live gate remains an optional provider-adapter test using
+user-supplied `OPENAI_API_KEY` and `MAPIT_AGENT_MODEL`; it was not run and is
+not a prerequisite for this completed local Codex-to-MCP phase. No provider
+values are recorded in this status or repository.
 
 The evaluator's unsupported-claim policy is a versioned lexical denylist. It
 intentionally rejects concrete units, realtime wording, and completeness

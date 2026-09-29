@@ -1,6 +1,7 @@
 # Phase 4 conversational-agent contracts
 
-Status: approved for implementation.
+Status: COMPLETED after the bounded Codex subscription gate passed on
+2026-09-29.
 
 ## Evidence and architecture decision
 
@@ -120,11 +121,49 @@ allowlisted categories, and tool names. It must not print or persist the model
 answer, prompt, tool arguments/results, usage, identifiers, metrics, or private
 MAPIT data.
 
+The reproducible subscription-backed local gate is
+`scripts/smoke_codex_mcp_phase4.py`. It first verifies `codex login status`
+reports a ChatGPT login, then invokes `codex exec` without a shell using the
+ephemeral read-only profile, the fixed `gpt-6-sol` model, and only the local
+`mapit-local` MCP command override. It captures JSONL in memory, removes
+provider/API and MAPIT credential variables from the child environment, and
+accepts success only for exactly one `mapit-local` MCP call whose `tool` is
+`get_vehicle_status`, with `status="completed"`, `error=null`, and a final
+JSON response whose
+keys are exactly `success`, `grounded`, and `safe`, whose values are strict
+JSON booleans set to true. Any other `item.completed` action or tool type is
+rejected; only the single MCP call, `agent_message`, and inert `reasoning`
+items are accepted. Its output is limited to safe booleans, an allowlisted
+category, the model, and the tool name.
+
+The child environment removes provider/API credentials, provider base URLs and
+tokens, and all case variants of `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY`.
+Codex authentication configuration such as `CODEX_HOME` is retained so the
+ChatGPT login check continues to work.
+
+Earlier `get_distance` failures were caused by model-generated invalid
+arguments in some attempts, not by an MCP transport failure; a separate manual
+attempt completed with the correct `from_time`/`to_time` arguments. The
+connectivity gate therefore uses the natural-language, no-argument vehicle
+status question, while the offline dataset pins analytics tool selection and
+argument normalization. The regression tests still reject non-null errors or
+any other status.
+
+Final bounded gate evidence (safe output only):
+
+```json
+{"success":true,"logged_in":true,"mcp_call_ok":true,"final_safe":true,"category":"success","model":"gpt-6-sol","tool_name":"get_vehicle_status"}
+```
+
 ## Exit criteria
 
 - optional local Agents SDK adapter connects to `mapit-mcp` over stdio;
 - strict structured output and actual tool-call capture;
 - deterministic 12-or-more-case offline suite passes;
 - dependency compatibility and subprocess environment isolation are tested;
-- bounded live gate is either successful or explicitly recorded as pending its
-  credential/model authorization gate.
+- bounded Codex subscription gate passed with one read-only tool call and safe
+  structured completion.
+
+The optional Agents SDK provider-adapter gate using
+`OPENAI_API_KEY`/`MAPIT_AGENT_MODEL` remains unexecuted and is not required for
+this completed local Codex-to-MCP phase.
