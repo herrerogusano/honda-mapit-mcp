@@ -384,6 +384,8 @@ executed, requires explicit authorization, and may perform public discovery,
 Cognito authentication/refresh, and secure refresh-token rotation before
 exactly three bounded MAPIT reads. It does not persist route data or probe
 output.
+The analyzer reports only allowlisted gap bands by provenance (LineString
+interior, feature boundary, or Point stream); third ordinates remain opaque.
 
 ## CI and environments
 

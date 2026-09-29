@@ -7,10 +7,12 @@ import pytest
 from mapit.route_input_analyzer import (
     DIMENSION_CLASSES,
     GAP_BANDS,
+    GAP_SOURCES,
     GEOMETRY_CLASSES,
     INPUT_SUFFICIENCY,
     OUTPUT_KEYS,
     RouteInputAnalysisError,
+    THIRD_ORDINATE_CLASSES,
     analyze_route_input,
     safe_analyze_route_input,
 )
@@ -51,6 +53,11 @@ def test_output_is_fixed_schema_and_all_values_are_allowlisted():
     assert set(result["geometry_classes"]) <= GEOMETRY_CLASSES
     assert set(result["coordinate_dimension_classes"]) <= DIMENSION_CLASSES
     assert result["max_consecutive_gap_distance_band"] in GAP_BANDS
+    assert result["max_gap_within_linestring_band"] in GAP_BANDS
+    assert result["max_gap_between_features_band"] in GAP_BANDS
+    assert result["max_gap_point_stream_band"] in GAP_BANDS
+    assert result["max_consecutive_gap_source"] in GAP_SOURCES
+    assert result["third_ordinate_class"] in THIRD_ORDINATE_CLASSES
     assert result["input_sufficiency"] in INPUT_SUFFICIENCY
     assert json.dumps(result, ensure_ascii=True).find("Sensitive") == -1
     assert "private-timestamp" not in json.dumps(result)
@@ -58,6 +65,7 @@ def test_output_is_fixed_schema_and_all_values_are_allowlisted():
     assert result["per_point_accuracy_present"] is True
     assert result["per_point_heading_present"] is True
     assert result["per_point_speed_present"] is True
+    assert result["third_ordinate_class"] == "present_opaque"
 
 
 def test_third_ordinate_is_dimension_only_not_timestamp():
@@ -65,6 +73,7 @@ def test_third_ordinate_is_dimension_only_not_timestamp():
     assert result["coordinate_dimension_classes"] == ["3"]
     assert result["per_point_time_present"] is False
     assert result["input_sufficiency"] == "candidate"
+    assert result["third_ordinate_class"] == "present_opaque"
 
 
 def test_point_and_linestring_shapes_and_wgs84_range():
@@ -93,6 +102,10 @@ def test_gap_and_name_label_inferred_bands_are_value_free():
     assert result["distinct_label_band"] == "many"
     assert result["inferred_coverage_class"] == "partial"
     assert result["max_consecutive_gap_distance_band"] == "long"
+    assert result["max_gap_within_linestring_band"] == "none"
+    assert result["max_gap_between_features_band"] == "long"
+    assert result["max_gap_point_stream_band"] == "long"
+    assert result["max_consecutive_gap_source"] == "point_stream"
     assert all(value not in json.dumps(result) for value in ("name-0", "label-0"))
 
 
@@ -114,6 +127,49 @@ def test_antimeridian_uses_shortest_longitude_arc():
     payload = _detail(coordinates=[[179.999, 0], [-179.999, 0]])
     result = analyze_route_input(payload)
     assert result["max_consecutive_gap_distance_band"] == "medium"
+
+
+def test_gap_provenance_is_inside_linestring_when_no_feature_boundary_exists():
+    result = analyze_route_input(_detail(coordinates=[[0, 0], [0, 0.0005]]))
+    assert result["max_gap_within_linestring_band"] == "short"
+    assert result["max_gap_between_features_band"] == "none"
+    assert result["max_gap_point_stream_band"] == "none"
+    assert result["max_consecutive_gap_source"] == "inside_linestring"
+
+
+def test_gap_provenance_separates_feature_boundary_from_line_internal_gap():
+    payload = {
+        "geoJSON": {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0]}},
+                {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[0, 0.1]]}},
+            ],
+        }
+    }
+    result = analyze_route_input(payload)
+    assert result["max_gap_within_linestring_band"] == "none"
+    assert result["max_gap_between_features_band"] == "long"
+    assert result["max_gap_point_stream_band"] == "none"
+    assert result["max_consecutive_gap_source"] == "between_features"
+
+
+def test_gap_provenance_marks_mixed_sources_without_values():
+    payload = {
+        "geoJSON": {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[0, 0], [0, 0.0005]]}},
+                {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0.1]}},
+            ],
+        }
+    }
+    result = analyze_route_input(payload)
+    assert result["max_gap_within_linestring_band"] == "short"
+    assert result["max_gap_between_features_band"] == "long"
+    assert result["max_gap_point_stream_band"] == "none"
+    assert result["max_consecutive_gap_source"] == "multiple"
+    assert "0.1" not in json.dumps(result)
 
 
 @pytest.mark.parametrize(

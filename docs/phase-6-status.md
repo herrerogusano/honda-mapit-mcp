@@ -33,15 +33,23 @@ separate unfiltered-plus-controls gate.
 The separate route-reconstruction research is recorded in
 [`phase-6-route-reconstruction-research.md`](phase-6-route-reconstruction-research.md).
 It inventories the confirmed MAPIT route/detail GeoJSON shape and concludes
-that map matching is only a candidate capability: the retained evidence has no
-coordinate values, order/density, per-point timestamps, accuracy, heading, or
-road identifiers. The pure `route_input_analyzer` and bounded
+that map matching remains only a candidate capability. One authorized
+redacted run classified the input as `candidate` with `Point` + `LineString`,
+dimension `3`, nested/pair-like shapes, valid WGS84 range, density `many`,
+names `many`, labels `few`, partial `inferred`, and no per-point
+time/accuracy/heading/speed. No coordinate values or raw body were retained.
+The run also classified the maximum observed stream gap as `long`; the
+historical redacted output did not retain provenance. The pure
+`route_input_analyzer` and bounded
 `probe_route_input_sufficiency.py` are implemented and covered by offline
 synthetic tests; the pure analyzer tests make no network calls. The probe is
-live-capable but has not been run with a saved session or live network and
-requires separate authorization. Its saved-session preparation may perform
+live-capable and the single authorized run is complete; no additional live
+probe is authorized by this status. Its saved-session preparation may perform
 public discovery, Cognito authentication/refresh, and atomically rotate the
 existing secure refresh token; it does not persist route data or probe output.
+Offline analysis now separates gap bands for LineString interiors, feature
+boundaries, and consecutive Point features, while retaining only an
+allowlisted source classification; a third ordinate remains opaque.
 The reverse-geocoding path is documented as a distinct coordinate-to-label
 read, not as route reconstruction. No external matcher, paid call, OSM import,
 city-coverage calculation, or persistence is authorized by this status.

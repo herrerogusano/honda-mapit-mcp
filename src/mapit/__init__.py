@@ -56,7 +56,9 @@ from .telegram_bot import (
     TelegramPollResult,
 )
 from .route_input_analyzer import (
+    GAP_SOURCES,
     RouteInputAnalysisError,
+    THIRD_ORDINATE_CLASSES,
     analyze_route_input,
     analyze_route_input_sufficiency,
     safe_analyze_route_input,
@@ -121,8 +123,10 @@ __all__ = [
     "TelegramBotSender",
     "TelegramPollResult",
     "RouteInputAnalysisError",
+    "GAP_SOURCES",
     "analyze_route_input",
     "analyze_route_input_sufficiency",
     "safe_analyze_route_input",
     "safe_analyze_route_input_sufficiency",
+    "THIRD_ORDINATE_CLASSES",
 ]
