@@ -16,9 +16,29 @@ has been implemented.
 - Any measurement must be separately approved, bounded, redacted, and recorded
   as safe metadata only before a persistence design is proposed.
 
+The bounded research protocol and proposed quantitative thresholds are recorded
+in [`phase-6-measurement-plan.md`](phase-6-measurement-plan.md). It confirms
+that the current no-persistence route path is the baseline: one Core
+`account-summary` read plus one Geo read per UTC month window for a one-month
+analytics operation, with the existing 2 MiB/window and 366-day limits. Phase 0
+confirmed two bounded monthly windows but historical coverage remains
+`PARTIAL`; the unfiltered read exceeded 2 MiB before decoding. No latency,
+reliability, byte, or API-read-reduction measurement has yet been collected.
+The proposed filtered sample separates six logical Geo reads from a maximum of
+12 wire Geo GETs (one possible 401/403 recovery each), and one logical Core
+account-summary read from a maximum of two wire Core GETs. Its coverage output
+is restricted to `PARTIAL` or `UNKNOWN`; the stricter complete label requires a
+separate unfiltered-plus-controls gate.
+
 ## Next gate
 
 Research and supervisor approval must establish a measurable benefit over the
 existing stateless MAPIT/MCP path. Only then may a separate implementation
 task define idempotent ingestion, deduplication, migrations, retention, source
 versus derived data, and the explicit no-secrets-in-storage invariant.
+
+Until that gate passes, the default decision is **keep stateless**. Offline
+synthetic benchmarks may measure current call formulas, normalization,
+aggregation, and safety limits. A future live sample, if separately approved,
+must remain one account/vehicle, bounded monthly reads, no unfiltered retry,
+coarse redacted metrics only, and no durable route/event payloads.
