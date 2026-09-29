@@ -55,6 +55,13 @@ from .telegram_bot import (
     TelegramBotSender,
     TelegramPollResult,
 )
+from .route_input_analyzer import (
+    RouteInputAnalysisError,
+    analyze_route_input,
+    analyze_route_input_sufficiency,
+    safe_analyze_route_input,
+    safe_analyze_route_input_sufficiency,
+)
 
 __all__ = [
     "CognitoAuthenticator",
@@ -113,4 +120,9 @@ __all__ = [
     "TelegramBotPoller",
     "TelegramBotSender",
     "TelegramPollResult",
+    "RouteInputAnalysisError",
+    "analyze_route_input",
+    "analyze_route_input_sufficiency",
+    "safe_analyze_route_input",
+    "safe_analyze_route_input_sufficiency",
 ]

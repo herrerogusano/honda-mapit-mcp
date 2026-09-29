@@ -1,7 +1,7 @@
 # Phase 6: investigación de reconstrucción de rutas y cobertura urbana
 
-Estado: **investigación acotada; sin llamadas MAPIT live, sin pagos y sin
-implementación** (2026-09-29).
+Estado: **investigación acotada; analizador/probe offline implementado, sin
+llamadas MAPIT live ni pagos** (2026-09-29).
 
 Este documento responde primero a qué datos entrega MAPIT y si esos datos son
 suficientes para map matching. OSRM, Valhalla, GraphHopper y Amazon Location
@@ -67,30 +67,49 @@ usar `[longitud, latitud]`, pero esa convención externa no demuestra que MAPIT
 la cumpla en todos sus features; debe verificarse de forma controlada antes de
 calcular distancias o pasar puntos a un matcher.
 
-## 3. Mínimo probe posterior, si se autoriza
+## 3. Probe acotado implementado, no ejecutado live
 
-No se ejecuta ahora. Reutilizaría el flujo ya aprobado: `account-summary`, una
-selección de vehículo solo en memoria, un listado acotado y un único detalle
-actual con `includeStats=true`. No seguiría cursores, no probaría el endpoint
-legacy, no llamaría al reverse geocoder y no enviaría los datos a OSRM,
-Valhalla, GraphHopper o AWS.
+`src/mapit/route_input_analyzer.py` contiene el analizador puro y
+`scripts/probe_route_input_sufficiency.py` contiene el flujo no interactivo.
+El analizador puro y sus pruebas sintéticas no hacen llamadas de red. El
+script es capaz de ejecutarse live, pero no se ha ejecutado y requiere
+autorización explícita. Al iniciar con una sesión guardada, su preparación
+puede hacer discovery público, autenticación/refresh Cognito y rotar
+atómicamente el refresh token seguro existente; eso no guarda datos de ruta ni
+la salida del probe.
+El probe reutiliza el flujo aprobado: `account-summary`, una selección de
+vehículo solo en memoria, un listado `limit=1` y un único detalle actual con
+`includeStats=true`. Cada operación es una lectura lógica y solo puede usar la
+recuperación 401/403 ya existente del cliente. No sigue cursores, no prueba el
+endpoint legacy, no llama al reverse geocoder y no envía datos a OSRM,
+Valhalla, GraphHopper o AWS. No se ha ejecutado con sesión, credenciales ni
+red live.
 
 El detalle se inspeccionaría en memoria y se descartaría inmediatamente. La
-salida permitida sería solo una clasificación, por ejemplo:
+salida permitida es el esquema fijo implementado, con valores allowlisted:
 
-- `coordinate_present`: boolean;
-- `geometry_classes`: conjunto allowlisted (`Point`, `LineString`, `other`);
-- `coordinate_shape_class`: `scalar`, `pair-like`, `nested`, `invalid`;
-- `coordinate_dimension_class`: `2`, `3`, `other`, `unknown`;
+- `geometry_classes`: conjunto (`Point`, `LineString`);
+- `coordinate_shape_classes`: conjunto (`pair-like`, `nested`);
+- `coordinate_dimension_classes`: conjunto (`2`, `3`);
 - `point_density_band`: banda gruesa (`none`, `few`, `many`), nunca el conteo;
 - `per_point_time/accuracy/heading/speed`: booleanos;
-- `names_or_labels_present`, `inferred_present`: booleanos;
+- `distinct_name_band`/`distinct_label_band`: bandas, nunca los valores;
+- `inferred_coverage_class`: `all`, `partial`, `none`, `unknown`;
 - `input_sufficiency`: `insufficient`, `candidate`, `candidate_with_time`.
 
 No se mostrarían ni guardarían valores, coordenadas, route/vehicle IDs,
 timestamps exactos, nombres, labels, distancias, velocidades, headers,
 tokens, URLs firmadas, cuerpos o conteos exactos. El probe tampoco decidiría
 qué ciudad es ni produciría una métrica de cobertura.
+
+La salida fija incluye clases de geometría, forma/dimensión de coordenadas,
+validez de rango WGS84, bandas de densidad y de mayor gap consecutivo, bandas
+de nombres/labels distintos, clase de cobertura `inferred`, presencia de
+metadatos por punto e `input_sufficiency`. Solo usa enums, bandas y booleanos;
+no contiene IDs, coordenadas, timestamps, nombres, labels, métricas, conteos,
+URLs, cuerpos ni excepciones.
+Una tercera ordenada solo se clasifica como dimensión `3`: se trata como
+ordenada opaca candidata a elevación/desconocida y nunca como timestamp.
 
 Si el objetivo específico es “última ruta”, hará falta además una ventana
 acotada cuyo orden temporal pueda inspeccionarse efímeramente; el primer item

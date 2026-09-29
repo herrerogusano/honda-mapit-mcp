@@ -35,10 +35,16 @@ The separate route-reconstruction research is recorded in
 It inventories the confirmed MAPIT route/detail GeoJSON shape and concludes
 that map matching is only a candidate capability: the retained evidence has no
 coordinate values, order/density, per-point timestamps, accuracy, heading, or
-road identifiers. The reverse-geocoding path is documented as a distinct
-coordinate-to-label read, not as route reconstruction. No live probe, external
-matcher, paid call, OSM import, city-coverage calculation, or persistence is
-authorized by this status.
+road identifiers. The pure `route_input_analyzer` and bounded
+`probe_route_input_sufficiency.py` are implemented and covered by offline
+synthetic tests; the pure analyzer tests make no network calls. The probe is
+live-capable but has not been run with a saved session or live network and
+requires separate authorization. Its saved-session preparation may perform
+public discovery, Cognito authentication/refresh, and atomically rotate the
+existing secure refresh token; it does not persist route data or probe output.
+The reverse-geocoding path is documented as a distinct coordinate-to-label
+read, not as route reconstruction. No external matcher, paid call, OSM import,
+city-coverage calculation, or persistence is authorized by this status.
 
 ## Next gate
 

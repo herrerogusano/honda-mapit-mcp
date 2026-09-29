@@ -377,6 +377,13 @@ stateless: no database, durable event history, synchronization worker,
 migration, or retention policy is implemented. Persistence requires a
 separately approved measurable benefit beyond on-demand MAPIT reads. See the
 [Phase 6 plan](PHASE_6_PERSISTENCE.md) and [status](docs/phase-6-status.md).
+The pure route-input sufficiency analyzer and its tests are offline-only
+(`mapit.route_input_analyzer`). The probe
+(`scripts/probe_route_input_sufficiency.py`) is live-capable but has not been
+executed, requires explicit authorization, and may perform public discovery,
+Cognito authentication/refresh, and secure refresh-token rotation before
+exactly three bounded MAPIT reads. It does not persist route data or probe
+output.
 
 ## CI and environments
 
