@@ -10,7 +10,9 @@ has been implemented.
 
 ## Current boundary
 
-- MAPIT remains read-only; no new live probe is authorized by this status.
+- MAPIT remains read-only. Bounded, necessary research executions are allowed
+  only with explicit scope and authorization; this status does not authorize
+  unbounded live polling or data collection.
 - No credentials, raw route bodies, identifiers, locations, or Telegram data
   are stored for Phase 6.
 - Any measurement must be separately approved, bounded, redacted, and recorded
@@ -38,18 +40,31 @@ redacted run classified the input as `candidate` with `Point` + `LineString`,
 dimension `3`, nested/pair-like shapes, valid WGS84 range, density `many`,
 names `many`, labels `few`, partial `inferred`, and no per-point
 time/accuracy/heading/speed. No coordinate values or raw body were retained.
-The run also classified the maximum observed stream gap as `long`; the
-historical redacted output did not retain provenance. The pure
+The first live redacted result reported only a global maximum gap band of
+`long`; it did not retain provenance. A second authorized run reported
+`medium` for the internal LineString gap, `long` for between-features and
+Point-stream gaps, and `multiple` under the then-current boundary semantics.
+A third authorized run populated the current structural fields: LineString
+coordinate density `many`, Point density `few`, feature density `few` for both,
+name presence `few` for both, label presence `none`/`few` for LineString/Point,
+distinct name bands `few`/`few`, distinct label bands `none`/`few`, name-order
+pattern `transitions_present`, and inferred coverage `partial`/`all` for
+LineString/Point. These facts show structural differences but do not prove
+that MAPIT segments streets, that names are canonical road names, or that
+Points are auxiliary. The pure
 `route_input_analyzer` and bounded
 `probe_route_input_sufficiency.py` are implemented and covered by offline
 synthetic tests; the pure analyzer tests make no network calls. The probe is
-live-capable and the single authorized run is complete; no additional live
-probe is authorized by this status. Its saved-session preparation may perform
+live-capable and three bounded authorized runs are complete. Its saved-session preparation may perform
 public discovery, Cognito authentication/refresh, and atomically rotate the
 existing secure refresh token; it does not persist route data or probe output.
 Offline analysis now separates gap bands for LineString interiors, feature
-boundaries, and consecutive Point features, while retaining only an
-allowlisted source classification; a third ordinate remains opaque.
+boundaries, and consecutive Point features, and also emits feature-object and
+coordinate density bands plus geometry-specific name/label bands and
+structural name transition/repetition classes. A bounded synthetic fixture
+experiment is the next free local validation step; it does not select a
+matcher or require OSM/network access. It retains only allowlisted source
+classifications; a third ordinate remains opaque.
 The reverse-geocoding path is documented as a distinct coordinate-to-label
 read, not as route reconstruction. No external matcher, paid call, OSM import,
 city-coverage calculation, or persistence is authorized by this status.

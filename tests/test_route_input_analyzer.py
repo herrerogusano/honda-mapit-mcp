@@ -8,6 +8,8 @@ from mapit.route_input_analyzer import (
     DIMENSION_CLASSES,
     GAP_BANDS,
     GAP_SOURCES,
+    LINESTRING_GAP_DISTRIBUTIONS,
+    NAME_ORDER_PATTERNS,
     GEOMETRY_CLASSES,
     INPUT_SUFFICIENCY,
     OUTPUT_KEYS,
@@ -68,6 +70,73 @@ def test_output_is_fixed_schema_and_all_values_are_allowlisted():
     assert result["third_ordinate_class"] == "present_opaque"
 
 
+def test_geometry_specific_bands_and_structural_name_pattern_are_value_free():
+    payload = {
+        "geoJSON": {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"name": "street-a", "label": "p", "inferred": True}, "geometry": {"type": "Point", "coordinates": [0, 0]}},
+                {"type": "Feature", "properties": {"name": "street-b", "label": "p", "inferred": False}, "geometry": {"type": "Point", "coordinates": [0, 0.001]}},
+                {"type": "Feature", "properties": {"name": "street-a", "label": "line", "inferred": True}, "geometry": {"type": "LineString", "coordinates": [[0, 0.002], [0, 0.0025]]}},
+                {"type": "Feature", "properties": {"name": "street-c", "inferred": False}, "geometry": {"type": "LineString", "coordinates": [[0, 0.003], [0, 0.0035]]}},
+            ],
+        }
+    }
+    result = analyze_route_input(payload)
+    for key in ("feature_count_band_by_geometry", "coordinate_density_band_by_geometry", "name_presence_band_by_geometry", "label_presence_band_by_geometry", "distinct_name_band_by_geometry", "distinct_label_band_by_geometry"):
+        assert set(result[key]) == {"Point", "LineString"}
+        assert set(result[key].values()) <= {"none", "few", "many", "unknown"}
+    assert result["feature_count_band_by_geometry"] == {"Point": "few", "LineString": "few"}
+    assert result["coordinate_density_band_by_geometry"] == {"Point": "few", "LineString": "few"}
+    assert result["name_presence_band_by_geometry"] == {"Point": "few", "LineString": "few"}
+    assert result["label_presence_band_by_geometry"] == {"Point": "few", "LineString": "few"}
+    assert result["distinct_name_band_by_geometry"] == {"Point": "few", "LineString": "few"}
+    assert result["inferred_coverage_class_by_geometry"] == {"Point": "partial", "LineString": "partial"}
+    assert result["feature_order_name_pattern"] == "repeating"
+    assert result["linestring_gap_distribution_band"] == "short"
+    assert result["feature_boundary_gap_band"] in GAP_BANDS
+    assert result["point_stream_gap_band"] in GAP_BANDS
+    assert result["feature_order_name_pattern"] in NAME_ORDER_PATTERNS
+    assert result["linestring_gap_distribution_band"] in LINESTRING_GAP_DISTRIBUTIONS
+    rendered = json.dumps(result)
+    for sentinel in ("street-a", "street-b", "street-c", '"p"', '"line"'):
+        assert sentinel not in rendered
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        (["same", "same"], "stable"),
+        (["a", "b", "c"], "transitions_present"),
+        (["a", None], "unknown"),
+    ],
+)
+def test_name_order_pattern_is_allowlisted_and_fail_closed_for_missing_fields(names, expected):
+    features = []
+    for index, name in enumerate(names):
+        properties = {} if name is None else {"name": name}
+        features.append({"type": "Feature", "properties": properties, "geometry": {"type": "Point", "coordinates": [0, index * 0.001]}})
+    result = analyze_route_input({"geoJSON": {"type": "FeatureCollection", "features": features}})
+    assert result["feature_order_name_pattern"] == expected
+    assert result["feature_order_name_pattern"] in NAME_ORDER_PATTERNS
+
+
+def test_feature_count_and_coordinate_density_are_separate():
+    coordinates = [[0, index * 0.0001] for index in range(100)]
+    result = analyze_route_input({"geoJSON": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "LineString", "coordinates": coordinates}}]}})
+    assert result["feature_count_band_by_geometry"] == {"Point": "none", "LineString": "few"}
+    assert result["coordinate_density_band_by_geometry"] == {"Point": "none", "LineString": "many"}
+
+
+def test_geometry_specific_missing_name_and_malformed_values_fail_closed():
+    missing = analyze_route_input({"geoJSON": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0]}}]}})
+    assert missing["name_presence_band_by_geometry"] == {"Point": "none", "LineString": "none"}
+    assert missing["feature_order_name_pattern"] == "unknown"
+    malformed = safe_analyze_route_input({"geoJSON": {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": 123}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]}})
+    assert malformed["success"] is False and malformed["category"] == "invalid_structure"
+    assert set(malformed) == OUTPUT_KEYS
+
+
 def test_third_ordinate_is_dimension_only_not_timestamp():
     result = analyze_route_input(_detail(coordinates=[[-3.7, 40.4, 1700000000], [-3.701, 40.401, 12]]))
     assert result["coordinate_dimension_classes"] == ["3"]
@@ -103,7 +172,7 @@ def test_gap_and_name_label_inferred_bands_are_value_free():
     assert result["inferred_coverage_class"] == "partial"
     assert result["max_consecutive_gap_distance_band"] == "long"
     assert result["max_gap_within_linestring_band"] == "none"
-    assert result["max_gap_between_features_band"] == "long"
+    assert result["max_gap_between_features_band"] == "none"
     assert result["max_gap_point_stream_band"] == "long"
     assert result["max_consecutive_gap_source"] == "point_stream"
     assert all(value not in json.dumps(result) for value in ("name-0", "label-0"))
@@ -121,6 +190,9 @@ def test_ordered_point_features_include_feature_boundaries_in_gap_band():
     }
     result = analyze_route_input(payload)
     assert result["max_consecutive_gap_distance_band"] == "long"
+    assert result["max_gap_between_features_band"] == "none"
+    assert result["max_gap_point_stream_band"] == "long"
+    assert result["max_consecutive_gap_source"] == "point_stream"
 
 
 def test_antimeridian_uses_shortest_longitude_arc():
@@ -159,13 +231,13 @@ def test_gap_provenance_marks_mixed_sources_without_values():
         "geoJSON": {
             "type": "FeatureCollection",
             "features": [
-                {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[0, 0], [0, 0.0005]]}},
-                {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0.1]}},
+                {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[0, 0], [0, 0.1]]}},
+                {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0.2]}},
             ],
         }
     }
     result = analyze_route_input(payload)
-    assert result["max_gap_within_linestring_band"] == "short"
+    assert result["max_gap_within_linestring_band"] == "long"
     assert result["max_gap_between_features_band"] == "long"
     assert result["max_gap_point_stream_band"] == "none"
     assert result["max_consecutive_gap_source"] == "multiple"

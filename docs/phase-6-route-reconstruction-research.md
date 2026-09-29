@@ -1,7 +1,7 @@
 # Phase 6: investigación de reconstrucción de rutas y cobertura urbana
 
-Estado: **investigación acotada; un probe live redacted completado, sin nuevas
-llamadas MAPIT ni pagos** (2026-09-29).
+Estado: **investigación acotada; tres probes live redacted completados, sin
+pagos ni writes MAPIT** (2026-09-29).
 
 Este documento responde primero a qué datos entrega MAPIT y si esos datos son
 suficientes para map matching. OSRM, Valhalla, GraphHopper y Amazon Location
@@ -20,13 +20,12 @@ exactas, giros o la última ruta, ni calcular cobertura de una ciudad.
 
 La principal carencia ya no es demostrar que existe una geometría candidata,
 sino su semántica: el orden de cada secuencia, el significado de la tercera
-ordenada y el origen del gap máximo. El primer resultado live solo emitió la
-banda global `long` y no conservó provenance; por tanto no permite atribuirla
-a una `LineString` o a un límite entre features/Points. El analizador offline
-refinado sí separa esas procedencias sobre cualquier detalle que se le inyecte,
-pero una futura repetición live autorizada sería necesaria para poblar esos
-campos con evidencia MAPIT. No hay timestamps, precisión, heading ni velocidad
-por punto.
+ordenada y qué representan los gaps. El tercer run confirmó densidad
+`LineString=many` y `Point=few`, nombres `few` en ambas clases, labels
+`none`/`few`, transiciones de nombre y cobertura `inferred` parcial/all;
+también confirmó gaps `medium` internos y `long` entre features/Points. Estas
+señales siguen sin demostrar segmentación vial o nombres canónicos. No hay
+timestamps, precisión, heading ni velocidad por punto.
 
 ## 1. Inventario MAPIT confirmado
 
@@ -43,7 +42,7 @@ fixtures schema-only autorizados:
 | `GET .../v1/routes?...&limit=&month=&day=&from=&to=&includeInProgress=` | El builder del frontend serializa esas claves; el dashboard usa ventanas mensuales `from`/`to`. Dos ventanas acotadas con `limit=1` fueron aceptadas. | Semántica, inclusividad, timezone, combinaciones y máximo de cada filtro son desconocidos. `lastEvaluatedKey` no apareció en esas respuestas, pero no se puede generalizar. |
 | `GET https://geo.prod.mapit.me/v1/vehicles/{vehicleId}/routes/{routeId}?includeStats=true` | El bundle valida un objeto raíz con `id`, `geoJSON`, `distance`, tiempos y velocidades opcionales/nullables. La lectura autorizada produjo el mismo tipo de objeto, además de `complete`, `merged`, referencias y estado nullable. | `includeStats` fue aceptado, pero su cálculo y efecto no están demostrados. Solo se conservó el esquema de una ruta. |
 | `geoJSON` de lista/detalle | La interfaz valida `FeatureCollection`; el resultado redacted confirmó features `Point` y `LineString`, forma `nested` y `pair-like`, dimensión `3`, densidad `many` y rango WGS84 válido. Propiedades observadas: `inferred`, `label`, `name` y, en detalle, `avgSpeed`, `distance`, `maxSpeed`. | No se retuvieron coordenadas ni valores; no se conoce el orden semántico, muestreo, continuidad ni el significado de la tercera ordenada. `name`/`label` no son evidencia de nombres OSM ni de un identificador vial estable. No hay `way_id`, segmento, rumbo, precisión ni giro. |
-| Tiempos y métricas | `startedAt`, `endedAt`, `createdAt`, `updatedAt`, `startTz`, `distance`, `avgSpeed`, `maxSpeed` aparecen a nivel de ruta; algunas propiedades de feature son nullable en el fixture de detalle. El primer resultado live clasificó el gap global en banda `long`. | No hay timestamps por punto, heading, precisión GPS, velocidad por punto ni unidades confirmadas. El resultado live histórico no contiene provenance del gap. El analizador offline actual puede separar interior de `LineString`, límites y stream de Points, pero esos campos siguen sin evidencia MAPIT hasta una repetición live autorizada. `hdop` de estado del dispositivo no equivale a precisión de cada punto histórico. |
+| Tiempos y métricas | `startedAt`, `endedAt`, `createdAt`, `updatedAt`, `startTz`, `distance`, `avgSpeed`, `maxSpeed` aparecen a nivel de ruta; algunas propiedades de feature son nullable en el fixture de detalle. El resultado redacted clasifica el gap interno de `LineString` como `medium`, los gaps entre features y de `Point` como `long`, y la fuente agregada como `multiple`. | No hay timestamps por punto, heading, precisión GPS, velocidad por punto ni unidades confirmadas. Las bandas de gap no prueban segmentación vial ni continuidad semántica. `hdop` de estado del dispositivo no equivale a precisión de cada punto histórico. |
 | `GET https://core.prod.mapit.me/v1/reverse-geocoding/{lat}/{lng}?lang=...` | Path de lectura encontrado en el bundle vigente. | No se probó y no es un sustituto de map matching: produciría etiquetas/direcciones para coordenadas individuales, no secuencia vial ni cobertura completa. |
 
 La ruta de detalle histórica `/v1/routes/{routeId}` de los clientes públicos
@@ -63,7 +62,7 @@ elemento sea el más reciente: el orden del backend no está confirmado.
 | Precisión/radio GPS | No aparece en el esquema de ruta. `hdop` pertenece al estado actual del dispositivo. | **Ausente**. El matcher tendrá que usar un radio conservador/configurable y reportar menor confianza. |
 | Heading y velocidad instantánea | Solo hay métricas agregadas y propiedades agregadas/nullable. | **Ausente**. Ambigüedad en paralelas, cruces y sentidos no puede resolverse siempre. |
 | Nombres/labels | `properties.name` y `properties.label` son strings no vacíos en la muestra. | **Disponible como texto**, no como identidad vial; semántica y fuente desconocidas. |
-| Gaps, discontinuidades y segmentos | El primer resultado live emitió únicamente una banda global `long`; no hay tiempos por punto ni campo de segmento; `continues` es estado de ruta nullable, no paginación. | **Desconocido en MAPIT**. El origen del gap sigue sin evidencia live. El analizador offline refinado produce las bandas `max_gap_within_linestring_band`, `max_gap_between_features_band`, `max_gap_point_stream_band` y `max_consecutive_gap_source`; una futura repetición live autorizada debe poblarlas antes de extraer conclusiones de continuidad. |
+| Gaps, discontinuidades y segmentos | El tercer run confirmó `medium` interno, `long` entre features y `long` en Point-stream, con fuente `multiple`, bajo la semántica vigente. No hay tiempos por punto ni campo de segmento; `continues` es estado de ruta nullable, no paginación. | **Desconocido en MAPIT**. Las bandas y la fuente agregada no demuestran segmentación vial ni que los Points sean auxiliares. |
 | Última ruta/histórico | Histórico global quedó `PARTIAL` por el límite de 2 MiB; no hay orden/paginación universal. | **No disponible** como afirmación de “última ruta”. |
 
 Implicación: un resultado futuro debe llamarse “secuencia mejor estimada
@@ -77,9 +76,9 @@ calcular distancias o pasar puntos a un matcher.
 `src/mapit/route_input_analyzer.py` contiene el analizador puro y
 `scripts/probe_route_input_sufficiency.py` contiene el flujo no interactivo.
 El analizador puro y sus pruebas sintéticas no hacen llamadas de red. El
-script live se ejecutó una vez con autorización separada y produjo únicamente
-categorías redacted; no se conservó el cuerpo, coordenadas, IDs ni valores.
-No se harán más llamadas para esta decisión. Al iniciar con una sesión
+script live se ejecutó tres veces con autorización separada y produjo
+únicamente categorías redacted; no se conservaron cuerpos, coordenadas, IDs ni
+valores. Al iniciar con una sesión
 guardada, su preparación puede hacer discovery público, autenticación/refresh
 Cognito y rotar atómicamente el refresh token seguro existente; eso no guarda
 datos de ruta ni la salida del probe.
@@ -103,6 +102,14 @@ salida permitida es el esquema fijo implementado, con valores allowlisted:
   `unknown`);
 - `max_consecutive_gap_source`: `none`, `inside_linestring`,
   `between_features`, `point_stream`, `multiple` o `unknown`;
+- `feature_count_band_by_geometry`: bandas `none`/`few`/`many` de objetos
+  `Point` y `LineString`;
+- `coordinate_density_band_by_geometry`: bandas `none`/`few`/`many` de puntos
+  aportados por cada clase de geometría, sin conteos;
+- presencia/distinción de `name`/`label` por geometría, sin texto ni hashes;
+- `inferred_coverage_class_by_geometry` y `feature_order_name_pattern`;
+- `linestring_gap_distribution_band`: `none`, `short`, `medium`, `long`,
+  `mixed` o `unknown`;
 - `per_point_time/accuracy/heading/speed`: booleanos;
 - `distinct_name_band`/`distinct_label_band`: bandas, nunca los valores;
 - `inferred_coverage_class`: `all`, `partial`, `none`, `unknown`;
@@ -121,33 +128,98 @@ orden de features y, dentro de cada feature, el orden de coordenadas; los
 gaps entre features también se clasifican sin revelar sus valores. Solo usa
 enums, bandas y booleanos; no contiene IDs, coordenadas, timestamps, nombres,
 labels, métricas, conteos, URLs, cuerpos ni excepciones.
-Los límites entre dos features `Point` se reportan en la banda de límites y se
-clasifican como `point_stream`; si coexisten con otros límites o gaps internos,
-la fuente agregada es `multiple`.
+Los límites entre dos features `Point` se reportan únicamente en la banda
+`point_stream`; los límites `Point↔LineString` y `LineString↔LineString` van en
+`between_features`. Si las máximas numéricas de fuentes distintas empatan, la
+fuente agregada es `multiple`.
 Una tercera ordenada solo se clasifica como dimensión `3` y
 `present_opaque` (o `absent`/`unknown` ante fallo): nunca se infiere como
 elevación, timestamp, precisión o velocidad.
 
-### Resultado redacted del run autorizado
+### Resultados redacted de los tres runs autorizados
 
-El resultado fue `success`, con `geometry_classes={Point, LineString}`,
+El primer run fue `success`, con `geometry_classes={Point, LineString}`,
 `coordinate_shape_classes={nested, pair-like}`, dimensión `3`, rango WGS84
 válido, densidad `many`, nombres en banda `many`, labels en banda `few`,
 `inferred_coverage_class=partial`, sin timestamp/accuracy/heading/speed por
-punto e `input_sufficiency=candidate`. El máximo gap observado en el stream
-quedó en banda `long`.
+punto e `input_sufficiency=candidate`; solo informó un gap máximo global en
+banda `long`, sin provenance.
+
+El segundo run fue `success`, con la misma política redacted. Su gap máximo
+interno de `LineString` quedó en banda `medium` (100 m–1 km), mientras que el
+máximo entre features quedó en `long` y el del stream de `Point` también en
+`long`. La fuente agregada del mayor gap fue `multiple`.
+
+El tercer run fue `success` y pobló el refinamiento estructural vigente:
+`LineString` tuvo densidad de coordenadas `many` y `Point` `few`; ambas clases
+tuvieron banda de features `few`. La presencia de nombres fue `few` por clase
+y la de labels `none` en `LineString` y `few` en `Point`; la diversidad de
+nombres fue `few` por clase y la de labels `none`/`few`, respectivamente. El
+patrón de nombres fue `transitions_present`; `inferred` fue `partial` para
+`LineString` y `all` para `Point`. También confirmó las bandas de gap
+`medium`/`long`/`long`, `multiple`, dimensión `3` opaca, WGS84 válido,
+`candidate` y ausencia de metadata por punto.
 
 Estos hechos elevan la entrada desde “desconocida” a “candidata”, pero no
-demuestran map matching correcto. Ese resultado live histórico solo emitió el
-gap global `long`, sin provenance. El analizador offline refinado implementado
-ahora conserva la misma política de no valores, no coordenadas, no conteos
-exactos y no persistencia de la geometría, pero emite las bandas separadas
+demuestran map matching correcto. La diferencia de densidad y la ausencia de
+labels en `LineString` son señales estructurales, no prueba de que MAPIT
+segmente calles; la presencia de nombres en ambas clases tampoco demuestra que
+sean nombres viales canónicos. `transitions_present` solo indica cambios en
+clases de igualdad, no expone el texto ni su semántica. El gap interno `medium`
+puede ser una discontinuidad o una separación normal de muestreo; los gaps
+`long` entre features y de Points no permiten concluir que los Points sean
+muestras del mismo recorrido.
+
+El analizador refinado conserva la política de no valores, no coordenadas, no
+conteos exactos y no persistencia de la geometría, y ahora emite las bandas separadas
 `max_gap_within_linestring_band`, `max_gap_between_features_band` y
 `max_gap_point_stream_band`, junto con `max_consecutive_gap_source` y
-`third_ordinate_class=present_opaque` cuando corresponde. Esos campos son
-capacidad del analizador offline, no evidencia live adicional. Una futura
-repetición live autorizada poblaría la provenance MAPIT; hasta entonces se
-mantiene desconocida para la decisión de continuidad.
+`third_ordinate_class=present_opaque`. El tercer run confirmó esos campos y
+los refinamientos de densidad/nombre actuales como categorías redacted de
+MAPIT; no añadió valores, nombres, coordenadas ni semántica vial.
+
+### Refinamiento estructural implementado offline (sin matcher)
+
+El analizador ya emite, sobre entradas inyectadas o fixtures sintéticos,
+únicamente estas categorías por clase de feature:
+
+- `feature_count_band_by_geometry`: `Point` y `LineString` por separado,
+  con `none`/`few`/`many`, nunca conteos;
+- `coordinate_density_band_by_geometry`: densidad de coordenadas aportadas por
+  cada clase, también solo `none`/`few`/`many`;
+- `name_presence_band_by_geometry` y `label_presence_band_by_geometry`, más
+  `distinct_name_band_by_geometry` y `distinct_label_band_by_geometry`, sin
+  valores ni hashes de nombres;
+- `inferred_coverage_class_by_geometry`, para no mezclar Points auxiliares
+  con segmentos de línea;
+- `feature_order_name_pattern`: solo `stable`, `repeating`,
+  `transitions_present` o `unknown`, calculado sobre clases de igualdad y no
+  sobre el texto del nombre;
+- `linestring_gap_distribution_band`: `none`, `short`, `medium`, `long`,
+  `mixed` o `unknown`, exclusivamente dentro de cada LineString;
+- `feature_boundary_gap_band` y `point_stream_gap_band`, manteniendo la
+  distinción entre límites y continuidad interna.
+
+Estas señales sirven para decidir si la respuesta parece segmentada por
+carretera o contiene geometrías auxiliares; no prueban semántica vial. La
+tercera ordenada sigue siendo `present_opaque`, y cualquier origen de gap que
+no pueda clasificarse debe ser `unknown`/fail-closed.
+
+### Siguiente experimento local/offline (sin implementación en este hito)
+
+Construir únicamente en memoria un fixture GeoJSON sintético, sin coordenadas
+reales ni nombres reales, que represente: una `LineString` densa con gap
+`medium`, varios `Point` escasos con gap `long`, labels ausentes en líneas,
+nombres/labels presentes en Points, cambios de nombre estructurales y tercera
+ordenada opaca. Ejecutar el analizador puro y comparar sus enums/bandas con la
+clasificación conocida del fixture. El criterio de éxito sería que distinga
+densidad, presencia/diversidad por geometría, transición de nombres y origen
+de gaps sin imprimir ni persistir valores.
+
+Este experimento valida el analizador, no la semántica MAPIT ni las calles. No
+requiere red, extracto OSM, matcher, reverse geocoder ni servicio de pago; un
+matcher sigue siendo necesario más adelante para asociar una geometría real a
+segmentos/giros de una red vial.
 
 Si el objetivo específico es “última ruta”, hará falta además una ventana
 acotada cuyo orden temporal pueda inspeccionarse efímeramente; el primer item
@@ -160,8 +232,8 @@ paginación verificable.
 | Objetivo | Estado actual | Condición mínima para subir de nivel |
 |---|---|---|
 | Última ruta y sus calles | **NO FEASIBLE como afirmación exacta**. No hay orden global ni valores de geometría retenidos; histórico es `PARTIAL`. | Una política de selección temporal acotada y una lectura de detalle con geometría real; aun así “última” queda limitada a la ventana comprobada. |
-| Secuencia de calles de una ruta | **CANDIDATO condicionado**. El run redacted confirma geometría mixta y densidad `many`, pero no orden verificado, semántica de la tercera ordenada, precisión ni continuidad; el gap global es `long` y su provenance live es desconocida. | Repetir el probe autorizado para poblar provenance; después comparar un matcher local contra un snapshot OSM, con confidence y segmentos no asignados explícitos. |
-| Orden de giros/turns | **CANDIDATO DE BAJA CONFIANZA**. La topología OSM puede derivar giros después del matching, pero MAPIT no entrega heading, tiempos por punto ni turn events; el gap `long` puede romper continuidad. | Repetir primero el probe para la provenance, verificar continuidad temporal o reglas de gap y usar una red con restricciones de giro y reporte de ambigüedad. Nunca prometer exactitud en cruces/parallel roads. |
+| Secuencia de calles de una ruta | **CANDIDATO condicionado**. El run redacted confirma geometría mixta y densidad `many`, pero no orden verificado, semántica de la tercera ordenada, precisión ni continuidad; los gaps internos/entre features tienen bandas distintas y fuente agregada `multiple`. | Separar señales por geometría y transiciones estructurales; después comparar un matcher local contra un snapshot OSM, con confidence y segmentos no asignados explícitos. |
+| Orden de giros/turns | **CANDIDATO DE BAJA CONFIANZA**. La topología OSM puede derivar giros después del matching, pero MAPIT no entrega heading, tiempos por punto ni turn events; los gaps `medium`/`long` pueden romper continuidad. | Verificar continuidad o reglas de gap por clase de feature y usar una red con restricciones de giro y reporte de ambigüedad. Nunca prometer exactitud en cruces/parallel roads. |
 | Porcentaje de calles cubiertas por ciudad | **NO FEASIBLE actualmente**. Faltan histórico completo, geometrías/segmentos y definición de ciudad/denominador. | Matchear múltiples rutas a IDs/segmentos OSM, congelar boundary y snapshot, y publicar denominador/inclusiones junto a la métrica. |
 
 ## 5. Definición de cobertura y riesgos de interpretación

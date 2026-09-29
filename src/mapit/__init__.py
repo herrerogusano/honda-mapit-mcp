@@ -57,6 +57,8 @@ from .telegram_bot import (
 )
 from .route_input_analyzer import (
     GAP_SOURCES,
+    LINESTRING_GAP_DISTRIBUTIONS,
+    NAME_ORDER_PATTERNS,
     RouteInputAnalysisError,
     THIRD_ORDINATE_CLASSES,
     analyze_route_input,
@@ -124,6 +126,8 @@ __all__ = [
     "TelegramPollResult",
     "RouteInputAnalysisError",
     "GAP_SOURCES",
+    "LINESTRING_GAP_DISTRIBUTIONS",
+    "NAME_ORDER_PATTERNS",
     "analyze_route_input",
     "analyze_route_input_sufficiency",
     "safe_analyze_route_input",

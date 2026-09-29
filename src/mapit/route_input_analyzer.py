@@ -19,6 +19,8 @@ DIMENSION_CLASSES = frozenset({"2", "3", "other", "unknown"})
 DENSITY_BANDS = frozenset({"none", "few", "many"})
 GAP_BANDS = frozenset({"none", "short", "medium", "long", "unknown"})
 GAP_SOURCES = frozenset({"none", "inside_linestring", "between_features", "point_stream", "multiple", "unknown"})
+NAME_ORDER_PATTERNS = frozenset({"stable", "repeating", "transitions_present", "unknown"})
+LINESTRING_GAP_DISTRIBUTIONS = frozenset({"none", "short", "medium", "long", "mixed", "unknown"})
 NAME_BANDS = frozenset({"none", "few", "many"})
 COVERAGE_CLASSES = frozenset({"all", "partial", "none", "unknown"})
 INPUT_SUFFICIENCY = frozenset({"insufficient", "candidate", "candidate_with_time"})
@@ -39,6 +41,17 @@ OUTPUT_KEYS = frozenset(
         "max_gap_between_features_band",
         "max_gap_point_stream_band",
         "max_consecutive_gap_source",
+        "feature_count_band_by_geometry",
+        "coordinate_density_band_by_geometry",
+        "name_presence_band_by_geometry",
+        "label_presence_band_by_geometry",
+        "distinct_name_band_by_geometry",
+        "distinct_label_band_by_geometry",
+        "inferred_coverage_class_by_geometry",
+        "feature_order_name_pattern",
+        "linestring_gap_distribution_band",
+        "feature_boundary_gap_band",
+        "point_stream_gap_band",
         "distinct_name_band",
         "distinct_label_band",
         "inferred_coverage_class",
@@ -74,6 +87,17 @@ def _empty_result(*, category: str, success: bool = False) -> dict[str, Any]:
         "max_gap_between_features_band": "unknown",
         "max_gap_point_stream_band": "unknown",
         "max_consecutive_gap_source": "unknown",
+        "feature_count_band_by_geometry": {"Point": "unknown", "LineString": "unknown"},
+        "coordinate_density_band_by_geometry": {"Point": "unknown", "LineString": "unknown"},
+        "name_presence_band_by_geometry": {"Point": "unknown", "LineString": "unknown"},
+        "label_presence_band_by_geometry": {"Point": "unknown", "LineString": "unknown"},
+        "distinct_name_band_by_geometry": {"Point": "unknown", "LineString": "unknown"},
+        "distinct_label_band_by_geometry": {"Point": "unknown", "LineString": "unknown"},
+        "inferred_coverage_class_by_geometry": {"Point": "unknown", "LineString": "unknown"},
+        "feature_order_name_pattern": "unknown",
+        "linestring_gap_distribution_band": "unknown",
+        "feature_boundary_gap_band": "unknown",
+        "point_stream_gap_band": "unknown",
         "distinct_name_band": "none",
         "distinct_label_band": "none",
         "inferred_coverage_class": "unknown",
@@ -154,6 +178,40 @@ def _gap_band(max_gap: float | None) -> str:
 
 def _max_gap_band(gaps: list[float]) -> str:
     return _gap_band(max(gaps)) if gaps else "none"
+
+
+def _per_geometry_band(counts: dict[str, int]) -> dict[str, str]:
+    return {geometry_type: _band(counts[geometry_type]) for geometry_type in ("Point", "LineString")}
+
+
+def _per_geometry_density(counts: dict[str, int]) -> dict[str, str]:
+    return {geometry_type: _density(counts[geometry_type]) for geometry_type in ("Point", "LineString")}
+
+
+def _coverage(values: list[bool]) -> str:
+    if not values:
+        return "unknown"
+    return "all" if all(values) else "none" if not any(values) else "partial"
+
+
+def _name_order_pattern(names: list[str | None]) -> str:
+    if not names or any(name is None for name in names) or len(names) < 2:
+        return "unknown"
+    concrete = [name for name in names if name is not None]
+    if len(set(concrete)) == 1:
+        return "stable"
+    if len(set(concrete)) < len(concrete):
+        return "repeating"
+    return "transitions_present"
+
+
+def _linestring_gap_distribution(gaps: list[float], *, range_valid: bool) -> str:
+    if not range_valid:
+        return "unknown"
+    bands = {_gap_band(gap) for gap in gaps}
+    if not bands:
+        return "none"
+    return next(iter(bands)) if len(bands) == 1 else "mixed"
 
 
 def _properties(feature: dict[str, Any], budget: _Budget) -> dict[str, Any]:
@@ -248,6 +306,14 @@ def analyze_route_input(payload: Any) -> dict[str, Any]:
     range_valid = True
     names: set[str] = set()
     labels: set[str] = set()
+    feature_counts = {"Point": 0, "LineString": 0}
+    coordinate_counts = {"Point": 0, "LineString": 0}
+    names_by_geometry = {"Point": set(), "LineString": set()}
+    labels_by_geometry = {"Point": set(), "LineString": set()}
+    name_presence_counts = {"Point": 0, "LineString": 0}
+    label_presence_counts = {"Point": 0, "LineString": 0}
+    inferred_by_geometry = {"Point": [], "LineString": []}
+    feature_names: list[str | None] = []
     inferred_values: list[bool] = []
     metadata = {"time": False, "accuracy": False, "heading": False, "speed": False}
 
@@ -259,6 +325,7 @@ def analyze_route_input(payload: Any) -> dict[str, Any]:
             geometry_classes.add("other")
             raise RouteInputAnalysisError("unsupported_geometry")
         geometry_classes.add(geometry_type)
+        feature_counts[geometry_type] += 1
         if geometry_type == "Point":
             point = _coordinate(coordinates, budget)
             sequence = [point]
@@ -275,10 +342,12 @@ def analyze_route_input(payload: Any) -> dict[str, Any]:
                 range_valid = False
         # This is the observed stream: feature order, then coordinate order
         # within each feature. Gaps at feature boundaries are intentional.
+        coordinate_counts[geometry_type] += len(sequence)
         observed_stream.extend(sequence)
         observed_features.append((geometry_type, sequence))
         all_points.extend(sequence)
         properties = _properties(feature, budget)
+        feature_name: str | None = None
         for key, target in (("name", names), ("label", labels)):
             value = properties.get(key)
             if value is not None:
@@ -288,11 +357,20 @@ def analyze_route_input(payload: Any) -> dict[str, Any]:
                     raise RouteInputAnalysisError("oversized")
                 if value.strip():
                     target.add(value.strip())
+                    if key == "name":
+                        feature_name = value.strip()
+                        names_by_geometry[geometry_type].add(feature_name)
+                        name_presence_counts[geometry_type] += 1
+                    else:
+                        labels_by_geometry[geometry_type].add(value.strip())
+                        label_presence_counts[geometry_type] += 1
+        feature_names.append(feature_name)
         present, inferred = _metadata_flags(properties, len(sequence))
         for kind in present:
             metadata[kind] = True
         if inferred is not None:
             inferred_values.append(inferred)
+            inferred_by_geometry[geometry_type].append(inferred)
 
     within_linestring_gaps: list[float] = []
     between_feature_gaps: list[float] = []
@@ -307,9 +385,10 @@ def analyze_route_input(payload: Any) -> dict[str, Any]:
             observed_features, observed_features[1:]
         ):
             gap = _haversine_meters(left_sequence[-1], right_sequence[0])
-            between_feature_gaps.append(gap)
             if left_type == right_type == "Point":
                 point_stream_gaps.append(gap)
+            else:
+                between_feature_gaps.append(gap)
         ordered_stream_gaps = [
             _haversine_meters(left, right) for left, right in zip(observed_stream, observed_stream[1:])
         ]
@@ -317,23 +396,39 @@ def analyze_route_input(payload: Any) -> dict[str, Any]:
     else:
         max_gap = None
 
-    source_kinds: set[str] = set()
-    if within_linestring_gaps:
-        source_kinds.add("inside_linestring")
-    if point_stream_gaps:
-        source_kinds.add("point_stream")
-    non_point_feature_gaps = len(between_feature_gaps) - len(point_stream_gaps)
-    if non_point_feature_gaps > 0:
-        source_kinds.add("between_features")
     if not range_valid:
         gap_source = "unknown"
-    elif not source_kinds:
-        gap_source = "none"
-    elif len(source_kinds) == 1:
-        gap_source = next(iter(source_kinds))
     else:
-        gap_source = "multiple"
+        source_maxima = {
+            source: max(gaps)
+            for source, gaps in (
+                ("inside_linestring", within_linestring_gaps),
+                ("between_features", between_feature_gaps),
+                ("point_stream", point_stream_gaps),
+            )
+            if gaps
+        }
+        if not source_maxima:
+            gap_source = "none"
+        else:
+            largest_gap = max(source_maxima.values())
+            tied_sources = [source for source, value in source_maxima.items() if value == largest_gap]
+            gap_source = tied_sources[0] if len(tied_sources) == 1 else "multiple"
     third_ordinate_class = "present_opaque" if "3" in dimensions else "absent"
+    feature_count_by_geometry = _per_geometry_band(feature_counts)
+    coordinate_density_by_geometry = _per_geometry_density(coordinate_counts)
+    name_presence_by_geometry = _per_geometry_band(name_presence_counts)
+    label_presence_by_geometry = _per_geometry_band(label_presence_counts)
+    distinct_name_by_geometry = _per_geometry_band(
+        {geometry_type: len(names_by_geometry[geometry_type]) for geometry_type in ("Point", "LineString")}
+    )
+    distinct_label_by_geometry = _per_geometry_band(
+        {geometry_type: len(labels_by_geometry[geometry_type]) for geometry_type in ("Point", "LineString")}
+    )
+    inferred_coverage_by_geometry = {
+        geometry_type: _coverage(inferred_by_geometry[geometry_type]) for geometry_type in ("Point", "LineString")
+    }
+    linestring_distribution = _linestring_gap_distribution(within_linestring_gaps, range_valid=range_valid)
     coverage = "unknown"
     if inferred_values:
         coverage = "all" if all(inferred_values) else "none" if not any(inferred_values) else "partial"
@@ -350,6 +445,17 @@ def analyze_route_input(payload: Any) -> dict[str, Any]:
             "max_gap_between_features_band": _max_gap_band(between_feature_gaps) if range_valid else "unknown",
             "max_gap_point_stream_band": _max_gap_band(point_stream_gaps) if range_valid else "unknown",
             "max_consecutive_gap_source": gap_source,
+            "feature_count_band_by_geometry": feature_count_by_geometry,
+            "coordinate_density_band_by_geometry": coordinate_density_by_geometry,
+            "name_presence_band_by_geometry": name_presence_by_geometry,
+            "label_presence_band_by_geometry": label_presence_by_geometry,
+            "distinct_name_band_by_geometry": distinct_name_by_geometry,
+            "distinct_label_band_by_geometry": distinct_label_by_geometry,
+            "inferred_coverage_class_by_geometry": inferred_coverage_by_geometry,
+            "feature_order_name_pattern": _name_order_pattern(feature_names),
+            "linestring_gap_distribution_band": linestring_distribution,
+            "feature_boundary_gap_band": _max_gap_band(between_feature_gaps) if range_valid else "unknown",
+            "point_stream_gap_band": _max_gap_band(point_stream_gaps) if range_valid else "unknown",
             "distinct_name_band": _band(len(names)),
             "distinct_label_band": _band(len(labels)),
             "inferred_coverage_class": coverage,
@@ -389,6 +495,8 @@ __all__ = [
     "GAP_SOURCES",
     "GEOMETRY_CLASSES",
     "INPUT_SUFFICIENCY",
+    "LINESTRING_GAP_DISTRIBUTIONS",
+    "NAME_ORDER_PATTERNS",
     "OUTPUT_KEYS",
     "RouteInputAnalysisError",
     "THIRD_ORDINATE_CLASSES",
