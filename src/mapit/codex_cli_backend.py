@@ -33,6 +33,7 @@ MAX_INPUT_CHARS = 4096
 MAX_ANSWER_CHARS = 4096
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 MAX_JSONL_LINE_BYTES = 1024 * 1024
+MAX_FINAL_MESSAGE_BYTES = MAX_JSONL_LINE_BYTES
 MAX_STDERR_BYTES = 1024 * 1024
 TOOL_TIMEOUT_SECONDS = 30
 
@@ -332,7 +333,43 @@ def _jsonl_events(text: str) -> list[dict[str, Any]] | None:
     return events
 
 
-def _parse_result(stdout: str) -> CodexCliResult:
+def _parse_agent_answer(text: str) -> AgentAnswer | None:
+    try:
+        raw = json.loads(text)
+        if not isinstance(raw, dict) or set(raw) != {"answer", "caveats", "needs_clarification"}:
+            return None
+        answer = AgentAnswer.model_validate(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    answer_size = len(answer.answer) + sum(len(caveat) for caveat in answer.caveats)
+    return answer if answer_size <= MAX_ANSWER_CHARS else None
+
+
+def _read_final_message(path: str | Path) -> tuple[str | None, str | None]:
+    try:
+        with Path(path).open("rb") as stream:
+            raw = stream.read(MAX_FINAL_MESSAGE_BYTES + 1)
+    except (OSError, TypeError, ValueError):
+        return None, "final_response_invalid"
+    if not isinstance(raw, bytes):
+        return None, "final_response_invalid"
+    if len(raw) > MAX_FINAL_MESSAGE_BYTES:
+        return None, "output_too_large"
+    try:
+        text = raw.decode("utf-8")
+        if not text or "\x00" in text:
+            return None, "final_response_invalid"
+    except UnicodeDecodeError:
+        return None, "final_response_invalid"
+    return text, None
+
+
+def _parse_result(
+    stdout: str,
+    final_message_text: str | None = None,
+    *,
+    require_final_file: bool = False,
+) -> CodexCliResult:
     try:
         if len(stdout.encode("utf-8")) > MAX_OUTPUT_BYTES:
             return _result("output_too_large")
@@ -352,11 +389,14 @@ def _parse_result(stdout: str) -> CodexCliResult:
     if completed_mcp_count > MAX_TURNS:
         return _result("too_many_tool_calls")
     calls: list[Mapping[str, Any]] = []
-    messages: list[str] = []
+    messages: list[tuple[int, str]] = []
     turn_completed = False
     mcp_lifecycle: dict[str, str] = {}
     completed_ids: set[str] = set()
-    for event in events:
+    mcp_started_any = False
+    post_tool_message_seen = False
+    last_completed_mcp_index = -1
+    for event_index, event in enumerate(events):
         event_type = event.get("type")
         if event_type not in _TOP_LEVEL_EVENT_TYPES:
             return _result("unexpected_item")
@@ -374,8 +414,9 @@ def _parse_result(stdout: str) -> CodexCliResult:
         if item_type not in _ALLOWED_ITEM_TYPES:
             return _result("unexpected_item")
         if item_type == "mcp_tool_call":
-            if messages:
+            if post_tool_message_seen:
                 return _result("final_response_invalid", tools=tuple(call.get("tool") for call in calls if isinstance(call.get("tool"), str)))
+            mcp_started_any = True
             call_id = item.get("id")
             if not isinstance(call_id, str) or not call_id:
                 return _result("unexpected_mcp_call")
@@ -398,11 +439,23 @@ def _parse_result(stdout: str) -> CodexCliResult:
                 completed_ids.add(call_id)
                 mcp_lifecycle.pop(call_id, None)
                 calls.append(item)
+                last_completed_mcp_index = event_index
         elif item_type == "agent_message" and event_type == "item.completed":
             text = item.get("text")
             if not isinstance(text, str):
                 return _result("final_response_invalid")
-            messages.append(text)
+            try:
+                if len(text.encode("utf-8")) > MAX_JSONL_LINE_BYTES:
+                    return _result("final_response_invalid")
+            except UnicodeEncodeError:
+                return _result("final_response_invalid")
+            if mcp_lifecycle:
+                return _result("mcp_status_failed", tools=tuple(call.get("tool") for call in calls if isinstance(call.get("tool"), str)))
+            messages.append((event_index, text))
+            if mcp_started_any:
+                if post_tool_message_seen:
+                    return _result("final_response_invalid", tools=tuple(call.get("tool") for call in calls if isinstance(call.get("tool"), str)))
+                post_tool_message_seen = True
         elif item_type == "agent_message":
             return _result("unexpected_item")
         elif item_type == "reasoning":
@@ -427,19 +480,22 @@ def _parse_result(stdout: str) -> CodexCliResult:
         tool = call["tool"]
         if tool not in used:
             used.append(tool)
-    if len(messages) != 1:
+    if not messages or (calls and not post_tool_message_seen):
         return _result("final_response_invalid", tools=tuple(used))
-    answer: AgentAnswer | None = None
-    try:
-        raw = json.loads(messages[0])
-        answer = AgentAnswer.model_validate(raw)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        answer = None
+    if not calls and any(_parse_agent_answer(text) is not None for _, text in messages[:-1]):
+        return _result("final_response_invalid", tools=tuple(used))
+    last_message_index, last_message_text = messages[-1]
+    if calls and last_message_index <= last_completed_mcp_index:
+        return _result("final_response_invalid", tools=tuple(used))
+    answer = _parse_agent_answer(last_message_text)
     if answer is None:
         return _result("final_response_invalid", tools=tuple(used))
-    answer_size = len(answer.answer) + sum(len(caveat) for caveat in answer.caveats)
-    if answer_size > MAX_ANSWER_CHARS:
+    if final_message_text is None and require_final_file:
         return _result("final_response_invalid", tools=tuple(used))
+    if final_message_text is not None:
+        final_answer = _parse_agent_answer(final_message_text)
+        if final_answer is None or final_answer.model_dump(mode="json") != answer.model_dump(mode="json"):
+            return _result("final_response_invalid", tools=tuple(used))
     if not calls and not answer.needs_clarification:
         return _result("no_tool_call", tools=tuple(used))
     return _result("success", answer=answer, tools=tuple(used))
@@ -493,13 +549,13 @@ class CodexCliBackend:
             raise CodexCliError("process_failed")
         return result
 
-    def _effective_exec_command(self, schema_path: str) -> tuple[str, ...]:
+    def _effective_exec_command(self, schema_path: str, final_message_path: str) -> tuple[str, ...]:
         """Build the fully pinned, non-interactive command for the local gate."""
         def setting(name: str, value: Any) -> str:
             return f"{name}={json.dumps(value, ensure_ascii=False, separators=(',', ':'))}"
 
         command = list(EXEC_COMMAND)
-        command.extend(("--output-schema", schema_path))
+        command.extend(("--output-schema", schema_path, "--output-last-message", final_message_path))
         for name, value in (
             ("model_reasoning_effort", "medium"),
             ("features.shell_tool", False),
@@ -514,7 +570,7 @@ class CodexCliBackend:
             ("features.browser_use", False),
             ("features.browser_use_external", False),
             ("features.browser_use_full_cdp_access", False),
-            ("features.code_mode_host", False),
+            ("features.code_mode.enabled", False),
             ("features.computer_use", False),
             ("features.image_generation", False),
             ("features.in_app_browser", False),
@@ -558,6 +614,13 @@ class CodexCliBackend:
         )
         return fixed + json.dumps(question, ensure_ascii=False) + "\n</untrusted_user_input>"
 
+    @staticmethod
+    def _strict_agent_answer_schema() -> dict[str, Any]:
+        schema = AgentAnswer.model_json_schema()
+        schema["required"] = ["answer", "caveats", "needs_clarification"]
+        schema["additionalProperties"] = False
+        return schema
+
     async def _cleanup(self) -> None:
         method = getattr(self._runner, "cleanup", None)
         if method is None:
@@ -573,8 +636,8 @@ class CodexCliBackend:
             try:
                 with tempfile.TemporaryDirectory(prefix="mapit-codex-cwd-") as run_dir, tempfile.TemporaryDirectory(prefix="mapit-codex-artifacts-") as artifact_dir:
                     schema_path = Path(artifact_dir) / "agent-answer.schema.json"
-                    schema = AgentAnswer.model_json_schema()
-                    schema["additionalProperties"] = False
+                    final_message_path = Path(artifact_dir) / "agent-answer.final.json"
+                    schema = self._strict_agent_answer_schema()
                     schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
                     login = await asyncio.wait_for(
                         self._run(LOGIN_COMMAND, "", cwd=run_dir),
@@ -583,12 +646,22 @@ class CodexCliBackend:
                     if not _login_ok(login):
                         return _result("login_failed" if login.returncode else "login_required")
                     process = await asyncio.wait_for(
-                        self._run(self._effective_exec_command(str(schema_path)), self._prompt(question, now=self._clock()), cwd=run_dir),
+                        self._run(
+                            self._effective_exec_command(str(schema_path), str(final_message_path)),
+                            self._prompt(question, now=self._clock()),
+                            cwd=run_dir,
+                        ),
                         timeout=self._timeout_seconds,
                     )
                     if process.returncode != 0:
                         return _result("process_failed")
-                    return _parse_result(process.stdout)
+                    structural = _parse_result(process.stdout)
+                    if structural.category not in {"success", "no_tool_call"}:
+                        return structural
+                    final_message, final_error = _read_final_message(final_message_path)
+                    if final_error is not None or final_message is None:
+                        return _result(final_error or "final_response_invalid")
+                    return _parse_result(process.stdout, final_message, require_final_file=True)
             except asyncio.TimeoutError:
                 try:
                     await self._cleanup()

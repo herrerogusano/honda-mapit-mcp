@@ -42,6 +42,19 @@ from .telegram_adapter import (
     TelegramUpdate,
     format_agent_answer,
 )
+from .telegram_credentials import (
+    TelegramCredentialStoreError,
+    TelegramCredentials,
+    WindowsKeyringTelegramCredentialStore,
+)
+from .telegram_bot import (
+    BotApiTransport,
+    TelegramBotError,
+    TelegramIncomingUpdate,
+    TelegramBotPoller,
+    TelegramBotSender,
+    TelegramPollResult,
+)
 
 __all__ = [
     "CognitoAuthenticator",
@@ -91,4 +104,13 @@ __all__ = [
     "TelegramSender",
     "TelegramUpdate",
     "format_agent_answer",
+    "TelegramCredentialStoreError",
+    "TelegramCredentials",
+    "WindowsKeyringTelegramCredentialStore",
+    "BotApiTransport",
+    "TelegramBotError",
+    "TelegramIncomingUpdate",
+    "TelegramBotPoller",
+    "TelegramBotSender",
+    "TelegramPollResult",
 ]

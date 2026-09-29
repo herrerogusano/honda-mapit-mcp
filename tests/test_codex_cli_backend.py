@@ -11,8 +11,10 @@ import pytest
 from mapit.codex_cli_backend import (
     EXEC_COMMAND,
     LOGIN_COMMAND,
+    MAX_FINAL_MESSAGE_BYTES,
     CodexCliBackend,
     CodexProcessResult,
+    _read_final_message,
     build_codex_child_env,
 )
 
@@ -55,10 +57,40 @@ class FakeRunner:
         output = self.outputs.pop(0)
         if isinstance(output, BaseException):
             raise output
+        if "--output-last-message" in argv and output.returncode == 0:
+            final_path = Path(argv[argv.index("--output-last-message") + 1])
+            last_message = None
+            for line in output.stdout.splitlines():
+                try:
+                    event = json.loads(line)
+                except Exception:
+                    continue
+                item = event.get("item") if isinstance(event, dict) else None
+                if (
+                    event.get("type") == "item.completed"
+                    and isinstance(item, dict)
+                    and item.get("type") == "agent_message"
+                    and isinstance(item.get("text"), str)
+                ):
+                    last_message = item["text"]
+            if last_message is not None:
+                final_path.write_text(last_message, encoding="utf-8")
         return output
 
     async def cleanup(self):
         self.cleaned += 1
+
+
+class FinalFileRunner(FakeRunner):
+    def __init__(self, outputs, transform):
+        super().__init__(outputs)
+        self.transform = transform
+
+    async def run(self, argv, *, stdin_text, env, cwd, timeout_seconds):
+        result = await super().run(argv, stdin_text=stdin_text, env=env, cwd=cwd, timeout_seconds=timeout_seconds)
+        if "--output-last-message" in argv and result.returncode == 0:
+            self.transform(Path(argv[argv.index("--output-last-message") + 1]))
+        return result
 
 
 def _backend(runner):
@@ -82,6 +114,7 @@ def test_command_uses_stdin_no_shell_shape_and_scrubs_environment():
     command = runner.calls[1][0]
     assert command[: len(EXEC_COMMAND)] == EXEC_COMMAND
     assert "--output-schema" in command
+    assert "--output-last-message" in command
     assert runner.calls[1][1] != "status question"
     assert "<untrusted_user_input>" in runner.calls[1][1]
     assert "status question" in runner.calls[1][1]
@@ -103,7 +136,8 @@ def test_effective_config_values_are_typed_toml_and_mcp_is_pinned():
     expected_false = {
         "features.shell_tool", "features.unified_exec", "features.multi_agent",
         "features.skill_mcp_dependency_install", "features.apps", "features.browser_use",
-        "features.browser_use_external", "features.browser_use_full_cdp_access", "features.code_mode_host",
+        "features.browser_use_external", "features.browser_use_full_cdp_access",
+        "features.code_mode.enabled",
         "features.computer_use", "features.image_generation", "features.in_app_browser",
         "features.in_app_local_automation",
         "features.remote_plugin", "features.plugins", "features.skill_search",
@@ -124,6 +158,97 @@ def test_prompt_has_injected_host_date_timezone_and_raw_payload_wording():
     assert "2026-09-29" in prompt
     assert "UTC" in prompt
     assert "raw tool payloads" in prompt
+
+
+def test_strict_agent_answer_schema_requires_exact_all_properties():
+    schema = CodexCliBackend._strict_agent_answer_schema()
+    assert schema["additionalProperties"] is False
+    assert set(schema["properties"]) == {"answer", "caveats", "needs_clarification"}
+    assert set(schema["required"]) == set(schema["properties"])
+
+
+def _progress_then_mcp_output(answer=None):
+    answer = answer or {"answer": "ok", "caveats": [], "needs_clarification": False}
+    return "\n".join(
+        [
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Working."}}),
+            json.dumps({"type": "item.started", "item": _call()}),
+            json.dumps({"type": "item.completed", "item": _call()}),
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(answer)}}),
+            json.dumps({"type": "turn.completed"}),
+        ]
+    )
+
+
+def _runner_for_final_file(output, transform=lambda path: None):
+    return FinalFileRunner(
+        [CodexProcessResult(0, "Logged in using ChatGPT"), CodexProcessResult(0, output)],
+        transform,
+    )
+
+
+def test_progress_message_then_mcp_then_final_file_succeeds():
+    runner = _runner_for_final_file(_progress_then_mcp_output())
+    result = asyncio.run(_backend(runner).ask("status"))
+    assert result.success is True and result.answer.answer == "ok"
+
+
+def test_final_message_file_missing_is_safe_failure():
+    def remove(path):
+        path.unlink(missing_ok=True)
+
+    runner = _runner_for_final_file(_jsonl(calls=[_call()], answer={"answer": "ok", "caveats": [], "needs_clarification": False}), remove)
+    assert asyncio.run(_backend(runner).ask("status")).category == "final_response_invalid"
+
+
+def test_final_message_read_is_bounded_before_oversize_decision(monkeypatch):
+    class BoundedReader:
+        requested = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, size):
+            self.requested = size
+            return b"x" * size
+
+    reader = BoundedReader()
+    monkeypatch.setattr(Path, "open", lambda self, mode: reader)
+    text, category = _read_final_message("synthetic-final-message")
+    assert text is None and category == "output_too_large"
+    assert reader.requested == MAX_FINAL_MESSAGE_BYTES + 1
+
+
+@pytest.mark.parametrize(
+    "transform,expected",
+    [
+        (lambda path: path.write_text("not-json", encoding="utf-8"), "final_response_invalid"),
+        (lambda path: path.write_text(json.dumps({"answer": "ok", "caveats": [], "needs_clarification": False, "extra": "x"}), encoding="utf-8"), "final_response_invalid"),
+        (lambda path: path.write_bytes(b"x" * (MAX_FINAL_MESSAGE_BYTES + 1)), "output_too_large"),
+        (lambda path: path.write_text(json.dumps({"answer": "different", "caveats": [], "needs_clarification": False}), encoding="utf-8"), "final_response_invalid"),
+    ],
+)
+def test_final_message_file_invalid_extra_oversized_or_mismatched_is_safe(transform, expected):
+    output = _jsonl(calls=[_call()], answer={"answer": "ok", "caveats": [], "needs_clarification": False})
+    runner = _runner_for_final_file(output, transform)
+    assert asyncio.run(_backend(runner).ask("status")).category == expected
+
+
+def test_final_agent_message_must_follow_last_completed_mcp_call():
+    answer = {"answer": "ok", "caveats": [], "needs_clarification": False}
+    output = "\n".join(
+        [
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(answer)}}),
+            json.dumps({"type": "item.started", "item": _call()}),
+            json.dumps({"type": "item.completed", "item": _call()}),
+            json.dumps({"type": "turn.completed"}),
+        ]
+    )
+    runner = _runner_for_final_file(output)
+    assert asyncio.run(_backend(runner).ask("status")).category == "final_response_invalid"
 
 
 def test_login_is_required_before_exec():

@@ -4,20 +4,25 @@
 
 Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
 client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), Phase 3
-(the reusable read-only realtime component), and Phase 4 (the local
-Codex-to-MCP conversational-agent adapter and deterministic evaluation) are
-complete. Phase 5 is ACTIVE only for the private local Telegram prototype
-contract, implementation, and offline tests in
-`docs/phase-5-telegram-contracts.md`. Do not make Telegram calls, create a bot,
-send messages, or use real bot tokens/chat IDs/user IDs until an explicit
-external gate authorizes it. Do not expand into an agent UI, frontend, project
-database, project-owned AWS infrastructure, webhook deployment, Home Assistant,
-or persistence.
+(the reusable read-only realtime component), Phase 4 (the local Codex-to-MCP
+conversational-agent adapter and deterministic evaluation), and Phase 5 (the
+bounded private Telegram interface) are complete. Phase 6 is ACTIVE only for
+the measure-first persistence decision gate described in `PHASE_6_PERSISTENCE.md`
+and `docs/phase-6-status.md`; do not implement persistence until that gate is
+approved. Do not expand into an agent UI, frontend, project-owned AWS
+infrastructure, webhook deployment, Home Assistant, or HA integration.
 
-MAPIT remains read-only in Phase 5. Do not send `POST`, `PUT`, `PATCH`, or
+On 2026-09-29 the user authorized the external gate and the bot
+`@honda_mapit_mcp_bot` was created. The supervisor recorded one bounded Telegram
+E2E result and one direct read-only backend check as safe booleans/categories
+only; no token, message content, or real chat/user identifier belongs in the
+repository. Any future live Telegram operation remains supervisor-authorized.
+
+MAPIT remains read-only in all phases. Do not send `POST`, `PUT`, `PATCH`, or
 `DELETE` requests to MAPIT except the Cognito calls strictly required for
-authentication. The only future Telegram write in the Phase 5 contract is the
-bounded `sendMessage` operation, which is not implemented or authorized yet.
+authentication. The only Telegram write in the Phase 5 contract is the bounded
+`sendMessage` operation; no persistent Telegram worker, webhook, or additional
+live operation is in scope.
 Never commit credentials, tokens, AWS keys, Telegram bot tokens, or real
 personal/device/location/chat/user IDs.
 

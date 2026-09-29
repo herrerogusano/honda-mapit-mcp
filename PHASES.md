@@ -6,9 +6,10 @@
 - Phase 2 — Route Analytics & Aggregations: COMPLETED
 - Phase 3 — Realtime State & Event Layer: COMPLETED
 - Phase 4 — Conversational Agent Integration: COMPLETED
-- Phase 5 — Telegram Interface: ACTIVE (private local contract/offline prototype
-  only; Telegram external gate pending)
-- Phase 6 — Persistence & Historical Intelligence: PLANNED
+- Phase 5 — Telegram Interface: COMPLETED (bounded private local interface;
+  redacted supervisor E2E gate passed)
+- Phase 6 — Persistence & Historical Intelligence: ACTIVE (measure-first
+  decision gate; no persistence implementation)
 - Phase 7 — Hardening, Observability & Release: PLANNED
 - Phase 8 — AWS Remote Service & Managed Agent Evaluation: PLANNED
 

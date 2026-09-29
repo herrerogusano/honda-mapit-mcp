@@ -338,15 +338,45 @@ limits the run to six turns and 60 seconds, and never passes provider or MAPIT
 credentials to the child. See the [Phase 4 contract](docs/phase-4-agent-contracts.md)
 and [Phase 4 status](docs/phase-4-status.md).
 
-## Phase 5 Telegram prototype (active, no live Telegram)
+## Phase 5 Telegram prototype (completed bounded scope)
 
-Phase 5 is limited to a private local polling contract and offline prototype
-implementation/tests; “no polling” means no live polling. It does not call Telegram, create a bot, send messages, use real bot
-tokens/chat IDs/user IDs, persist state, deploy webhooks/AWS, or change the
-read-only MAPIT boundary. The only future Telegram write is a bounded,
-allowlisted `sendMessage`; it is not live-authorized. See the
+Phase 5 includes a private local polling contract, offline prototype,
+Credential Manager setup, and injectable bounded Bot API transport; “no polling”
+means no persistent polling service. Bot creation and the bounded E2E gate were
+authorized and completed by the supervisor on 2026-09-29; the recorded result
+contains only safe booleans/categories, and this worktree does not read tokens
+or real IDs. Safe evidence was `success=true`, `category=success`,
+`cycles=1`, `update_processed=true`, and `message_sent=true`; a direct
+allowlisted current-status backend check also succeeded. No runtime, event,
+update, or history state is persisted by the polling prototype; its credential
+envelope is intentionally stored in Windows Credential Manager. No webhook or
+AWS deployment exists, and the read-only MAPIT boundary is unchanged. See the
 [Phase 5 contract](docs/phase-5-telegram-contracts.md) and
 [Phase 5 status](docs/phase-5-status.md).
+
+The local setup GUI is `py scripts/telegram_setup_gui.py`; it writes a single
+bounded canonical `telegram-state-v1` envelope (token, nullable pair list, and
+one-use challenge) to native Windows Credential Manager and performs no network
+call. On startup it recovers any pending one-use pairing challenge into a
+readonly selectable command field; `Copiar comando` touches the clipboard only
+when explicitly clicked. The GUI shows the exact `/start <challenge>` onboarding
+message; it is never printed. The bounded Bot API smoke is
+`py scripts/smoke_telegram_live.py`, but it requires both explicit
+`--allow-get-updates --allow-send-message` flags and supervisor authorization.
+
+The bounded query E2E seam is `py scripts/run_telegram_once.py`; it requires
+`--allow-poll --allow-agent --allow-send`, reuses one poller for at most two
+sequential cycles, and emits only safe booleans/categories. The authorized
+query E2E completed successfully using only the redacted evidence above.
+Future invocations remain supervisor-authorized and are not run by CI.
+
+## Phase 6 persistence decision gate
+
+Phase 6 is active only for a measure-first decision gate. The project remains
+stateless: no database, durable event history, synchronization worker,
+migration, or retention policy is implemented. Persistence requires a
+separately approved measurable benefit beyond on-demand MAPIT reads. See the
+[Phase 6 plan](PHASE_6_PERSISTENCE.md) and [status](docs/phase-6-status.md).
 
 ## CI and environments
 
