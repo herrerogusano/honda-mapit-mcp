@@ -30,6 +30,16 @@ account-summary read from a maximum of two wire Core GETs. Its coverage output
 is restricted to `PARTIAL` or `UNKNOWN`; the stricter complete label requires a
 separate unfiltered-plus-controls gate.
 
+The separate route-reconstruction research is recorded in
+[`phase-6-route-reconstruction-research.md`](phase-6-route-reconstruction-research.md).
+It inventories the confirmed MAPIT route/detail GeoJSON shape and concludes
+that map matching is only a candidate capability: the retained evidence has no
+coordinate values, order/density, per-point timestamps, accuracy, heading, or
+road identifiers. The reverse-geocoding path is documented as a distinct
+coordinate-to-label read, not as route reconstruction. No live probe, external
+matcher, paid call, OSM import, city-coverage calculation, or persistence is
+authorized by this status.
+
 ## Next gate
 
 Research and supervisor approval must establish a measurable benefit over the
