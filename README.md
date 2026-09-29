@@ -331,3 +331,11 @@ rules and the distinction between project environments and MAPIT endpoints.
 
 See `docs/phase-0-status.md` and the research notes for current findings and
 open questions.
+
+## Future AWS deployment
+
+Phase 8 plans an optional always-available remote MCP on AWS with separate dev
+and prod environments. Hosting the MCP does not require hosting a model. A
+managed agent and its model/provider evaluation are a separate optional track,
+performed only behind an explicit cost gate. See
+[`PHASE_8_AWS_REMOTE.md`](PHASE_8_AWS_REMOTE.md).

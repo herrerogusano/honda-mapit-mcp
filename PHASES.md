@@ -9,6 +9,7 @@
 - Phase 5 — Telegram Interface: PLANNED
 - Phase 6 — Persistence & Historical Intelligence: PLANNED
 - Phase 7 — Hardening, Observability & Release: PLANNED
+- Phase 8 — AWS Remote Service & Managed Agent Evaluation: PLANNED
 
 ## Architecture principle
 
@@ -28,6 +29,11 @@ Interface / Agent / Telegram
 - Services: business logic, aggregation and reusable application behavior.
 - MCP: thin tool exposure layer.
 - Agent / Telegram: natural-language and user-facing interfaces.
+
+Remote deployment is a separate concern from model hosting. Phase 8 may publish
+the MCP as an always-available AWS service without embedding a language model.
+Only an optional managed-agent track needs a model/provider decision and paid
+inference. See `PHASE_8_AWS_REMOTE.md`.
 
 ## Persistent agent strategy
 - Supervisor: GPT-5.6 Sol, Medium reasoning.
