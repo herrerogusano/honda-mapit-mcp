@@ -1,7 +1,8 @@
 # Phase 7 preparation — read-only audit, 2026-09-30
 
-Phase 7 is not accepted or implemented by this audit. The Phase 6 live-ingestion
-flag decision remains the current gate. No AWS, paid model, Telegram or extra
+Phase 7 is not accepted or implemented by this audit. Phase 6 is now accepted
+for its minimal opt-in ledger. The current Phase 7 gate is the explicit network
+compatibility decision below. No AWS, paid model, Telegram or extra
 MAPIT operation was run for this review.
 
 The researcher inspected the local auth/client/config/WebSocket/Telegram/CI
@@ -42,3 +43,22 @@ Existing strengths: allowlisted initial Core/Geo URLs, GET-only service calls,
 bounded auth recovery, route-service body limits, safe error translation,
 realtime receive limits, Telegram bounded/no-write-retry semantics and
 deterministic agent evaluation. None proves a remote production deployment.
+
+## Current user gate: network-policy compatibility
+
+The proposed bounded implementation preserves public signatures, injectable
+transports and existing authentication recovery/write-retry rules. It would
+make default secret-bearing HTTP and WebSocket connections direct-only, ignore
+environment/system proxies and reject redirects. This may break networks that
+require a corporate proxy; a trusted-proxy option is not silently introduced.
+
+It would also set a 2 MiB ceiling on general MAPIT responses, matching existing
+service/history limits (currently a low-level caller can omit its size bound).
+Larger responses would fail explicitly, not truncate to misleading totals.
+Suggested separate limits are 256 KiB for Cognito, 1 MiB public HTML, 4 MiB per
+public JS bundle, 32 bundles and 16 MiB total discovery input. These remain
+proposals pending implementation/review, not measured provider requirements.
+
+Obtain user approval of direct-only defaults and the general MAPIT ceiling
+before changing those compatibility behaviors. All ensuing application tests
+remain offline, with no new live Telegram/MAPIT test, model API or AWS resource.

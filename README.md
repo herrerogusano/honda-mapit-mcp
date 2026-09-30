@@ -434,8 +434,14 @@ routes were false-marked, including coherent old end timestamps. Filtering
 on `complete=true` would exclude the entire sample. The user approved revised
 admission using identifiers, coherent nonfuture start/end times and distance,
 without consulting `complete`. Offline tests and independent review passed.
-The next authorized import passed validation but failed local permission
-verification without committing facts; a further live retry is not automatic.
+An earlier import passed validation but failed local permission verification.
+The reproduced cause was incompatible PowerShell module paths inherited by
+the Python child process. Isolating the Windows PowerShell child environment
+fixed verification without relaxing the ACL. After independent review and
+renewed explicit authorization, the current-month import and no-op deduplication
+check succeeded. Real local day/month/year queries passed with authentication
+and MAPIT reads disabled. Phase 6 is complete for the minimal opt-in scope;
+private facts remain outside Git/OneDrive, and ordinary MCP reads stay stateless.
 See
 [flag investigation](docs/phase-6-route-flags-investigation.md).
 One separate bounded July 2025 API read confirmed routes before August,

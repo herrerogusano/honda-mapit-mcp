@@ -1,14 +1,15 @@
 # Phase 6 status
 
-Status: **ACTIVE — local ledger implemented and independently tested;
-live ingestion stopped at local permission verification**.
+Status: **COMPLETE — approved minimal local ledger accepted, including bounded
+live import, no-op deduplication and zero-upstream local queries**.
 
 Phase 5 is complete. Phase 6 follows `PHASE_6_PERSISTENCE.md`: first determine
 whether bounded MAPIT reads are sufficiently fast and reliable, and whether
 local history provides measurable value beyond on-demand queries. The user
 accepted the minimal ledger without additional encryption on 2026-09-30.
 Its opt-in implementation and offline read-reduction proof are accepted;
-the ordinary MCP remains stateless. No private database has been created.
+the ordinary MCP remains stateless. The private database now exists outside
+Git and OneDrive and contains only the approved minimal current-month facts.
 See [ledger contract](phase-6-ledger-contract.md) and
 [acceptance result](phase-6-ledger-result.md).
 
@@ -19,7 +20,7 @@ See [ledger contract](phase-6-ledger-contract.md) and
   unbounded live polling or data collection.
 - No credentials, raw route bodies, direct identifiers, locations, or Telegram
   data belong in the ledger. Its approved private fields and retention are
-  defined in the contract; this first live execution stored none.
+  defined in the contract; the initial blocked executions stored none.
 - Any measurement must be separately approved, bounded, redacted, and recorded
   as safe metadata only before a persistence design is proposed.
 
@@ -160,11 +161,27 @@ silent exclusions. End timestamps are validated only in memory, not stored.
 Implementation and independent review are accepted; the full offline suite
 has 592 passed and 3 skipped.
 
-The next authorized current-month import passed route validation but stopped
+An earlier authorized current-month import passed route validation but stopped
 at `history_permissions_failed`, with `facts_committed=false`. It did not
-authorize an automatic additional live retry; local read-only diagnosis is in
-progress. No deduplication live check or private database acceptance is claimed.
-Phase 6 remains active; Phases 7 and 8 remain planned.
+authorize an automatic additional live retry. The user explicitly authorized
+correction and a new bounded import allowance. The exact Python subprocess
+failure was reproduced as incompatible inherited PowerShell module paths;
+isolating the child environment fixes it without changing the ACL policy.
+
+Independent review accepted the correction (603 offline tests passed, three
+skipped). Actual local read-only and apply/readback checks passed before MAPIT
+was consulted. One current-month import succeeded; its conditional second
+import added no facts and recognized duplicates. Local day/month/year queries
+then succeeded with authentication and MAPIT calls disabled: zero upstream
+attempts, consistent aggregates and unverified labels preserved. See the
+[acceptance result](phase-6-ledger-result.md).
+
+Phase 6 is complete for this approved opt-in scope. It demonstrates reusable
+local capability and read reduction, not improved live latency, comprehensive
+history, confirmed distance units or street reconstruction. No automatic
+sync, other-month ingestion, live deletion, Telegram operation or AWS resource
+was added. Phase 7 is at the explicit network-policy compatibility gate in
+[audit preparation](phase-7-audit-preparation.md); Phase 8 remains planned.
 
 A separate authorized July 2025 availability read confirmed pre-August routes,
 using one Core and one Geo logical/wire GET. This does not establish earliest

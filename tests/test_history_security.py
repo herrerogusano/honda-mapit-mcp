@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 import stat
+import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -73,16 +75,27 @@ def _skip_if_no_symlink(source: Path, target: Path) -> None:
         pytest.skip(f"symlink unavailable in this environment: {type(exc).__name__}")
 
 
+def _acl_report(*, root_protected=True, children_checked=True, unexpected_allow=False):
+    return json.dumps({
+        "rootProtected": root_protected,
+        "childrenChecked": children_checked,
+        "unexpectedAllow": unexpected_allow,
+    })
+
+
 def test_acl_restriction_uses_current_user_and_verifies_allowlist(tmp_path, monkeypatch):
     monkeypatch.setattr(history_runtime.sys, "platform", "win32")
     monkeypatch.setattr(history_runtime.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setenv("pSmOdUlEpAtH", "powershell-7-module-path")
     calls = []
 
     def fake_run(argv, **kwargs):
         calls.append((argv, kwargs))
         if argv[0] == "powershell.exe" and len(calls) == 1:
             return SimpleNamespace(returncode=0, stdout="S-1-5-21-123\r\n")
-        return SimpleNamespace(returncode=0, stdout="")
+        if argv[0] == "powershell.exe":
+            return SimpleNamespace(returncode=0, stdout=_acl_report())
+        return SimpleNamespace(returncode=0, stdout="private icacls provider output")
 
     monkeypatch.setattr(history_runtime.subprocess, "run", fake_run)
     target = tmp_path / "private-ledger"
@@ -95,26 +108,108 @@ def test_acl_restriction_uses_current_user_and_verifies_allowlist(tmp_path, monk
     assert "*S-1-5-18:(OI)(CI)F" in calls[1][0]
     assert "*S-1-5-32-544:(OI)(CI)F" in calls[1][0]
     assert "notin $allowed" in calls[2][0][-1]
+    assert "$children=@(Get-ChildItem" in calls[2][0][-1]
+    assert "$root.AreAccessRulesProtected -isnot [bool]" in calls[2][0][-1]
     assert all(call[1]["timeout"] == 10 for call in calls)
+    for argv, kwargs in (calls[0], calls[2]):
+        assert argv[0] == "powershell.exe"
+        assert all(name.casefold() != "psmodulepath" for name in kwargs["env"])
+    assert "env" not in calls[1][1]  # icacls retains the parent environment
+    assert any(name.casefold() == "psmodulepath" and value == "powershell-7-module-path"
+               for name, value in os.environ.items())
 
 
-def test_acl_verification_failure_is_closed_and_safe(tmp_path, monkeypatch):
+def test_acl_verifier_is_read_only_and_missing_or_mistyped_properties_fail_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(history_runtime.sys, "platform", "win32")
     monkeypatch.setattr(history_runtime.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
-    calls = 0
+    target = tmp_path / "does-not-exist"
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout='{"rootProtected":true,"childrenChecked":true}')
+
+    with pytest.raises(HistoryRuntimeError) as caught:
+        history_runtime._verify_directory_access(target, "S-1-5-21-123", run=fake_run)
+    assert caught.value.category == "history_acl_verify_runtime_failed"
+    assert not target.exists()
+    assert len(calls) == 1 and calls[0][0][0] == "powershell.exe"
+    assert "icacls.exe" not in calls[0][0]
+
+    for malformed in (
+        '{"rootProtected":"true","childrenChecked":true,"unexpectedAllow":false}',
+        _acl_report(root_protected=False),
+        _acl_report(unexpected_allow=True),
+    ):
+        with pytest.raises(HistoryRuntimeError) as caught:
+            history_runtime._verify_directory_access(
+                target,
+                "S-1-5-21-123",
+                run=lambda *_args, _text=malformed, **_kwargs: SimpleNamespace(returncode=0, stdout=_text),
+            )
+        assert caught.value.category in {"history_acl_verify_runtime_failed", "history_acl_verify_rejected"}
+        assert str(target) not in str(caught.value)
+        assert "S-1-5-21" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("returncode", "expected"),
+    [
+        (history_runtime.ACL_VERIFY_REJECTED_EXIT, "history_acl_verify_rejected"),
+        (history_runtime.ACL_VERIFY_TRANSLATION_EXIT, "history_acl_verify_translation_failed"),
+        (history_runtime.ACL_VERIFY_RUNTIME_EXIT, "history_acl_verify_runtime_failed"),
+        (1, "history_acl_verify_runtime_failed"),
+        (True, "history_acl_verify_runtime_failed"),
+    ],
+)
+def test_acl_verifier_fixed_exit_statuses_are_distinct_and_safe(tmp_path, returncode, expected):
+    with pytest.raises(HistoryRuntimeError) as caught:
+        history_runtime._verify_directory_access(
+            tmp_path / "private-path",
+            "S-1-5-21-123",
+            run=lambda *_args, **_kwargs: SimpleNamespace(returncode=returncode, stdout="secret SID/path/detail"),
+        )
+    assert caught.value.category == expected
+    assert "secret" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("stage", "expected"),
+    [
+        ("identity-timeout", "history_acl_identity_timeout"),
+        ("identity-missing-stdout", "history_acl_identity_failed"),
+        ("identity-bool-code", "history_acl_identity_failed"),
+        ("apply-timeout", "history_acl_apply_timeout"),
+        ("apply-failure", "history_acl_apply_failed"),
+        ("verify-timeout", "history_acl_verify_timeout"),
+    ],
+)
+def test_acl_stages_map_timeouts_and_missing_properties_to_safe_categories(tmp_path, monkeypatch, stage, expected):
+    monkeypatch.setattr(history_runtime.sys, "platform", "win32")
+    monkeypatch.setattr(history_runtime.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
+    calls = []
 
     def fake_run(argv, **_kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
+        calls.append(argv[0])
+        index = len(calls)
+        if stage == "identity-timeout" or (stage == "verify-timeout" and index == 3) or (stage == "apply-timeout" and index == 2):
+            raise subprocess.TimeoutExpired(argv[0], 10)
+        if index == 1:
+            if stage == "identity-missing-stdout":
+                return SimpleNamespace(returncode=0)
+            if stage == "identity-bool-code":
+                return SimpleNamespace(returncode=True, stdout="S-1-5-21-123")
             return SimpleNamespace(returncode=0, stdout="S-1-5-21-123")
-        return SimpleNamespace(returncode=1, stdout="private ACL detail")
+        if argv[0] == "icacls.exe":
+            return SimpleNamespace(returncode=1 if stage == "apply-failure" else 0, stdout="private apply output")
+        return SimpleNamespace(returncode=0, stdout=_acl_report())
 
     monkeypatch.setattr(history_runtime.subprocess, "run", fake_run)
     with pytest.raises(HistoryRuntimeError) as caught:
         history_runtime.restrict_directory_access(tmp_path / "private")
-    assert caught.value.category == "history_permissions_failed"
-    assert "private ACL detail" not in str(caught.value)
+    assert caught.value.category == expected
+    assert str(tmp_path) not in str(caught.value)
+    assert "private apply output" not in str(caught.value)
 
 
 def test_regular_path_rejects_symlinks_for_database_sidecar_and_lock(tmp_path):

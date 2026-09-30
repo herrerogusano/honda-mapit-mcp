@@ -6,15 +6,15 @@ Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
 client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), Phase 3
 (the reusable read-only realtime component), Phase 4 (the local Codex-to-MCP
 conversational-agent adapter and deterministic evaluation), and Phase 5 (the
-bounded private Telegram interface) are complete. Phase 6 is ACTIVE for the
+bounded private Telegram interface) are complete. Phase 6 is COMPLETE for the
 approved opt-in distance ledger described in `PHASE_6_PERSISTENCE.md`
 and `docs/phase-6-status.md`. On 2026-09-30 the user accepted the minimal local
 distance-ledger proposal without extra encryption: local SQLite outside Git
 and OneDrive, pseudonymous route aliases, UTC day/native distance, rebuildable
 aggregates, retention until explicit deletion, no coordinates/streets/secrets.
-Implement only that bounded opt-in ledger; no automatic collection or claim
+Only that bounded opt-in ledger is accepted; no automatic collection or claim
 of measured latency improvement/history completeness. Offline implementation
-is accepted; the first bounded live import stopped before storage on
+is accepted. Historical gates and bounded allowances follow; the first import stopped before storage on
 `complete=false`. Its meaning is unconfirmed, not evidence of an active trip.
 No further live import or implicit filtering is authorized by that execution;
 the next gate is the explicit treatment of those flagged routes.
@@ -47,6 +47,22 @@ The revised-policy current-month import passed validation but stopped at
 `history_permissions_failed`, with no facts committed. The conditional second
 import was not executed. Diagnose local permissions without more live reads;
 any further import requires a new bounded allowance.
+The user has now explicitly authorized fixing local permission verification
+and one additional current-month import, followed only on success by one
+deduplication import and redacted local-query checks. Diagnose and verify the
+local checker before consuming that new live allowance. No broader history
+scan, automatic retry or increased ACL privilege is authorized.
+That renewed allowance is now consumed successfully: local preflight passed,
+one current-month import committed minimal facts, the second added no facts,
+and day/month/year local queries passed with zero upstream attempts. The
+Windows PowerShell child environment excludes inherited `PSModulePath` without
+changing the parent environment or relaxing ACLs. Private SQLite/alias key
+exist outside Git/OneDrive; no automatic sync or further live read is approved.
+Phase 7 is at the explicit direct-only/proxy and general 2 MiB response-cap
+compatibility gate in `docs/phase-7-audit-preparation.md`. Research/preparation
+is accepted, not implementation of those compatibility changes. The user
+requested continuing until the next gate; ask for this decision before
+changing those defaults. Phase 8 has no deployment/cost approval.
 Do not expand into an
 agent UI, frontend, project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

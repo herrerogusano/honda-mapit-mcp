@@ -86,3 +86,51 @@ failed. No ACL mutation or extra MAPIT read followed the failure.
 
 GitHub CI for commit `ff89b94` passed on Python 3.11, 3.12 and 3.13
 ([run 36773127212](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/36773127212)).
+
+## Renewed bounded allowance
+
+The user explicitly authorized correcting local permission verification and
+one further current-month import, with a second permitted only after success
+for deduplication. Local checks must precede those MAPIT reads. Independent
+read-only reproduction of the exact verifier now succeeds in Windows
+PowerShell 5.1 and PowerShell 7; both expose a Boolean protected-root property
+and no unexpected allow entries. The original failure is not reproducible;
+that shell-only check did not reproduce Python's inherited environment.
+The researcher subsequently reproduced the exact Python subprocess failure:
+inherited environment rejects module autoload; a copied child environment
+excluding `PSModulePath` case-insensitively makes identity and verification
+succeed. This is not a missing/false ACL property. Microsoft's
+[PSModulePath documentation](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_psmodulepath?view=powershell-7.6)
+describes this PowerShell 7 → Python → Windows PowerShell compatibility case.
+The bounded correction isolates only the PowerShell child environment, adds
+stage-specific safe diagnostics and separates
+read-only verification from ACL application without relaxing the policy.
+
+## Accepted live and local checkpoint
+
+Independent review accepted the correction. Full offline suite: **603 passed,
+3 skipped**. The supervisor's real local preflight passed read-only verification
+and the existing exact-policy apply/readback, with zero MAPIT reads and no DB
+yet present. Two authorized imports then completed:
+
+| Check | Success | Added band | Duplicate band | Coverage |
+|---|---|---|---|---|
+| Current-month import | true | many | none | PARTIAL |
+| Conditional deduplication import | true | none | many | PARTIAL |
+
+Both retained `mapit_native_unconfirmed` and reported facts committed without
+printing private values. Each keeps the contract's one Core/one Geo logical
+read and maximum four wire GETs; no different month or detail was queried.
+Actual wire counts were not instrumented by this CLI and are not claimed.
+
+The real local day/month/year queries were executed with `MapitClient.get`
+and `SessionManager.login_saved` replaced by rejecting guards. All succeeded,
+with zero upstream attempts, consistent aggregate totals/counts checked only
+in memory and unverified labels preserved. No dates, distances, exact counts,
+aliases, keys or raw payloads were printed or committed. The private SQLite
+file and its alias key now exist only in their approved local stores.
+
+**Phase 6 accepted** for the minimal opt-in ledger. No claim of complete
+historical coverage, latency superiority, confirmed native units, safe street
+reconstruction, automatic sync or remote deployment follows. Actual history
+deletion remains unexecuted; its tests use synthetic fixtures only.

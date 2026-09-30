@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import json
+import re
 import secrets
 import subprocess
 import sys
@@ -16,6 +18,14 @@ from typing import Any
 from .session import ManagedSession, SessionManager, WindowsKeyringRefreshTokenStore
 
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+ACL_IDENTITY_TIMEOUT_SECONDS = 10
+ACL_APPLY_TIMEOUT_SECONDS = 10
+ACL_VERIFY_TIMEOUT_SECONDS = 10
+ACL_VERIFY_REJECTED_EXIT = 10
+ACL_VERIFY_TRANSLATION_EXIT = 20
+ACL_VERIFY_RUNTIME_EXIT = 21
+_WINDOWS_SID_RE = re.compile(r"S-1-(?:\d+-)*\d+\Z")
+_ACL_VERIFIER_FIELDS = frozenset({"rootProtected", "childrenChecked", "unexpectedAllow"})
 KEY_SERVICE = "honda-mapit-distance-ledger"
 KEY_ACCOUNT = "hmac-key-v1"
 SCOPE_ACCOUNT = "active-scope-v1"
@@ -167,51 +177,148 @@ def default_history_directory() -> Path:
     return root
 
 
+def _current_user_sid(*, run=None, creationflags=None) -> str:
+    """Read the current Windows SID; never include provider output in errors."""
+    if creationflags is None:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    selected_run = run or subprocess.run
+    try:
+        powershell_env = _powershell_child_env()
+        identity = selected_run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
+            capture_output=True, text=True, timeout=ACL_IDENTITY_TIMEOUT_SECONDS,
+            creationflags=creationflags, env=powershell_env,
+        )
+    except subprocess.TimeoutExpired:
+        raise HistoryRuntimeError("history_acl_identity_timeout") from None
+    except Exception:
+        raise HistoryRuntimeError("history_acl_identity_failed") from None
+    code = getattr(identity, "returncode", None)
+    output = getattr(identity, "stdout", None)
+    if type(code) is not int or code != 0 or type(output) is not str:
+        raise HistoryRuntimeError("history_acl_identity_failed")
+    sid = output.strip()
+    if not _WINDOWS_SID_RE.fullmatch(sid):
+        raise HistoryRuntimeError("history_acl_identity_failed")
+    return sid
+
+
+def _acl_verifier_script(directory: Path, sid: str) -> str:
+    """Build a fixed-result PowerShell verifier; it performs no ACL writes."""
+    target_literal = str(directory).replace("'", "''")
+    return (
+        "$ErrorActionPreference='Stop'; try { "
+        f"$allowed=@('{sid}','S-1-5-18','S-1-5-32-544'); "
+        f"$root=Get-Acl -LiteralPath '{target_literal}'; "
+        "if($null -eq $root -or $root.AreAccessRulesProtected -isnot [bool]){exit 21}; "
+        "$rootProtected=($root.AreAccessRulesProtected -eq $true); "
+        f"$targets=@(Get-Item -LiteralPath '{target_literal}'); "
+        f"$children=@(Get-ChildItem -LiteralPath '{target_literal}' -Force); "
+        "$targets+=@($children); $unexpected=$false; "
+        "foreach($target in $targets){ "
+        "if($null -eq $target -or $null -eq $target.FullName){exit 21}; "
+        "$acl=Get-Acl -LiteralPath $target.FullName; "
+        "if($null -eq $acl -or $null -eq $acl.Access){exit 21}; "
+        "foreach($rule in $acl.Access){ "
+        "if($null -eq $rule -or $null -eq $rule.IdentityReference -or "
+        "$rule.AccessControlType -isnot [System.Security.AccessControl.AccessControlType]){exit 21}; "
+        "try{$ruleSid=$rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value} "
+        "catch{exit 20}; "
+        "if($rule.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and "
+        "$ruleSid -notin $allowed){$unexpected=$true} "
+        "}}; "
+        "$report=@{rootProtected=[bool]$rootProtected;childrenChecked=[bool]$true;unexpectedAllow=[bool]$unexpected}; "
+        "$report | ConvertTo-Json -Compress; "
+        "if(-not $rootProtected -or $unexpected){exit 10}; exit 0 "
+        "} catch { exit 21 }"
+    )
+
+
+def _powershell_child_env() -> dict[str, str]:
+    """Avoid passing a PowerShell 7 module path to Windows PowerShell 5.1 children."""
+    environment = os.environ.copy()
+    for name in tuple(environment):
+        if name.casefold() == "psmodulepath":
+            del environment[name]
+    return environment
+
+
+def _verify_directory_access(
+    directory: Path,
+    sid: str,
+    *,
+    run=None,
+    creationflags=None,
+) -> None:
+    """Read-only ACL check. Missing/mistyped verifier fields never imply success."""
+    if creationflags is None:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    selected_run = run or subprocess.run
+    if not isinstance(sid, str) or not _WINDOWS_SID_RE.fullmatch(sid):
+        raise HistoryRuntimeError("history_acl_identity_failed")
+    try:
+        powershell_env = _powershell_child_env()
+        verified = selected_run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             _acl_verifier_script(directory, sid)],
+            capture_output=True, text=True, timeout=ACL_VERIFY_TIMEOUT_SECONDS,
+            creationflags=creationflags, env=powershell_env,
+        )
+    except subprocess.TimeoutExpired:
+        raise HistoryRuntimeError("history_acl_verify_timeout") from None
+    except Exception:
+        raise HistoryRuntimeError("history_acl_verify_runtime_failed") from None
+    code = getattr(verified, "returncode", None)
+    output = getattr(verified, "stdout", None)
+    if type(code) is not int:
+        raise HistoryRuntimeError("history_acl_verify_runtime_failed")
+    if code == ACL_VERIFY_REJECTED_EXIT:
+        raise HistoryRuntimeError("history_acl_verify_rejected")
+    if code == ACL_VERIFY_TRANSLATION_EXIT:
+        raise HistoryRuntimeError("history_acl_verify_translation_failed")
+    if code != 0:
+        raise HistoryRuntimeError("history_acl_verify_runtime_failed")
+    if type(output) is not str:
+        raise HistoryRuntimeError("history_acl_verify_runtime_failed")
+    try:
+        report = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        raise HistoryRuntimeError("history_acl_verify_runtime_failed") from None
+    if not isinstance(report, dict) or frozenset(report) != _ACL_VERIFIER_FIELDS:
+        raise HistoryRuntimeError("history_acl_verify_runtime_failed")
+    if any(type(report[key]) is not bool for key in _ACL_VERIFIER_FIELDS):
+        raise HistoryRuntimeError("history_acl_verify_runtime_failed")
+    if report["rootProtected"] is not True or report["childrenChecked"] is not True or report["unexpectedAllow"] is not False:
+        raise HistoryRuntimeError("history_acl_verify_rejected")
+
+
 def restrict_directory_access(directory: Path) -> None:
     """Grant only the current user, SYSTEM and administrators; no encryption claim."""
     if sys.platform != "win32":
         raise HistoryRuntimeError("platform_unsupported")
-    flags = subprocess.CREATE_NO_WINDOW
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    sid = _current_user_sid(creationflags=flags)
     try:
-        identity = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-             "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value"],
-            capture_output=True, text=True, timeout=10, creationflags=flags,
-        )
-        sid = identity.stdout.strip()
-        if identity.returncode or not sid.startswith("S-1-") or any(character not in "S0123456789-" for character in sid):
-            raise HistoryRuntimeError("history_permissions_failed")
         directory.mkdir(parents=True, exist_ok=True)
         _regular_path(directory, directory=True)
-        permissions = subprocess.run(
-            ["icacls.exe", str(directory), "/inheritance:r", "/grant:r",
-             f"*{sid}:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"],
-            capture_output=True, timeout=10, creationflags=flags,
-        )
-        if permissions.returncode:
-            raise HistoryRuntimeError("history_permissions_failed")
-        target_literal = str(directory).replace("'", "''")
-        check = (
-            f"$ErrorActionPreference='Stop'; $acl=Get-Acl -LiteralPath '{target_literal}'; "
-            f"$allowed=@('{sid}','S-1-5-18','S-1-5-32-544'); "
-            "if(-not $acl.AreAccessRulesProtected){exit 1}; "
-            "$targets=@(Get-Item -LiteralPath '" + target_literal + "'); "
-            "$targets+=@(Get-ChildItem -LiteralPath '" + target_literal + "' -Force); "
-            "foreach($target in $targets){$acl=Get-Acl -LiteralPath $target.FullName; "
-            "foreach($rule in $acl.Access){"
-            "$ruleSid=$rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value; "
-            "if($rule.AccessControlType -eq 'Allow' -and $ruleSid -notin $allowed){exit 1}}}; exit 0"
-        )
-        verified = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", check],
-            capture_output=True, timeout=10, creationflags=flags,
-        )
-        if verified.returncode:
-            raise HistoryRuntimeError("history_permissions_failed")
     except HistoryRuntimeError:
         raise
     except Exception:
-        raise HistoryRuntimeError("history_permissions_failed") from None
+        raise HistoryRuntimeError("history_acl_apply_failed") from None
+    try:
+        permissions = subprocess.run(
+            ["icacls.exe", str(directory), "/inheritance:r", "/grant:r",
+             f"*{sid}:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"],
+            capture_output=True, timeout=ACL_APPLY_TIMEOUT_SECONDS, creationflags=flags,
+        )
+    except subprocess.TimeoutExpired:
+        raise HistoryRuntimeError("history_acl_apply_timeout") from None
+    except Exception:
+        raise HistoryRuntimeError("history_acl_apply_failed") from None
+    if type(getattr(permissions, "returncode", None)) is not int or permissions.returncode != 0:
+        raise HistoryRuntimeError("history_acl_apply_failed")
+    _verify_directory_access(directory, sid, creationflags=flags)
 
 
 def _selected_account_vehicle(summary: Any, selected_vehicle: Any) -> tuple[str, str]:
