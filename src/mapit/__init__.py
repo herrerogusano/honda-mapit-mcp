@@ -66,6 +66,7 @@ from .route_input_analyzer import (
     safe_analyze_route_input,
     safe_analyze_route_input_sufficiency,
 )
+from .osrm import classify_match_json, classify_match_response
 
 __all__ = [
     "CognitoAuthenticator",
@@ -133,4 +134,6 @@ __all__ = [
     "safe_analyze_route_input",
     "safe_analyze_route_input_sufficiency",
     "THIRD_ORDINATE_CLASSES",
+    "classify_match_json",
+    "classify_match_response",
 ]

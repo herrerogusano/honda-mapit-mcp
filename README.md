@@ -392,6 +392,16 @@ The offline refinement also separates feature-object and coordinate density,
 geometry-specific name/label bands and structural name transitions without
 exposing values; the third run confirmed those categories safely.
 
+The synthetic local OSRM POC is `scripts/probe_local_osrm_fixture.py`. It is
+loopback-only, uses an in-memory synthetic route through `/route` and `/match`,
+and emits only a fixed redacted schema; raw responses are discarded. The
+deterministic fixture uses two synthetic endpoints and at most 12 equidistant
+points, while accepting OSRM's `null` unmatched tracepoints and
+`leg.annotation` response shape. The
+observed local result was `osrm-local`, `matched`, few matchings, all
+tracepoints, medium confidence, with steps/annotations/names present. This
+validates the local engine/harness only, not MAPIT or production map matching.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and

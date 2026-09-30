@@ -288,6 +288,38 @@ experimento no se necesita ningún servicio de pago: bastan un fixture GeoJSON
 sintético, un extracto OSM pequeño versionado y un proceso local. Los
 resultados deben incluir versión de red y atribución/licencia OSM.
 
+### POC OSRM local sintético (implementado y observado)
+
+El arnés reproducible `scripts/probe_local_osrm_fixture.py` usa solo stdlib,
+acepta exclusivamente un endpoint loopback, genera una ruta sintética en
+memoria mediante `/route`, muestrea un número acotado de puntos y llama a
+`/match`. El transporte es inyectable para tests; no usa MAPIT, credenciales,
+servicios externos ni persistencia de respuestas raw. El clasificador puro
+`mapit.osrm` devuelve un schema fijo redacted y falla cerrado ante JSON,
+profundidad o tamaños inválidos.
+
+El fixture determinista usa los extremos sintéticos `(7.4165,43.7304)` y
+`(7.4320,43.7420)` y como máximo 12 puntos equidistantes. Sigue el esquema
+real de Match: un `tracepoint` `null` es un punto no emparejado y produce
+`partial`; los tracepoints objeto deben llevar `matchings_index`, los nombres
+de step vacíos son válidos pero no cuentan como nombre presente, y
+`annotations` se detecta solo desde `leg.annotation` (objeto o `null`).
+
+La reproducción local observada usó la imagen oficial OSRM `v26.9.0` con
+digest `sha256:c29a50d67b9be17d10773fa2b52bb045ee3fbb8f42e5f9d1c671ce0d9bb21f37`
+y el PBF de Monaco de Geofabrik con SHA-256
+`30A84C07C16E7525E255FEEB0D26BD2BE9C79EF772C2B91C958AA2417C253A23` y tamaño
+691480 bytes; no se registra ninguna ruta local del archivo. Docker Desktop
+quedó reparado y operativo para este POC. El contenedor se trató como
+loopback/log-none/read-only.
+
+El resultado sintético redacted fue `engine=osrm-local`,
+`category=matched`, `matching_count_band=few`,
+`tracepoint_coverage_band=all`, `confidence_band=medium`,
+`steps_present=true`, `annotations_present=true`, `names_present=true` y
+`raw_discarded=true`. Esto valida el engine y el arnés local, no MAPIT ni la
+calidad de un matching de rutas MAPIT.
+
 ## 7. Privacidad y gate posterior
 
 Coordenadas, timestamps, nombres/labels y IDs de ruta son datos de movilidad.

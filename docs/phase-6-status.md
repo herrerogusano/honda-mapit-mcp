@@ -61,10 +61,17 @@ existing secure refresh token; it does not persist route data or probe output.
 Offline analysis now separates gap bands for LineString interiors, feature
 boundaries, and consecutive Point features, and also emits feature-object and
 coordinate density bands plus geometry-specific name/label bands and
-structural name transition/repetition classes. A bounded synthetic fixture
-experiment is the next free local validation step; it does not select a
-matcher or require OSM/network access. It retains only allowlisted source
-classifications; a third ordinate remains opaque.
+structural name transition/repetition classes. The bounded synthetic OSRM POC
+is implemented and observed locally: it exercises `/route` then `/match` over
+loopback using a synthetic in-memory route, with raw responses discarded. Its
+reproducible fixture uses two fixed synthetic endpoints and a hard cap of 12
+equidistant points; the classifier follows the real `null` tracepoint,
+empty-step-name, and `leg.annotation` shapes.
+The redacted result was `osrm-local`, `matched`, few matchings, all tracepoints,
+medium confidence, and steps/annotations/names present. The harness validates
+the local engine boundary only; it does not validate MAPIT or choose a
+matcher. It retains only allowlisted source classifications; a third ordinate
+remains opaque.
 The reverse-geocoding path is documented as a distinct coordinate-to-label
 read, not as route reconstruction. No external matcher, paid call, OSM import,
 city-coverage calculation, or persistence is authorized by this status.
