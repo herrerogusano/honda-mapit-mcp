@@ -16,6 +16,7 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .telegram_adapter import TelegramAccessPolicy, TelegramAdapter, TelegramDispatchResult, TelegramSender, TelegramUpdate
 from .telegram_credentials import TelegramCredentialStoreError, TelegramCredentials
+from .http_transport import ResponseTooLargeError, open_direct, read_bounded
 
 MAX_UPDATES = 1
 MAX_TIMEOUT_SECONDS = 25.0
@@ -63,7 +64,7 @@ class BotApiTransport:
         if not isinstance(timeout_seconds, (int, float)) or isinstance(timeout_seconds, bool) or not 0 < timeout_seconds <= MAX_TIMEOUT_SECONDS:
             raise TelegramBotError("invalid_configuration")
         self._token = token
-        self._opener = opener or urllib.request.urlopen
+        self._opener = opener
         self._api_base = api_base.rstrip("/")
         self._timeout = float(timeout_seconds)
 
@@ -79,15 +80,19 @@ class BotApiTransport:
             method="POST",
         )
         try:
-            response = self._opener(request, timeout=self._timeout)
+            response = open_direct(request, timeout=self._timeout) if self._opener is None else self._opener(request, timeout=self._timeout)
             try:
-                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                raw = read_bounded(response, MAX_RESPONSE_BYTES)
             finally:
                 close = getattr(response, "close", None)
                 if callable(close):
                     close()
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
             raise TelegramBotError("transport_failed") from None
+        except ResponseTooLargeError:
+            raise TelegramBotError("response_too_large") from None
+        except TypeError:
+            raise TelegramBotError("invalid_response") from None
         if not isinstance(raw, bytes) or len(raw) > MAX_RESPONSE_BYTES:
             raise TelegramBotError("response_too_large")
         try:

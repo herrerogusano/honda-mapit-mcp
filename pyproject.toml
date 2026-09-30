@@ -16,9 +16,10 @@ dependencies = [
 [project.scripts]
 mapit-mcp = "mapit.mcp_server:main"
 mapit-history = "mapit.history_cli:main"
+mapit-health = "mapit.health:main"
 
 [project.optional-dependencies]
-test = ["pytest>=8,<9"]
+test = ["pytest>=9.1.1,<10"]
 windows-auth = ["keyring>=25.6,<26; sys_platform == 'win32'"]
 realtime = ["websockets>=15,<17"]
 agent = ["openai-agents==0.22.3"]

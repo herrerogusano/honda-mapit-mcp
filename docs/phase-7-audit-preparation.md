@@ -59,6 +59,7 @@ Suggested separate limits are 256 KiB for Cognito, 1 MiB public HTML, 4 MiB per
 public JS bundle, 32 bundles and 16 MiB total discovery input. These remain
 proposals pending implementation/review, not measured provider requirements.
 
-Obtain user approval of direct-only defaults and the general MAPIT ceiling
-before changing those compatibility behaviors. All ensuing application tests
+The user approved direct-only defaults and the general MAPIT ceiling on
+2026-09-30. Implementation may proceed with these compatibility behaviors
+explicitly documented. All ensuing application tests
 remain offline, with no new live Telegram/MAPIT test, model API or AWS resource.

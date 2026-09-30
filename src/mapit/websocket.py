@@ -75,4 +75,5 @@ def connect_account_socket(
         max_queue=max_queue,
         ping_interval=ping_interval,
         ping_timeout=ping_timeout,
+        proxy=None,
     )

@@ -12,9 +12,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping
 
 from .config import MapitConfig
+from .http_transport import ResponseTooLargeError, open_direct, read_bounded
 
 
 JsonTransport = Callable[[str, Mapping[str, str], Mapping[str, Any]], Mapping[str, Any]]
+MAX_COGNITO_RESPONSE_BYTES = 256 * 1024
 
 
 def _utc(value: datetime | None = None) -> datetime:
@@ -53,6 +55,13 @@ class CognitoHTTPError(RuntimeError):
     def __init__(self, status: int) -> None:
         self.status = int(status)
         super().__init__(f"Cognito request failed with HTTP {self.status}")
+
+
+class CognitoTransportError(RuntimeError):
+    """A Cognito request failed without exposing URL or response details."""
+
+    def __init__(self) -> None:
+        super().__init__("Cognito transport failed")
 
 
 @dataclass
@@ -214,7 +223,18 @@ class CognitoAuthenticator:
     def _default_transport(self, url: str, headers: Mapping[str, str], payload: Mapping[str, Any]) -> Mapping[str, Any]:
         request = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=dict(headers), method="POST")
         try:
-            with urllib.request.urlopen(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - endpoint is fixed by region.
-                return json.loads(response.read().decode("utf-8"))
+            with open_direct(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - endpoint is fixed by region.
+                raw = read_bounded(response, MAX_COGNITO_RESPONSE_BYTES)
+                try:
+                    parsed = json.loads(raw.decode("utf-8"))
+                except (UnicodeError, json.JSONDecodeError):
+                    raise ValueError("Cognito response is invalid JSON") from None
+                if not isinstance(parsed, Mapping):
+                    raise ValueError("Cognito response is invalid")
+                return parsed
         except urllib.error.HTTPError as exc:
             raise CognitoHTTPError(exc.code) from None
+        except ResponseTooLargeError:
+            raise ValueError("Cognito response exceeds configured byte limit") from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise CognitoTransportError() from None

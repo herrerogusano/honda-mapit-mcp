@@ -4,17 +4,33 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass, field, replace
 from html.parser import HTMLParser
 from typing import Callable, Mapping
 from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from .http_transport import ResponseTooLargeError, open_direct, read_bounded
 
 
 DEFAULT_REGION = "eu-west-1"
 DEFAULT_FRONTEND_URL = "https://app.mapit.me/"
 DEFAULT_CORE_API_URL = "https://core.prod.mapit.me"
 DEFAULT_GEO_API_URL = "https://geo.prod.mapit.me"
+MAX_DISCOVERY_HTML_BYTES = 1024 * 1024
+MAX_DISCOVERY_BUNDLE_BYTES = 4 * 1024 * 1024
+MAX_DISCOVERY_BUNDLES = 32
+MAX_DISCOVERY_TOTAL_BYTES = 16 * 1024 * 1024
+DISCOVERY_BUDGET_SECONDS = 60.0
+
+
+class RuntimeConfigDiscoveryError(RuntimeError):
+    """Safe hard-stop category for bounded frontend discovery."""
+
+    def __init__(self, category: str) -> None:
+        self.category = category
+        super().__init__(category)
 
 
 def validate_api_endpoint(url: str, role: str) -> str:
@@ -226,24 +242,77 @@ def fetch_public_runtime_config(
     fallback: RuntimeConfig | None = None,
 ) -> RuntimeConfig:
     """Fetch public HTML/bundles only; no credentials or API calls are used."""
-    def fetch(url: str) -> str:
-        if fetcher:
-            return fetcher(url, timeout)
-        request = Request(url, headers={"Accept": "text/html,application/javascript"})
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - URL is validated below.
-            return response.read().decode("utf-8", errors="replace")
-
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 < timeout < float("inf"):
+        raise ValueError("discovery timeout must be positive and finite")
     if urlparse(frontend_url).scheme != "https":
         raise ValueError("frontend discovery requires HTTPS")
-    html = fetch(frontend_url)
+    started = time.monotonic()
+    deadline = started + DISCOVERY_BUDGET_SECONDS
+    aggregate_bytes = 0
+
+    def remaining() -> float:
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise RuntimeConfigDiscoveryError("discovery_budget_exceeded")
+        return value
+
+    def fetch(url: str, limit: int) -> str:
+        nonlocal aggregate_bytes
+        request_timeout = min(float(timeout), remaining())
+        remaining_bytes = max(0, MAX_DISCOVERY_TOTAL_BYTES - aggregate_bytes)
+        effective_limit = min(limit, remaining_bytes)
+        if fetcher:
+            value = fetcher(url, request_timeout)
+            remaining()
+            if not isinstance(value, str):
+                raise RuntimeConfigDiscoveryError("discovery_invalid_response")
+            try:
+                raw = value.encode("utf-8")
+            except UnicodeError:
+                raise RuntimeConfigDiscoveryError("discovery_invalid_response") from None
+            if len(raw) > effective_limit:
+                raise RuntimeConfigDiscoveryError("discovery_size_limit_exceeded")
+            aggregate_bytes += len(raw)
+            if aggregate_bytes > MAX_DISCOVERY_TOTAL_BYTES:
+                raise RuntimeConfigDiscoveryError("discovery_size_limit_exceeded")
+            return value
+        request = Request(url, headers={"Accept": "text/html,application/javascript"})
+        def account_chunk(size: int) -> None:
+            nonlocal aggregate_bytes
+            aggregate_bytes += size
+            remaining()
+            if aggregate_bytes > MAX_DISCOVERY_TOTAL_BYTES:
+                raise RuntimeConfigDiscoveryError("discovery_size_limit_exceeded")
+        try:
+            with open_direct(request, timeout=request_timeout) as response:  # noqa: S310 - HTTPS frontend URL only.
+                raw = read_bounded(response, effective_limit, on_chunk=account_chunk)
+        except ResponseTooLargeError:
+            raise RuntimeConfigDiscoveryError("discovery_size_limit_exceeded") from None
+        remaining()
+        return raw.decode("utf-8", errors="replace")
+
+    try:
+        html = fetch(frontend_url, MAX_DISCOVERY_HTML_BYTES)
+    except RuntimeConfigDiscoveryError:
+        raise
+    except Exception:
+        remaining()
+        raise RuntimeConfigDiscoveryError("discovery_fetch_failed") from None
     urls = bundle_urls(html, frontend_url)
     bundle_map: dict[str, str] = {}
+    bundle_attempts = 0
     frontend_host = urlparse(frontend_url).netloc.lower()
     for url in urls:
         if urlparse(url).netloc.lower() != frontend_host:
             continue
+        if bundle_attempts >= MAX_DISCOVERY_BUNDLES:
+            raise RuntimeConfigDiscoveryError("discovery_bundle_limit_exceeded")
+        bundle_attempts += 1
         try:
-            bundle_map[url] = fetch(url)
+            bundle_map[url] = fetch(url, MAX_DISCOVERY_BUNDLE_BYTES)
+        except RuntimeConfigDiscoveryError:
+            raise
         except Exception:
+            remaining()
             continue
     return discover_runtime_config(html, bundle_map, overrides=overrides, fallback=fallback)

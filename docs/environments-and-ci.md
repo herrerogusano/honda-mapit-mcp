@@ -10,7 +10,9 @@ feature/* -> develop -> main
 
 `develop` is the development integration branch. `main` is the production
 branch. Pull requests and pushes to either branch run the same offline CI
-workflow across Python 3.11, 3.12, and 3.13. Feature branches are checked when
+workflow across Linux Python 3.11, 3.12, and 3.13 plus Windows Python 3.13.
+Core/test/agent/realtime extras are installed together; Windows also installs
+the Windows-auth extra. Feature branches are checked when
 they open or update a pull request targeting one of those branches.
 
 The GitHub `dev` and `prod` Environments are project environments for future
@@ -22,12 +24,19 @@ do not imply that CI can authenticate to MAPIT.
 CI has read-only repository permissions and does not use GitHub secrets or
 environment secrets. The workflow deliberately performs no deployment, login,
 or live MAPIT request. The test suite blocks application network access, and a
-job guard fails if `MAPIT_EMAIL` or `MAPIT_PASSWORD` is present in its
+job guard fails if MAPIT, model API, Telegram or AWS credential variables are present in its
 environment. Dependency installation still requires access to the Python
 package index; "offline tests" means no application/MAPIT network, not an
 air-gapped CI runner.
 
-The test extra is pinned to `pytest>=8,<9` for a stable major-version range.
+The test extra requires `pytest>=9.1.1,<10`, including the known tmpdir security
+fix and conftest-loading regression fix. CI updates its isolated pip to
+`>=26.2,<27` before installation. A separate networked dependency-audit job
+exports installed third-party pins and runs strict `pip-audit==2.10.1`, without
+ignored advisories. Only the first-party source project is excluded; unknown
+dependencies or audit failures block acceptance. This is not a claim of
+complete security, and resolver changes remain possible without a lockfile.
+The synthetic model-free evaluator and offline environment diagnostic also run.
 Actions are referenced by immutable commit SHA in `.github/workflows/ci.yml`.
 
 ## Protection-rule limitation

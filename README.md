@@ -448,11 +448,25 @@ One separate bounded July 2025 API read confirmed routes before August,
 despite the later start reported for the app's visible history. Earliest history
 and the cause of that discrepancy remain unknown.
 
+## Phase 7 hardening and offline diagnostics
+
+Default HTTP/WebSocket connections are direct-only: system/environment proxies
+are ignored and HTTP redirects are rejected. General MAPIT responses now have
+a 2 MiB ceiling even without an explicit caller limit; stricter limits still
+apply. Cognito and public discovery inputs are bounded separately. Networks
+requiring a corporate proxy need a future explicit compatibility decision.
+
+`python -m mapit.health` reports local package availability without touching
+credentials or providers. It is not a live connectivity check. See
+[security and operations](docs/security-and-operations.md) and the
+[synthetic portfolio demo](docs/portfolio-demo.md).
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and
 `main` is production. CI runs on pull requests and pushes to those two branches
-across Python 3.11–3.13. It has no MAPIT secrets, blocks application network
+across Linux Python 3.11–3.13 plus Windows Python 3.13, with agent/realtime extras
+and a separate known-advisory audit. It has no provider secrets, blocks external application network
 access while tests run, and rejects credential variables if injected. Package
 installation still uses the normal Python package index. See
 `docs/environments-and-ci.md` for the GitHub plan limitation around protection

@@ -132,6 +132,34 @@ def test_client_response_byte_limit_applies_before_json_materialization():
     assert client.get_geo("/v1/routes", max_response_bytes=64) == {"ok": True}
 
 
+def test_client_default_global_cap_and_tighter_limit_apply_to_injected_bytes(monkeypatch):
+    import mapit.client as client_module
+
+    monkeypatch.setattr(client_module, "MAX_MAPIT_RESPONSE_BYTES", 16)
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    payload = b'{"long":"123456789"}'
+    client = MapitClient(config, session(), transport=lambda method, url, headers: payload)
+    with pytest.raises(MapitResponseTooLarge):
+        client.get_geo("/v1/routes")
+    with pytest.raises(MapitResponseTooLarge):
+        client.get_geo("/v1/routes", max_response_bytes=100)
+    with pytest.raises(MapitResponseTooLarge):
+        client.get_geo("/v1/routes", max_response_bytes=4)
+    monkeypatch.setattr(client_module, "MAX_MAPIT_RESPONSE_BYTES", 32)
+    assert client.get_geo("/v1/routes", max_response_bytes=64) == {"long": "123456789"}
+    client.transport = lambda method, url, headers: {"trusted": True}
+    assert client.get_geo("/v1/routes") == {"trusted": True}
+
+
+def test_private_send_get_also_normalizes_missing_cap_to_global_default(monkeypatch):
+    import mapit.client as client_module
+    monkeypatch.setattr(client_module, "MAX_MAPIT_RESPONSE_BYTES", 4)
+    config = MapitConfig(core_api_url="https://core.prod.mapit.me", geo_api_url="https://geo.prod.mapit.me")
+    client = MapitClient(config, session(), transport=lambda method, url, headers: b'{"ok":true}')
+    with pytest.raises(MapitResponseTooLarge):
+        client._send_get("https://geo.prod.mapit.me/v1/routes", {})
+
+
 def test_client_response_limit_keeps_single_auth_recovery():
     attempts = []
     refreshed = []
@@ -166,7 +194,8 @@ def test_urlopen_response_limit_reads_before_json_parse(monkeypatch):
             reads.append(size)
             return b"x" * 8
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: Response())
+    from mapit import http_transport
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: type("Opener", (), {"open": staticmethod(lambda request, timeout: Response())})())
     with pytest.raises(MapitResponseTooLarge):
         client.get_geo("/v1/routes", max_response_bytes=4)
     assert reads == [5]
@@ -190,7 +219,8 @@ def test_urlopen_response_limit_accepts_exact_boundary_and_fragmented_body(monke
         def read(self, size=-1):
             return self.parts.pop(0) if self.parts else b""
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: Response())
+    from mapit import http_transport
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: type("Opener", (), {"open": staticmethod(lambda request, timeout: Response())})())
     assert client.get_geo("/v1/routes", max_response_bytes=len(body)) == {"ok": True}
 
 
@@ -208,7 +238,8 @@ def test_urlopen_response_limit_allows_empty_at_zero_and_rejects_invalid_limits(
         def read(self, size=-1):
             return b""
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: EmptyResponse())
+    from mapit import http_transport
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: type("Opener", (), {"open": staticmethod(lambda request, timeout: EmptyResponse())})())
     assert client.get_geo("/v1/routes", max_response_bytes=0) is None
     with pytest.raises(ValueError):
         client.get_geo("/v1/routes", max_response_bytes=-1)

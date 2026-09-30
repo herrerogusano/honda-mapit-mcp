@@ -11,6 +11,7 @@ from urllib.parse import quote, urlparse
 
 from .auth import MapitSession
 from .config import MapitConfig
+from .http_transport import ResponseTooLargeError, open_direct, read_bounded
 from .signing import SigV4Signer, canonical_uri
 
 
@@ -43,6 +44,7 @@ class MapitResponseTooLarge(RuntimeError):
 
 
 Transport = Callable[[str, str, Mapping[str, str]], Any]
+MAX_MAPIT_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
 @dataclass
@@ -74,13 +76,14 @@ class MapitClient:
             or max_response_bytes < 0
         ):
             raise ValueError("max_response_bytes must be a non-negative integer")
+        effective_limit = min(max_response_bytes, MAX_MAPIT_RESPONSE_BYTES) if max_response_bytes is not None else MAX_MAPIT_RESPONSE_BYTES
         url = self._resolve_url(url_or_path, params=params)
         recovered = False
         while True:
             self.session.refresh_if_needed()
             headers = self.signer.sign_get(url, self.session.credentials, self.session.id_token)
             try:
-                return self._send_get(url, headers, max_response_bytes=max_response_bytes)
+                return self._send_get(url, headers, max_response_bytes=effective_limit)
             except MapitHTTPError as exc:
                 if exc.status not in (401, 403) or recovered:
                     raise
@@ -136,19 +139,25 @@ class MapitClient:
         *,
         max_response_bytes: int | None = None,
     ) -> Any:
+        if max_response_bytes is not None and (
+            not isinstance(max_response_bytes, int)
+            or isinstance(max_response_bytes, bool)
+            or max_response_bytes < 0
+        ):
+            raise ValueError("max_response_bytes must be a non-negative integer")
+        max_response_bytes = min(max_response_bytes, MAX_MAPIT_RESPONSE_BYTES) if max_response_bytes is not None else MAX_MAPIT_RESPONSE_BYTES
         if self.transport:
             try:
                 result = self.transport("GET", url, headers)
-                if max_response_bytes is not None:
-                    if isinstance(result, bytes):
-                        if len(result) > max_response_bytes:
-                            raise MapitResponseTooLarge()
-                        return json.loads(result.decode("utf-8")) if result else None
-                    if isinstance(result, str):
-                        raw = result.encode("utf-8")
-                        if len(raw) > max_response_bytes:
-                            raise MapitResponseTooLarge()
-                        return json.loads(result) if result else None
+                if isinstance(result, bytes):
+                    if len(result) > max_response_bytes:
+                        raise MapitResponseTooLarge()
+                    return json.loads(result.decode("utf-8")) if result else None
+                if isinstance(result, str):
+                    raw = result.encode("utf-8")
+                    if len(raw) > max_response_bytes:
+                        raise MapitResponseTooLarge()
+                    return json.loads(result) if result else None
                 return result
             except MapitHTTPError:
                 raise
@@ -157,32 +166,21 @@ class MapitClient:
                 raise MapitHTTPError(exc.code, url) from None
             except (urllib.error.URLError, TimeoutError, OSError):
                 raise MapitTransportError("MAPIT transport failed") from None
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            except (UnicodeError, json.JSONDecodeError):
                 raise MapitResponseError("MAPIT response is invalid JSON") from None
         request = urllib.request.Request(url, headers=dict(headers), method="GET")
         try:
-            with urllib.request.urlopen(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - URL is allowlisted before this call.
-                if max_response_bytes is None:
-                    raw = response.read()
-                else:
-                    chunks: list[bytes] = []
-                    total = 0
-                    while True:
-                        chunk = response.read(min(64 * 1024, max_response_bytes + 1 - total))
-                        if not chunk:
-                            break
-                        total += len(chunk)
-                        if total > max_response_bytes:
-                            raise MapitResponseTooLarge()
-                        chunks.append(chunk)
-                    raw = b"".join(chunks)
+            with open_direct(request, timeout=self.config.http_timeout) as response:  # noqa: S310 - allowlisted host, direct opener.
+                raw = read_bounded(response, max_response_bytes or 0)
                 if not raw:
                     return None
                 return json.loads(raw.decode("utf-8"))
+        except ResponseTooLargeError:
+            raise MapitResponseTooLarge() from None
         except urllib.error.HTTPError as exc:
             # HTTPError inherits URLError, so this must remain first.
             raise MapitHTTPError(exc.code, url) from None
         except (urllib.error.URLError, TimeoutError, OSError):
             raise MapitTransportError("MAPIT transport failed") from None
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeError, json.JSONDecodeError):
             raise MapitResponseError("MAPIT response is invalid JSON") from None

@@ -14,7 +14,11 @@ class Response:
     def __init__(self, value):
         self.value = value
         self.closed = False
+        self.read_once = False
     def read(self, limit):
+        if self.read_once:
+            return b""
+        self.read_once = True
         return json.dumps(self.value).encode()
     def close(self):
         self.closed = True
@@ -56,6 +60,45 @@ def test_transport_rejects_invalid_token_or_endpoint():
         BotApiTransport("not-a-token")
     with pytest.raises(Exception):
         BotApiTransport("123456789:ABCDEFGHIJKLMNOPQRST", api_base="https://example.invalid")
+
+
+def test_default_telegram_path_is_direct_bounded_and_does_not_retry(monkeypatch):
+    from mapit import http_transport
+    calls = []
+    class Response:
+        status = 302
+        def close(self):
+            pass
+    class Opener:
+        def open(self, request, timeout):
+            calls.append(request)
+            return Response()
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: Opener())
+    transport = BotApiTransport("123456789:ABCDEFGHIJKLMNOPQRST")
+    with pytest.raises(TelegramBotError) as caught:
+        transport.send_message(7, "once")
+    assert caught.value.category == "transport_failed"
+    assert len(calls) == 1
+
+
+def test_telegram_default_path_maps_oversized_response_safely(monkeypatch):
+    from mapit import http_transport
+    class Response:
+        def __init__(self):
+            self.remaining = b"x" * (1024 * 1024 + 1)
+        def read1(self, size):
+            result, self.remaining = self.remaining[:size], self.remaining[size:]
+            return result
+        def close(self):
+            pass
+    class Opener:
+        def open(self, request, timeout):
+            return Response()
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: Opener())
+    transport = BotApiTransport("123456789:ABCDEFGHIJKLMNOPQRST")
+    with pytest.raises(TelegramBotError) as caught:
+        transport.get_me()
+    assert caught.value.category == "response_too_large"
 
 
 class FakeStore:

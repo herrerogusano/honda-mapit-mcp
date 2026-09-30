@@ -114,3 +114,59 @@ def test_expired_session_without_refresh_callback_fails_closed():
     )
     with pytest.raises(RuntimeError, match="refresh"):
         current.refresh_if_needed(now=now)
+
+
+def test_default_cognito_transport_uses_direct_bounded_reader(monkeypatch):
+    from mapit import http_transport
+    from mapit.auth import CognitoHTTPError, MAX_COGNITO_RESPONSE_BYTES
+
+    class Response:
+        def __init__(self, body, status=None):
+            self.body = body
+            self.status = status
+            self.sizes = []
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read1(self, size):
+            self.sizes.append(size)
+            body, self.body = self.body[:size], self.body[size:]
+            return body
+        def close(self):
+            pass
+
+    requests = []
+    response = Response(b'{"ok":true}')
+    class Opener:
+        def open(self, request, timeout):
+            requests.append((request, timeout))
+            return response
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: Opener())
+    auth = CognitoAuthenticator(MapitConfig())
+    assert auth._default_transport(auth.user_pool_endpoint, {}, {}) == {"ok": True}
+    assert requests[0][0].get_method() == "POST"
+    assert max(response.sizes) <= http_transport.READ_CHUNK_BYTES
+
+    class RedirectOpener:
+        def open(self, request, timeout):
+            return Response(b"", status=302)
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: RedirectOpener())
+    with pytest.raises(CognitoHTTPError) as caught:
+        auth._default_transport(auth.user_pool_endpoint, {}, {})
+    assert caught.value.status == 302
+
+    oversized = Response(b"x" * (MAX_COGNITO_RESPONSE_BYTES + 1))
+    class OversizedOpener:
+        def open(self, request, timeout):
+            return oversized
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: OversizedOpener())
+    with pytest.raises(ValueError, match="configured byte limit"):
+        auth._default_transport(auth.user_pool_endpoint, {}, {})
+
+    class InvalidShapeOpener:
+        def open(self, request, timeout):
+            return Response(b"[]")
+    monkeypatch.setattr(http_transport, "direct_opener", lambda: InvalidShapeOpener())
+    with pytest.raises(ValueError, match="Cognito response is invalid"):
+        auth._default_transport(auth.user_pool_endpoint, {}, {})
