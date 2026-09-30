@@ -344,6 +344,14 @@ favorable de viabilidad para esa línea; no demuestra exactitud real, continuida
 de todo el recorrido ni porcentaje de calles. Protocolo, snapshot público y
 límites en [prueba Barcelona](phase-6-barcelona-local-probe.md).
 
+Una prueba posterior de todas las LineStrings seleccionadas (no se garantiza
+la misma ruta/snapshot) obtuvo `partial_lines`: todas las líneas evaluadas,
+asociación parcial de puntos, confianza mínima baja, flags `inferred` mixtos,
+Point excluidos, gap interno medio y frontera entre features larga. No se
+estableció continuidad ni exactitud de calles/giros. Estas separaciones son
+estructurales; no prueban huecos temporales GPS. El éxito de una línea no
+generaliza al conjunto. La cobertura vial urbana sigue **no demostrada**.
+
 ## 7. Privacidad y gate posterior
 
 Coordenadas, timestamps, nombres/labels y IDs de ruta son datos de movilidad.

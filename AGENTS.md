@@ -44,9 +44,15 @@ work.
 - `tester`: independently review changes, add or run offline tests, and check
   security, error handling, and regression risk.
 
-Preferred worker configuration: `gpt-5.6-luna`, high reasoning. The supervisor
+Preferred worker configuration: `gpt-6-luna`, high reasoning. The supervisor
 owns scope, sequencing, decisions, integration, and acceptance. Escalate model
 effort only for a demonstrated blocker.
+
+On 2026-09-30 the user selected GPT-6.1 Sol with medium reasoning for the
+supervisor and GPT-6 Luna with high reasoning for workers. Existing workers
+were checkpointed and replaced because the agent tools cannot change an
+existing worker's model. Reuse the replacement researcher, implementer and
+tester roles; do not silently inherit a different model or escalate to Astra.
 
 Use this normal sequence when practical:
 

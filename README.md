@@ -414,6 +414,14 @@ are persisted or printed. The real selected LineString returned `matched`,
 all tracepoints, high confidence, and steps/annotations/names present. This
 is promising input-feasibility evidence, not full-route or city-coverage
 accuracy; see `docs/phase-6-barcelona-local-probe.md`.
+The follow-up `scripts/probe_mapit_osrm_route.py` assessed all bounded source
+LineStrings and returned partial point association with low minimum confidence,
+mixed inferred flags and excluded Points. It never asserts a complete route;
+street percentages and exact full-trip reconstruction remain unproven.
+The bounded monthly baseline measurement completed with five successful
+repetitions, p50 <1 second and p95 1–5 seconds. This is not a demonstrated
+database benefit. Phase 6 awaits the explicit distance-ledger/privacy gate
+in `docs/phase-6-persistence-proposal.md`; no database exists yet.
 
 ## CI and environments
 

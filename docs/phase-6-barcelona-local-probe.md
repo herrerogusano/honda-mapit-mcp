@@ -105,3 +105,34 @@ points, and measures ambiguity without treating engine confidence as accuracy.
 City-wide percentages additionally need an administrative boundary, eligible
 road definition, versioned length denominator and representative historical
 coverage. This evidence does not approve private persistence or a database.
+
+## All-LineString follow-up
+
+The user requested continued work until the next approval gate. The bounded
+protocol is in `phase-6-execution-gate.md`; the follow-up harness is
+`scripts/probe_mapit_osrm_route.py`. It reuses the same three bounded source
+reads, validates all features before dispatch, then checks every accepted
+LineString separately (at most eight, 500 points/line, 2,000 total).
+Independent offline review passed before one actual execution. No second
+route was attempted; list ordering is still unknown, and the two experiments
+are not claimed to use an identical immutable source snapshot.
+
+Safe live result on 2026-09-30:
+
+```json
+{"category":"partial_lines","checked_line_coverage":"all","engine":"osrm-local","excluded_point_features":true,"inferred_flag_availability":"all","line_count_band":"few","lowest_confidence_band":"low","max_feature_boundary_gap_band":"long","max_internal_gap_band":"medium","multiple_subtraces_present":false,"raw_discarded":true,"source_inferred_class":"mixed","stage_category":"success","tracepoint_coverage":"partial","whole_route_claim":false}
+```
+
+All supplied LineStrings were assessed, but point association was partial and
+the lowest matching confidence was low. Source inferred flags were available
+and mixed; false is not evidence of independently observed GPS. Point features
+were excluded and their role remains unknown. Feature boundary distances are
+structural separations, not confirmed temporal GPS dropouts or proof that the
+features form a continuous ordered trip. There was no detected OSRM split in
+returned matchings, which does not establish continuity across features.
+
+This is a stronger limitation than the earlier single-line feasibility result:
+the current evidence supports experimental line-level matching, not an exact
+last trip, complete turns or a trustworthy percentage of streets travelled.
+The owned temporary container was stopped and removed. No private input or
+OSRM payload was retained.

@@ -243,6 +243,7 @@ def perform_mapit_osrm_probe(
     client_factory: Callable[[MapitConfig, Any], Any] = MapitClient,
     osrm_transport: Transport | None = None,
     osrm_base_url: str = DEFAULT_OSRM_URL,
+    detail_processor: Callable[[Any], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Perform exactly three bounded MAPIT reads, then one local OSRM Match."""
     summary_payload: Any = None
@@ -296,6 +297,9 @@ def perform_mapit_osrm_probe(
             validate_payload_budget(detail_payload)
         except OSRMAnalysisError as exc:
             raise _ProbeError(exc.category) from None
+        if detail_processor is not None:
+            stage = "matcher"
+            return detail_processor(detail_payload)
         points = _line_string_coordinates(detail_payload)
         detail_payload = None
         stage = "matcher"

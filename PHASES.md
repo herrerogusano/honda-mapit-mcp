@@ -9,7 +9,8 @@
 - Phase 5 — Telegram Interface: COMPLETED (bounded private local interface;
   redacted supervisor E2E gate passed)
 - Phase 6 — Persistence & Historical Intelligence: ACTIVE (measure-first
-  decision gate; no persistence implementation)
+  measurements complete for one bounded sample; awaiting local distance-ledger
+  product/privacy decision; no persistence implementation)
 - Phase 7 — Hardening, Observability & Release: PLANNED
 - Phase 8 — AWS Remote Service & Managed Agent Evaluation: PLANNED
 
@@ -38,9 +39,9 @@ Only an optional managed-agent track needs a model/provider decision and paid
 inference. See `PHASE_8_AWS_REMOTE.md`.
 
 ## Persistent agent strategy
-- Supervisor: GPT-5.6 Sol, Medium reasoning.
-- Researcher: GPT-5.6 Luna, High reasoning.
-- Implementer: GPT-5.6 Luna, High reasoning.
-- Tester/Reviewer: GPT-5.6 Luna, High reasoning.
+- Supervisor: GPT-6.1 Sol, Medium reasoning (user-selected).
+- Researcher: GPT-6 Luna, High reasoning.
+- Implementer: GPT-6 Luna, High reasoning.
+- Tester/Reviewer: GPT-6 Luna, High reasoning.
 
 Reuse the same agents throughout the project. Create temporary specialists only for exceptional blockers.

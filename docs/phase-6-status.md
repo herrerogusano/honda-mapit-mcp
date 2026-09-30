@@ -24,8 +24,9 @@ that the current no-persistence route path is the baseline: one Core
 `account-summary` read plus one Geo read per UTC month window for a one-month
 analytics operation, with the existing 2 MiB/window and 366-day limits. Phase 0
 confirmed two bounded monthly windows but historical coverage remains
-`PARTIAL`; the unfiltered read exceeded 2 MiB before decoding. No latency,
-reliability, byte, or API-read-reduction measurement has yet been collected.
+`PARTIAL`; the unfiltered read exceeded 2 MiB before decoding. One bounded
+monthly latency/reliability/body-size sample is now complete; no persisted
+path or API-read-reduction benchmark has been measured.
 The proposed filtered sample separates six logical Geo reads from a maximum of
 12 wire Geo GETs (one possible 401/403 recovery each), and one logical Core
 account-summary read from a maximum of two wire Core GETs. Its coverage output
@@ -93,6 +94,11 @@ confidence and steps/annotations/names present. This establishes one-line
 input feasibility only, not ground-truth street accuracy, full-route turns,
 city coverage or a persistence decision. The temporary matcher container was
 stopped and removed; only public map files remain outside the repository.
+The subsequent bounded all-LineString assessment returned `partial_lines`:
+all source lines checked, partial tracepoint association, lowest confidence
+low, mixed source inferred flags and excluded Point features. Full-route
+reconstruction and city street coverage are not established. Neither run
+retained private values; see the Barcelona protocol for safe evidence.
 
 ## Next gate
 
@@ -106,3 +112,21 @@ synthetic benchmarks may measure current call formulas, normalization,
 aggregation, and safety limits. A future live sample, if separately approved,
 must remain one account/vehicle, bounded monthly reads, no unfiltered retry,
 coarse redacted metrics only, and no durable route/event payloads.
+
+## Current decision checkpoint
+
+The authorized five-plus-one monthly sample completed successfully:
+five of five repeated reads, p50 <1 second, p95 1–5 seconds, maximum monthly
+body 64–256 KiB, one logical/wire Core read and six logical/wire Geo reads.
+The adjacent control was disjoint and no pagination key was observed.
+History coverage remains `PARTIAL`. See
+[`phase-6-monthly-measurement-result.md`](phase-6-monthly-measurement-result.md).
+The small sample does not demonstrate a persistence performance benefit or
+loss of MAPIT history. The measured default remains stateless.
+
+The next user gate is a separate product decision: whether to implement a
+minimal local distance ledger and explicitly approve its private fields,
+HMAC identity scope, retention and local unencrypted-storage risks. The
+proposal is in [`phase-6-persistence-proposal.md`](phase-6-persistence-proposal.md).
+No database, private ingestion, background collection or AWS resources have
+been created. Phases 7 and 8 remain planned; Phase 6 is not marked complete.
