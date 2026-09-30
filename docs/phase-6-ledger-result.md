@@ -3,7 +3,7 @@
 ## Accepted offline implementation
 
 Independent worker review accepted the scoped ledger, orchestration, CLI and
-tests. Final local suite: **567 passed, 3 skipped**. Skips are Windows symlink
+tests. Final local suite: **568 passed, 3 skipped**. Skips are Windows symlink
 creation limitations; simulated reparse-attribute rejection is separately
 covered. Compilation succeeded. GitHub CI is recorded separately once run.
 
@@ -39,6 +39,17 @@ the `includeInProgress` behavior remains unverified. The category and tests
 were corrected without another live read. No route bodies, IDs, dates,
 distances or exact route counts were retained. The key-creation code was not
 reached. No second import, filtering or automatic retry occurred.
+
+## Cross-platform CI regression
+
+The first CI run found that SQLite 3.45.1 can return SQL `NULL` for two large
+positive finite values whose total overflows, whereas local SQLite 3.50.4
+returns infinity. The import now checks `SUM(distance)` together with
+`COUNT(*)`: a nonempty scope with a NULL/nonfinite total is rejected and
+rolled back. A regression forces the NULL case; independent review accepted
+the fix. A separate standard-library-only WSL/SQLite 3.45.1 synthetic smoke
+confirmed `numeric_overflow` and that the first fact was preserved. No private
+data or network was involved. This is distinct from the live route-flag gate.
 
 ## Required next decision
 

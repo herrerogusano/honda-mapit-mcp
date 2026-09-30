@@ -335,11 +335,11 @@ class DistanceLedger:
                         ),
                     )
                     added_count += 1
-                total = connection.execute(
-                    "SELECT SUM(distance) FROM route_facts WHERE scope_alias = ?",
+                total, fact_count = connection.execute(
+                    "SELECT SUM(distance), COUNT(*) FROM route_facts WHERE scope_alias = ?",
                     (bytes.fromhex(scope),),
-                ).fetchone()[0]
-                if total is not None and not math.isfinite(float(total)):
+                ).fetchone()
+                if fact_count > 0 and (total is None or not math.isfinite(float(total))):
                     raise LedgerError("numeric_overflow")
                 connection.commit()
             except LedgerError:

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from mapit import ledger as ledger_module
 from mapit.ledger import (
     APPLICATION_ID,
     COMPLETENESS,
@@ -291,6 +292,43 @@ def test_overflowing_import_rolls_back_and_query_rejects_nonfinite_sum(tmp_path)
     with pytest.raises(LedgerError) as caught:
         ledger.distance_breakdown(ACCOUNT_SCOPE, VEHICLE_ID, "day")
     assert caught.value.category == "numeric_overflow"
+
+
+def test_import_rejects_null_sum_when_scope_has_facts_and_rolls_back(tmp_path, monkeypatch):
+    path = tmp_path / "ledger.sqlite"
+    ledger = DistanceLedger(path, KEY)
+    ledger.import_routes(ACCOUNT_SCOPE, VEHICLE_ID, [_route("first", distance=1e308)])
+
+    real_connect = sqlite3.connect
+    query = "SELECT SUM(distance), COUNT(*) FROM route_facts WHERE scope_alias = ?"
+
+    class NullSumCursor:
+        def fetchone(self):
+            return (None, 2)
+
+    class ConnectionProxy:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def execute(self, sql, parameters=()):
+            if sql == query:
+                return NullSumCursor()
+            return self._connection.execute(sql, parameters)
+
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(
+            ledger_module.sqlite3,
+            "connect",
+            lambda *args, **kwargs: ConnectionProxy(real_connect(*args, **kwargs)),
+        )
+        with pytest.raises(LedgerError) as caught:
+            ledger.import_routes(ACCOUNT_SCOPE, VEHICLE_ID, [_route("second", distance=1e308)])
+
+    assert caught.value.category == "numeric_overflow"
+    assert ledger.distance_breakdown(ACCOUNT_SCOPE, VEHICLE_ID, "day").buckets[0].observed_route_count == 1
 
 
 def test_wrong_key_is_detected_before_use_and_preserves_database_bytes(tmp_path):
