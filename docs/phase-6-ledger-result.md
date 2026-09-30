@@ -78,3 +78,11 @@ at `history_permissions_failed`, with `facts_committed=false` and
 claimed. The conditional second import was not executed because the first did
 not succeed. Local permission diagnosis is read-only; another live retry needs
 an explicit bounded allowance.
+
+Read-only inspection confirmed the application directory is empty, its ACL
+is protected and no unexpected allow principal is present; the private DB
+does not exist. This does not yet establish why the verification subprocess
+failed. No ACL mutation or extra MAPIT read followed the failure.
+
+GitHub CI for commit `ff89b94` passed on Python 3.11, 3.12 and 3.13
+([run 36773127212](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/36773127212)).
