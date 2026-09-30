@@ -1,20 +1,25 @@
 # Phase 6 status
 
-Status: **ACTIVE — measure-first decision gate; no persistence implementation**.
+Status: **ACTIVE — local ledger implemented and independently tested;
+live ingestion stopped at the route-flag decision gate**.
 
 Phase 5 is complete. Phase 6 follows `PHASE_6_PERSISTENCE.md`: first determine
 whether bounded MAPIT reads are sufficiently fast and reliable, and whether
-local history provides measurable value beyond on-demand queries. No database,
-durable event history, synchronization worker, migration, or retention policy
-has been implemented.
+local history provides measurable value beyond on-demand queries. The user
+accepted the minimal ledger without additional encryption on 2026-09-30.
+Its opt-in implementation and offline read-reduction proof are accepted;
+the ordinary MCP remains stateless. No private database has been created.
+See [ledger contract](phase-6-ledger-contract.md) and
+[acceptance result](phase-6-ledger-result.md).
 
 ## Current boundary
 
 - MAPIT remains read-only. Bounded, necessary research executions are allowed
   only with explicit scope and authorization; this status does not authorize
   unbounded live polling or data collection.
-- No credentials, raw route bodies, identifiers, locations, or Telegram data
-  are stored for Phase 6.
+- No credentials, raw route bodies, direct identifiers, locations, or Telegram
+  data belong in the ledger. Its approved private fields and retention are
+  defined in the contract; this first live execution stored none.
 - Any measurement must be separately approved, bounded, redacted, and recorded
   as safe metadata only before a persistence design is proposed.
 
@@ -25,8 +30,9 @@ that the current no-persistence route path is the baseline: one Core
 analytics operation, with the existing 2 MiB/window and 366-day limits. Phase 0
 confirmed two bounded monthly windows but historical coverage remains
 `PARTIAL`; the unfiltered read exceeded 2 MiB before decoding. One bounded
-monthly latency/reliability/body-size sample is now complete; no persisted
-path or API-read-reduction benchmark has been measured.
+monthly latency/reliability/body-size sample is now complete. The fixed offline
+ledger read-reduction workload is also complete; live persisted latency
+remains unmeasured.
 The proposed filtered sample separates six logical Geo reads from a maximum of
 12 wire Geo GETs (one possible 401/403 recovery each), and one logical Core
 account-summary read from a maximum of two wire Core GETs. Its coverage output
@@ -100,7 +106,7 @@ low, mixed source inferred flags and excluded Point features. Full-route
 reconstruction and city street coverage are not established. Neither run
 retained private values; see the Barcelona protocol for safe evidence.
 
-## Next gate
+## Original measure-first gate (historical)
 
 Research and supervisor approval must establish a measurable benefit over the
 existing stateless MAPIT/MCP path. Only then may a separate implementation
@@ -124,9 +130,24 @@ History coverage remains `PARTIAL`. See
 The small sample does not demonstrate a persistence performance benefit or
 loss of MAPIT history. The measured default remains stateless.
 
-The next user gate is a separate product decision: whether to implement a
-minimal local distance ledger and explicitly approve its private fields,
-HMAC identity scope, retention and local unencrypted-storage risks. The
-proposal is in [`phase-6-persistence-proposal.md`](phase-6-persistence-proposal.md).
-No database, private ingestion, background collection or AWS resources have
-been created. Phases 7 and 8 remain planned; Phase 6 is not marked complete.
+The user accepted the separate minimal-ledger product/privacy decision;
+see [`phase-6-persistence-proposal.md`](phase-6-persistence-proposal.md).
+Implementation and independent offline acceptance are complete. The fixed
+synthetic workload records 20 logical GETs for ten stateless queries, two
+for import setup, and zero for ten reopened local queries. This demonstrates
+local capability/read reduction, not a measured live latency advantage.
+
+The first authorized current-month import stopped before directory, key or
+database creation because at least one source route has `complete=false`.
+Only the field's boolean schema is confirmed; false is not proof of an active
+trip. The initial misleading `route_in_progress` category was corrected to
+`route_not_confirmed_complete`. No automatic retry or filtering was performed.
+
+## Next user gate
+
+Choose the explicit treatment of those flags before another live import:
+authorize a further bounded schema-only investigation, or approve importing
+only routes explicitly marked `complete=true` with excluded-route bands and
+partial totals. The implementation must not silently treat skipped routes as
+zero-distance days. Phase 6 remains active; Phases 7 and 8 remain planned.
+No private database, background collection or AWS resources have been created.

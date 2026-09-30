@@ -370,12 +370,16 @@ sequential cycles, and emits only safe booleans/categories. The authorized
 query E2E completed successfully using only the redacted evidence above.
 Future invocations remain supervisor-authorized and are not run by CI.
 
-## Phase 6 persistence decision gate
+## Phase 6 — optional local distance history
 
-Phase 6 is active only for a measure-first decision gate. The project remains
-stateless: no database, durable event history, synchronization worker,
-migration, or retention policy is implemented. Persistence requires a
-separately approved measurable benefit beyond on-demand MAPIT reads. See the
+The approved opt-in SQLite ledger is implemented and independently tested;
+the ordinary MCP remains stateless. It stores pseudonymous UTC-day/native
+distance facts outside OneDrive with no additional encryption. Explicit local
+commands are `mapit-history import-current-month`, `mapit-history summary
+--group-by month` and `mapit-history forget --confirm`. Summary output is
+private aggregate data; do not copy it into repository/CI logs. No background
+sync, coordinates or automatic backups are enabled. See the
+[ledger contract](docs/phase-6-ledger-contract.md),
 [Phase 6 plan](PHASE_6_PERSISTENCE.md) and [status](docs/phase-6-status.md).
 The pure route-input sufficiency analyzer and its tests are offline-only
 (`mapit.route_input_analyzer`). The probe
@@ -420,8 +424,11 @@ mixed inferred flags and excluded Points. It never asserts a complete route;
 street percentages and exact full-trip reconstruction remain unproven.
 The bounded monthly baseline measurement completed with five successful
 repetitions, p50 <1 second and p95 1–5 seconds. This is not a demonstrated
-database benefit. Phase 6 awaits the explicit distance-ledger/privacy gate
-in `docs/phase-6-persistence-proposal.md`; no database exists yet.
+live latency benefit. The distance-ledger/privacy gate was accepted, and the
+offline ten-query workload demonstrates fewer repeated API reads. The first
+live import stopped before storage on a `complete=false` route flag with
+unconfirmed semantics. Another import/filtering policy requires the next
+explicit gate; no private database exists yet.
 
 ## CI and environments
 

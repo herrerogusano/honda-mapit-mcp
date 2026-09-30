@@ -1,8 +1,11 @@
-# Proposed persistence decision — awaiting user approval
+# Persistence decision — minimal local ledger approved
 
-This is a decision proposal, not permission to create a database or ingest
-private facts. Phase 6 remains active until the decision is recorded and any
-accepted scope is implemented and independently tested.
+On 2026-09-30, in response to the explicit proposal/extra-encryption gate, the
+user replied that encryption was not needed. The supervisor recorded acceptance
+of the proposed minimal local distance ledger, with retention until explicit
+deletion and no extra encryption. Phase 6 remains active until this accepted
+scope is implemented and independently tested. This is a product-capability
+decision, not evidence that the empirical performance/history-loss gates passed.
 
 ## Evidence and limits
 
@@ -11,8 +14,9 @@ accepted scope is implemented and independently tested.
   excluded Point features. Exact streets/turns and city coverage are unproven.
 - Historical MAPIT coverage remains partial; unknown pagination and an
   oversized unfiltered response are not evidence that routes are lost.
-- No persisted-versus-stateless ten-query benchmark has been measured. A
-  possible reduction in reads is not a demonstrated latency improvement.
+- The fixed offline ten-query workload now measures 20 synthetic stateless
+  GETs versus two import-setup GETs and zero warm local-query GETs. This is
+  read-reduction evidence, not a demonstrated live latency improvement.
 - One bounded monthly run succeeded: 5/5 repetitions, p50 <1 second,
   p95 1–5 seconds, maximum monthly response 64–256 KiB, one wire Core read
   and six wire Geo reads including the adjacent control. See
@@ -20,7 +24,7 @@ accepted scope is implemented and independently tested.
   This supports the current stateless performance baseline for the sample,
   not a DB performance advantage or complete history.
 
-## Recommended bounded first implementation, if approved
+## Approved bounded first implementation
 
 Use a local SQLite file outside the Git checkout and OneDrive workspace,
 under the user's local application-data directory. One application owns
@@ -65,13 +69,12 @@ offline and, if subsequently authorized, against a bounded measured live
 baseline. Report actual read reduction and end-to-end timing; do not assert
 improvement merely because SQLite is present.
 
-## Choices requiring the user
+## Recorded choices
 
-1. Approve the minimal route-facts dataset and HMAC alias, or keep stateless.
-2. Retention: recommended **until explicit deletion** for distance history;
-   alternatively a fixed 12-month limit. Neither is silently selected.
-3. Accept local unencrypted SQLite under OS controls, or require a separate
-   encryption design before storing private facts.
+1. Minimal local route facts and scoped HMAC alias approved.
+2. Retention **until explicit deletion**, as in the accepted proposal.
+3. No additional SQLite/application encryption required by the user. Evaluate
+   OS access controls and exclude Git/OneDrive; do not claim disk encryption.
 
 Deletion must address the database, its WAL/journal and owned local backups,
 and aggregates derived from deleted facts. No automatic external backup is

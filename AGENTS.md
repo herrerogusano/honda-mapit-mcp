@@ -6,10 +6,20 @@ Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
 client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), Phase 3
 (the reusable read-only realtime component), Phase 4 (the local Codex-to-MCP
 conversational-agent adapter and deterministic evaluation), and Phase 5 (the
-bounded private Telegram interface) are complete. Phase 6 is ACTIVE only for
-the measure-first persistence decision gate described in `PHASE_6_PERSISTENCE.md`
-and `docs/phase-6-status.md`; do not implement persistence until that gate is
-approved. Do not expand into an agent UI, frontend, project-owned AWS
+bounded private Telegram interface) are complete. Phase 6 is ACTIVE for the
+approved opt-in distance ledger described in `PHASE_6_PERSISTENCE.md`
+and `docs/phase-6-status.md`. On 2026-09-30 the user accepted the minimal local
+distance-ledger proposal without extra encryption: local SQLite outside Git
+and OneDrive, pseudonymous route aliases, UTC day/native distance, rebuildable
+aggregates, retention until explicit deletion, no coordinates/streets/secrets.
+Implement only that bounded opt-in ledger; no automatic collection or claim
+of measured latency improvement/history completeness. Offline implementation
+is accepted; the first bounded live import stopped before storage on
+`complete=false`. Its meaning is unconfirmed, not evidence of an active trip.
+No further live import or implicit filtering is authorized by that execution;
+the next gate is the explicit treatment of those flagged routes.
+Do not expand into an
+agent UI, frontend, project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.
 
 On 2026-09-29 the user authorized the external gate and the bot

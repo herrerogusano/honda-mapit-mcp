@@ -12,3 +12,9 @@ build/
 .env.*
 !.env.example
 
+# Private opt-in ledger belongs in LOCALAPPDATA, never the checkout.
+distance-history.sqlite3
+distance-history.sqlite3-journal
+distance-history.sqlite3-wal
+distance-history.sqlite3-shm
+history-operation.lock
