@@ -482,3 +482,7 @@ and prod environments. Hosting the MCP does not require hosting a model. A
 managed agent and its model/provider evaluation are a separate optional track,
 performed only behind an explicit cost gate. See
 [`PHASE_8_AWS_REMOTE.md`](PHASE_8_AWS_REMOTE.md).
+The approved preparation is documented in
+[AWS design, regional cost assumptions and gates](docs/phase-8-aws-preparation.md).
+The offline IaC scaffold is deliberately disabled and has no working remote MCP
+or credentials. Nothing has been deployed; dev deployment remains a separate gate.

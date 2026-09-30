@@ -1,7 +1,6 @@
 # Phase 7 status
 
-Status: **IMPLEMENTED AND INDEPENDENTLY ACCEPTED OFFLINE; clean CI validation
-pending before release acceptance**.
+Status: **COMPLETE for the approved scope**.
 
 The user approved direct-only/no-redirect connections and the general MAPIT
 2 MiB ceiling on 2026-09-30. Implementation preserves public transport seams,
@@ -31,6 +30,8 @@ found independently. WebSocket proxy discovery is disabled.
 
 CI now checks combined extras on Linux Python 3.11–3.13 and Windows Python 3.13,
 runs the evaluator/health command, and separately audits known advisories.
+All five jobs passed in [CI run 36781391136](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/36781391136)
+for commit `5643a36`, including Windows and the strict dependency audit.
 No ignored vulnerability IDs or live credentials are used. See
 [security/operations](security-and-operations.md),
 [synthetic demonstration](portfolio-demo.md), and

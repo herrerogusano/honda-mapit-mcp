@@ -63,18 +63,20 @@ compatibility gate in `docs/phase-7-audit-preparation.md`. Research/preparation
 is accepted, not implementation of those compatibility changes. The user
 requested continuing until the next gate; ask for this decision before
 changing those defaults. On 2026-09-30 the user approved that gate: Phase 7
-is ACTIVE for direct-only/no-redirect transports, general 2 MiB MAPIT response
+was implemented for direct-only/no-redirect transports, general 2 MiB MAPIT response
 ceiling, bounded auth/discovery input, offline reliability/security review,
 safe diagnostics, dependency/CI checks and synthetic portfolio demonstration.
 Preserve injectable interfaces, read-only MAPIT and bounded auth recovery;
-no new live MAPIT/Telegram operation or paid model call is authorized. Phase 8
+no new live MAPIT/Telegram operation or paid model call is authorized. Phase 7
+is COMPLETE with independent offline acceptance and five green CI jobs on
+commit `5643a36`. Phase 8
 has no deployment/cost approval. The user subsequently authorized Phase 8
 design, public price research, cost estimation and offline IaC preparation
 after Phase 7 acceptance. Do not use AWS SDK/account inventory, create or
 deploy resources, transfer credentials, or invoke paid models/APIs. Stop at
 the explicit dev deployment/cost/identity gate, with prod/model gates separate.
 Do not expand into an
-agent UI, frontend, project-owned AWS
+agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.
 
 On 2026-09-29 the user authorized the external gate and the bot
