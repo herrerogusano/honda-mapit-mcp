@@ -11,10 +11,11 @@ import ipaddress
 import json
 import math
 import sys
+import urllib.error
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote, urlencode, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -81,16 +82,25 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         return None
 
 
-_NO_REDIRECT_OPENER = build_opener(_NoRedirectHandler)
+_NO_PROXY_HANDLER = ProxyHandler({})
+_NO_REDIRECT_OPENER = build_opener(_NO_PROXY_HANDLER, _NoRedirectHandler)
 
 
 def _urllib_transport(method: str, url: str, timeout: float) -> bytes:
     request = Request(url, method=method, headers={"Accept": "application/json"})
-    with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:  # noqa: S310 - URL is loopback-validated.
-        status = response.getcode()
-        if status is not None and 300 <= status < 400:
-            raise _ProbeError("engine_unavailable")
-        raw = response.read(MAX_JSON_BYTES + 1)
+    try:
+        with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:  # noqa: S310 - URL is loopback-validated.
+            status = response.getcode()
+            if status is not None and 300 <= status < 400:
+                raise _ProbeError("engine_unavailable")
+            raw = response.read(MAX_JSON_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        try:
+            if exc.code != 400:
+                raise _ProbeError("engine_unavailable") from None
+            raw = exc.read(MAX_JSON_BYTES + 1)
+        finally:
+            exc.close()
     if len(raw) > MAX_JSON_BYTES:
         raise _ProbeError("resource_limit")
     return raw

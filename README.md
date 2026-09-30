@@ -402,6 +402,19 @@ observed local result was `osrm-local`, `matched`, few matchings, all
 tracepoints, medium confidence, with steps/annotations/names present. This
 validates the local engine/harness only, not MAPIT or production map matching.
 
+The bounded MAPIT-to-local-OSRM harness is implemented in
+`scripts/probe_mapit_osrm.py` and one bounded live run is complete. It reuses the saved
+session flow and performs one account-summary read, one route-list read with
+`limit=1`, and one current detail read before sending the first real
+LineString (without sampling) to a literal loopback matcher. It drops the
+third ordinate, requires all points inside the fixed Barcelona research box,
+caps input at 500 points, disables proxies/redirects, and emits only OSRM
+categories/bands plus a safe stage category. No route data or request details
+are persisted or printed. The real selected LineString returned `matched`,
+all tracepoints, high confidence, and steps/annotations/names present. This
+is promising input-feasibility evidence, not full-route or city-coverage
+accuracy; see `docs/phase-6-barcelona-local-probe.md`.
+
 ## CI and environments
 
 Promotion is `feature/* -> develop -> main`; `develop` is dev integration and

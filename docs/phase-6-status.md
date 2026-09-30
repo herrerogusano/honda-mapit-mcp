@@ -73,8 +73,26 @@ the local engine boundary only; it does not validate MAPIT or choose a
 matcher. It retains only allowlisted source classifications; a third ordinate
 remains opaque.
 The reverse-geocoding path is documented as a distinct coordinate-to-label
-read, not as route reconstruction. No external matcher, paid call, OSM import,
-city-coverage calculation, or persistence is authorized by this status.
+read, not as route reconstruction. The user subsequently identified Barcelona
+and authorized necessary bounded research executions. A public Cataluña map
+has been locally cropped to a fixed Barcelona-area box and prepared for the
+separate protocol in
+[`phase-6-barcelona-local-probe.md`](phase-6-barcelona-local-probe.md).
+This permits one ephemeral MAPIT LineString-to-loopback matcher experiment
+after independent offline acceptance, not city-coverage calculation or
+persistence. No external matcher or paid call is in scope.
+The bounded client harness is now implemented and one live run is complete: it
+reuses the saved-session flow for exactly three MAPIT reads, selects one
+LineString without sampling, enforces the fixed box and 500-point limit, and
+sends at most one proxy-free/no-redirect local `/match` request. Output is
+restricted to OSRM bands plus an allowlisted stage category; no route data or
+request details are printed or persisted.
+Independent offline acceptance preceded the real read (450 tests passing).
+The real selected LineString returned `matched`, all tracepoints, high
+confidence and steps/annotations/names present. This establishes one-line
+input feasibility only, not ground-truth street accuracy, full-route turns,
+city coverage or a persistence decision. The temporary matcher container was
+stopped and removed; only public map files remain outside the repository.
 
 ## Next gate
 

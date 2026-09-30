@@ -320,6 +320,30 @@ El resultado sintético redacted fue `engine=osrm-local`,
 `raw_discarded=true`. Esto valida el engine y el arnés local, no MAPIT ni la
 calidad de un matching de rutas MAPIT.
 
+### Probe MAPIT → OSRM local de Barcelona (ejecutado una vez)
+
+`scripts/probe_mapit_osrm.py` reutiliza el flujo de sesión guardada y limita
+la preparación a tres lecturas MAPIT: `account-summary`, `/v1/routes` con
+`limit=1` y un detalle actual `includeStats=true`. Selecciona la primera
+`LineString` estructural en orden de features, conserva sus 2–500 puntos sin
+muestrear y descarta la tercera ordenada. Cada punto debe caer en el rectángulo
+público fijo `1.8,41.2,2.45,41.65`; un fallo de forma, rango o tamaño termina
+sin intentar otra ruta. Solo se hace una petición local `/match`, con timeout
+de 5 segundos, respuesta máxima de 2 MiB, `tidy=false`, opener sin proxies ni
+redirects y URL limitada a 16 KiB. La salida añade solo una categoría de etapa
+allowlisted al schema redacted de `mapit.osrm`; no imprime ni persiste IDs,
+coordenadas, cuerpos, URLs, nombres, métricas o excepciones. La implementación
+y sus dobles offline no constituyen evidencia de precisión MAPIT.
+
+Tras aceptación independiente y 450 tests offline correctos se realizó una
+única ejecución autorizada con una LineString real. Resultado redacted:
+`matched`, todos los tracepoints asociados, confianza `high`, pocos matchings
+y steps/annotations/names presentes. No se retuvieron coordenadas, nombres,
+IDs ni respuestas. El contenedor temporal se detuvo y eliminó. Es evidencia
+favorable de viabilidad para esa línea; no demuestra exactitud real, continuidad
+de todo el recorrido ni porcentaje de calles. Protocolo, snapshot público y
+límites en [prueba Barcelona](phase-6-barcelona-local-probe.md).
+
 ## 7. Privacidad y gate posterior
 
 Coordenadas, timestamps, nombres/labels y IDs de ruta son datos de movilidad.
