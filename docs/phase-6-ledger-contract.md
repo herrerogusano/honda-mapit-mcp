@@ -33,9 +33,17 @@ discovery/Cognito calls remain separate from the MAPIT GET budget. A socket
 timeout is not an end-to-end cancellation deadline.
 
 The whole batch is validated before key/DB creation: at most 10,000 routes,
-required stable ID, timezone-aware start, accepted month, finite distance,
-no explicit `complete=false` flag, no pagination key. The flag's semantic
-meaning is unconfirmed: false does **not** prove an in-progress trip.
+required stable ID, timezone-aware coherent start/end (`start <= end`),
+neither in the future at the validation reference time, accepted start month,
+finite nonnegative distance and no pagination key. The user approved this
+revised admission contract after the flag investigation: `complete` does not
+affect admission and is not persisted. Its semantic meaning is unconfirmed;
+neither false nor true proves active/finished status or tracking quality.
+Missing/malformed/inconsistent/future timing rejects the entire batch before
+storage, not silently skips a route. End times are used only in memory for
+validation and are never stored. The runtime uses one validation reference
+captured after receiving the response (or an injected aware clock in tests),
+so a timestamp created during the read is not spuriously ahead of that check.
 Identical facts are no-ops;
 conflicting facts reject the whole transaction. There is no automatic sync,
 polling, last-month fallback, unfiltered read or road reconstruction.

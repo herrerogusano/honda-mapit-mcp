@@ -256,7 +256,8 @@ def import_current_month(*, directory: Path | None = None, secret_store=None,
         summary, selected_vehicle = MapitServices(client)._account_and_vehicle()
         account, vehicle = _selected_account_vehicle(summary, selected_vehicle)
         summary = None
-        start, end = _month_window(now or datetime.now(timezone.utc))
+        window_now = now if now is not None else datetime.now(timezone.utc)
+        start, end = _month_window(window_now)
         iso = lambda value: value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
         payload = client.get_geo("/v1/routes", params={"vehicleId": vehicle, "from": iso(start), "to": iso(end)}, max_response_bytes=MAX_RESPONSE_BYTES)
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
@@ -265,7 +266,11 @@ def import_current_month(*, directory: Path | None = None, secret_store=None,
             raise HistoryRuntimeError("pagination_unsupported")
         account_scope = context.config.core_api_url + "\n" + account
         # Validate before creating the DB/key, including a complete bounded batch.
-        prepared = DistanceLedger.validate_routes(payload["data"])
+        # Request-window time is captured before the upstream read; validate
+        # route timestamps against a fresh post-response instant unless tests
+        # supplied one fixed instant for both operations.
+        validation_now = now if now is not None else datetime.now(timezone.utc)
+        prepared = DistanceLedger.validate_routes(payload["data"], now=validation_now)
         if any(not start.date().isoformat() <= day < end.date().isoformat() for day in prepared):
             raise HistoryRuntimeError("routes_outside_window")
         secure_directory(root)
@@ -273,7 +278,7 @@ def import_current_month(*, directory: Path | None = None, secret_store=None,
             _validate_local_files(root)
             key = secrets_store.load_key(database_exists=db.exists(), create=True)
             ledger = DistanceLedger(db, key)
-            imported = ledger.import_routes(account_scope, vehicle, payload["data"])
+            imported = ledger.import_routes(account_scope, vehicle, payload["data"], now=validation_now)
             facts_committed = True
             secrets_store.set_active_scope(ledger.scope_alias(account_scope, vehicle))
         return {"success": True, "category": "success", "imported_band": _count_band(imported.added),

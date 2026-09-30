@@ -51,10 +51,30 @@ the fix. A separate standard-library-only WSL/SQLite 3.45.1 synthetic smoke
 confirmed `numeric_overflow` and that the first fact was preserved. No private
 data or network was involved. This is distinct from the live route-flag gate.
 
-## Required next decision
+## Historical route-flag decision
 
 Investigate that flag with a separately bounded schema-only read, or explicitly
 approve a partial import limited to `complete=true` routes. Excluded routes
 must be visible as bands and totals must remain partial. The ledger cannot
 silently equate missing routes with zero activity. Phase 6 is not declared
 fully operational or complete at this checkpoint.
+
+Follow-up: the user chose investigation and its one bounded comparison is
+complete; see [flag investigation](phase-6-route-flags-investigation.md).
+All sampled routes were false-marked, including coherent old end timestamps,
+and all three query variants returned the same selected facts. The proposal
+to import only `complete=true` would therefore exclude this entire sample.
+The user subsequently approved the revised admission policy. The ledger now
+ignores `complete` and requires aware, coherent, nonfuture start/end timestamps
+alongside valid identifiers and finite nonnegative distance. No end timestamp
+is persisted. Independent review accepted the changes; the complete offline
+suite has 592 passed and 3 skipped.
+
+## Revised-policy live attempt
+
+The one authorized current-month import passed source validation, then stopped
+at `history_permissions_failed`, with `facts_committed=false` and
+`private_values_printed=false`. No successful import or live deduplication is
+claimed. The conditional second import was not executed because the first did
+not succeed. Local permission diagnosis is read-only; another live retry needs
+an explicit bounded allowance.

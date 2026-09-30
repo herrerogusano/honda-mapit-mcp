@@ -427,8 +427,20 @@ repetitions, p50 <1 second and p95 1–5 seconds. This is not a demonstrated
 live latency benefit. The distance-ledger/privacy gate was accepted, and the
 offline ten-query workload demonstrates fewer repeated API reads. The first
 live import stopped before storage on a `complete=false` route flag with
-unconfirmed semantics. Another import/filtering policy requires the next
-explicit gate; no private database exists yet.
+unconfirmed semantics; no private database was created by that attempt.
+The subsequent authorized flag investigation found the same sampled routes
+and selected facts with omitted/false/true `includeInProgress`; all sampled
+routes were false-marked, including coherent old end timestamps. Filtering
+on `complete=true` would exclude the entire sample. The user approved revised
+admission using identifiers, coherent nonfuture start/end times and distance,
+without consulting `complete`. Offline tests and independent review passed.
+The next authorized import passed validation but failed local permission
+verification without committing facts; a further live retry is not automatic.
+See
+[flag investigation](docs/phase-6-route-flags-investigation.md).
+One separate bounded July 2025 API read confirmed routes before August,
+despite the later start reported for the app's visible history. Earliest history
+and the cause of that discrepancy remain unknown.
 
 ## CI and environments
 

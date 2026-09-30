@@ -15,6 +15,18 @@ runs are the current evidence.
 
 ## Current Evidence
 
+2026-09-30 completion-flag follow-up: the public frontend does not assign route
+semantics to `complete`; its optional `includeInProgress` query key serializes
+booleans as lowercase strings, but the dashboard omits it. One independently
+reviewed authorized comparison of omitted/false/true on a fixed current UTC
+month returned the same IDs and selected fact signatures. All sampled routes
+were `complete=false`, including coherent start/end timestamps with end more
+than 24 hours old. This contradicts treating the flag as a sufficient proxy
+for a currently active trip. It does not establish an exact flag definition,
+history completeness, native distance accuracy or filter behavior with an
+actually active control. See
+[bounded flag investigation](phase-6-route-flags-investigation.md).
+
 The current frontend exposes the following read paths and filters:
 
 ```text
@@ -572,6 +584,22 @@ limited to success, region, safe path, and schema top-level keys; failures use
 stage-specific allowlisted categories for session, account, list, missing data,
 detail, schema, or persistence. No route values, counts, identifiers,
 coordinates, headers, tokens, or raw payload were retained.
+
+## Historical availability check — 2026-09-30
+
+The user reported that the app's visible history starts in August 2025. One
+separately authorized July 2025 availability probe returned routes whose aware
+start timestamps all validated within that requested UTC month. Therefore some
+pre-August history is available through the API. The reason for the app/API
+difference and the earliest available route remain unknown.
+
+`scripts/probe_pre_august_history.py` performed one Core and one Geo logical/wire
+GET, with 2 MiB response bounds, a 10,000-row ceiling, no redirects/proxies and
+no pagination or other-month scanning. Retained output is presence booleans,
+safe categories and operation counts only. No route counts, exact source dates,
+identifiers or coordinates were retained. Coverage remains `PARTIAL`; an empty
+month would not establish global historical absence. Independent offline runner
+review accepted seven tests before the live read.
 
 ## Evidence references
 

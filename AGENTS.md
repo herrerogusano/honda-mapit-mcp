@@ -18,6 +18,35 @@ is accepted; the first bounded live import stopped before storage on
 `complete=false`. Its meaning is unconfirmed, not evidence of an active trip.
 No further live import or implicit filtering is authorized by that execution;
 the next gate is the explicit treatment of those flagged routes.
+On 2026-09-30 the user chose investigation first. The only additional live
+research authorized is the bounded one-Core/three-monthly-variant comparison
+in `docs/phase-6-route-flags-investigation.md`, after independent offline
+acceptance. It does not authorize importing/filtering private history.
+That one comparison is complete: all sampled routes were false-marked,
+including a coherent old-end observation, and all variants returned the same
+IDs/selected fact signatures. Do not repeat it automatically. The next gate
+is user approval of a revised admission contract; neither the precise flag
+meaning nor true active-route filter behavior is confirmed.
+The user subsequently approved replacing that gate with identifier/timing/
+distance validation and resuming bounded imports. Ignore `complete` for
+admission; require aware coherent start/end values not in the future, keep
+native units and unverified labels, and reject the entire batch on invalid
+facts or conflicts (no silent exclusions). The protocol permits one current
+UTC-month import, a second only after success to verify no-op deduplication,
+and redacted local/offline query checks. No other month, unfiltered read,
+detail, automatic sync or new external write is authorized by this gate.
+The user also asked whether routes predate August 2025. One separate July
+2025 availability read is authorized: one Core and one Geo logical GET,
+at most two wire GETs each with existing auth recovery, 2 MiB bodies and
+10,000 routes, no proxies/redirects, no persistence or month scanning.
+Validate returned start timestamps belong to July before reporting presence.
+An empty July response is not proof that all earlier history is absent.
+That July read is complete and confirmed routes in the requested window,
+using one Core and one Geo wire GET. Do not repeat or expand it automatically.
+The revised-policy current-month import passed validation but stopped at
+`history_permissions_failed`, with no facts committed. The conditional second
+import was not executed. Diagnose local permissions without more live reads;
+any further import requires a new bounded allowance.
 Do not expand into an
 agent UI, frontend, project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

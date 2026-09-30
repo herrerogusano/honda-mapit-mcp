@@ -79,7 +79,6 @@ class LedgerError(RuntimeError):
         "invalid_routes": "route batch is invalid",
         "route_limit_exceeded": "route batch exceeds the accepted limit",
         "route_invalid": "a route is missing required valid fields",
-        "route_not_confirmed_complete": "routes with a false complete flag cannot be imported",
         "route_conflict": "a route conflicts with a previously imported fact",
         "numeric_overflow": "distance totals exceed finite numeric bounds",
         "invalid_group_by": "group_by must be day, month, or year",
@@ -151,7 +150,7 @@ def _identity_bytes(value: Any, *, max_chars: int = MAX_ID_CHARS, category: str 
         raise LedgerError(category) from None
 
 
-def _route_start(value: Any) -> datetime:
+def _route_timestamp(value: Any) -> datetime:
     if not isinstance(value, str) or not value:
         raise LedgerError("route_invalid")
     candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
@@ -167,12 +166,26 @@ def _route_start(value: Any) -> datetime:
         raise LedgerError("route_invalid") from None
 
 
-def _route_date(route: Mapping[str, Any]) -> Any:
-    camel = route.get("startedAt")
-    snake = route.get("started_at")
-    if camel is not None and snake is not None and camel != snake:
+def _route_alias_value(route: Mapping[str, Any], camel_name: str, snake_name: str) -> Any:
+    has_camel = camel_name in route
+    has_snake = snake_name in route
+    if has_camel and has_snake and route[camel_name] != route[snake_name]:
         raise LedgerError("route_invalid")
-    return camel if camel is not None else snake
+    if has_camel:
+        return route[camel_name]
+    if has_snake:
+        return route[snake_name]
+    return None
+
+
+def _validation_now(value: datetime | None) -> datetime:
+    current = datetime.now(timezone.utc) if value is None else value
+    if not isinstance(current, datetime) or current.tzinfo is None or current.utcoffset() is None:
+        raise LedgerError("route_invalid")
+    try:
+        return current.astimezone(timezone.utc)
+    except (ValueError, OverflowError):
+        raise LedgerError("route_invalid") from None
 
 
 def _distance_value(value: Any) -> float:
@@ -187,11 +200,14 @@ def _distance_value(value: Any) -> float:
     return distance
 
 
-def _validated_route_batch(routes: Sequence[Mapping[str, Any]]) -> tuple[_ValidatedRoute, ...]:
+def _validated_route_batch(
+    routes: Sequence[Mapping[str, Any]], *, now: datetime | None = None
+) -> tuple[_ValidatedRoute, ...]:
     if isinstance(routes, (str, bytes)) or not isinstance(routes, Sequence):
         raise LedgerError("invalid_routes")
     if len(routes) > MAX_IMPORT_ROUTES:
         raise LedgerError("route_limit_exceeded")
+    validation_now = _validation_now(now)
     validated: list[_ValidatedRoute] = []
     unique: dict[str, _ValidatedRoute] = {}
     for route in routes:
@@ -199,13 +215,11 @@ def _validated_route_batch(routes: Sequence[Mapping[str, Any]]) -> tuple[_Valida
             raise LedgerError("route_invalid")
         raw_id = route.get("id")
         route_id = _identity_bytes(raw_id, category="route_invalid").decode("utf-8")
-        start = _route_start(_route_date(route))
-        distance = _distance_value(route.get("distance"))
-        if "complete" in route and not isinstance(route["complete"], bool):
+        start = _route_timestamp(_route_alias_value(route, "startedAt", "started_at"))
+        end = _route_timestamp(_route_alias_value(route, "endedAt", "ended_at"))
+        if end < start or start > validation_now or end > validation_now:
             raise LedgerError("route_invalid")
-        if route.get("complete") is False:
-            # Only the boolean schema is confirmed; False does not prove an active trip.
-            raise LedgerError("route_not_confirmed_complete")
+        distance = _distance_value(route.get("distance"))
         fact = _ValidatedRoute(route_id, start.date().isoformat(), distance)
         prior = unique.get(route_id)
         if prior is not None and (prior.utc_day != fact.utc_day or prior.distance != fact.distance):
@@ -265,18 +279,22 @@ class DistanceLedger:
         return hmac.new(self._key, payload, hashlib.sha256).hexdigest()
 
     @staticmethod
-    def validate_routes(routes: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
+    def validate_routes(
+        routes: Sequence[Mapping[str, Any]], *, now: datetime | None = None
+    ) -> tuple[str, ...]:
         """Validate a bounded source batch before any ledger/key setup and return UTC days."""
-        return tuple(fact.utc_day for fact in _validated_route_batch(routes))
+        return tuple(fact.utc_day for fact in _validated_route_batch(routes, now=now))
 
     def import_routes(
         self,
         account_scope: str,
         vehicle_id: str,
         routes: Sequence[Mapping[str, Any]],
+        *,
+        now: datetime | None = None,
     ) -> ImportResult:
         scope = self.scope_alias(account_scope, vehicle_id)
-        validated_routes = _validated_route_batch(routes)
+        validated_routes = _validated_route_batch(routes, now=now)
         prepared: dict[bytes, _RouteFact] = {}
         duplicate_count = 0
         for route in validated_routes:

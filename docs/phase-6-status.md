@@ -1,7 +1,7 @@
 # Phase 6 status
 
 Status: **ACTIVE — local ledger implemented and independently tested;
-live ingestion stopped at the route-flag decision gate**.
+live ingestion stopped at local permission verification**.
 
 Phase 5 is complete. Phase 6 follows `PHASE_6_PERSISTENCE.md`: first determine
 whether bounded MAPIT reads are sufficiently fast and reliable, and whether
@@ -143,11 +143,30 @@ Only the field's boolean schema is confirmed; false is not proof of an active
 trip. The initial misleading `route_in_progress` category was corrected to
 `route_not_confirmed_complete`. No automatic retry or filtering was performed.
 
-## Next user gate
+## Route-flag gate (resolved) and current checkpoint
 
 Choose the explicit treatment of those flags before another live import:
-authorize a further bounded schema-only investigation, or approve importing
-only routes explicitly marked `complete=true` with excluded-route bands and
-partial totals. The implementation must not silently treat skipped routes as
-zero-distance days. Phase 6 remains active; Phases 7 and 8 remain planned.
-No private database, background collection or AWS resources have been created.
+the user chose investigation, and the authorized one-Core/three-Geo comparison
+is now complete. All variants returned the same IDs and selected fact
+signatures; all sampled routes were false-marked, including an observation with
+coherent end timestamp more than 24 hours old. Exact backend flag semantics
+remain unknown. Requiring `complete=true` would exclude this entire sample.
+See [flag investigation](phase-6-route-flags-investigation.md).
+
+The user approved the revised admission contract: ignore `complete`; require
+valid IDs, finite nonnegative distance and aware, coherent, nonfuture start/end
+timestamps. Reject the entire batch on invalid facts or conflicts, with no
+silent exclusions. End timestamps are validated only in memory, not stored.
+Implementation and independent review are accepted; the full offline suite
+has 592 passed and 3 skipped.
+
+The next authorized current-month import passed route validation but stopped
+at `history_permissions_failed`, with `facts_committed=false`. It did not
+authorize an automatic additional live retry; local read-only diagnosis is in
+progress. No deduplication live check or private database acceptance is claimed.
+Phase 6 remains active; Phases 7 and 8 remain planned.
+
+A separate authorized July 2025 availability read confirmed pre-August routes,
+using one Core and one Geo logical/wire GET. This does not establish earliest
+history, complete coverage or why the app's visible history starts later; see
+[route investigation](mapit-routes-investigation.md).

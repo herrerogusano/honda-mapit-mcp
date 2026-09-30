@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -33,8 +33,21 @@ def _session_context() -> ManagedSession:
     return ManagedSession(MapitConfig(), session)
 
 
-def _route(route_id: str = ROUTE_ID, *, started_at: str = "2026-01-08T04:00:00Z", distance: float = 8.0, **extra):
-    return {"id": route_id, "startedAt": started_at, "distance": distance, **extra}
+def _route(
+    route_id: str = ROUTE_ID,
+    *,
+    started_at: str = "2026-01-08T04:00:00Z",
+    ended_at: str | None = None,
+    distance: float = 8.0,
+    **extra,
+):
+    if ended_at is None:
+        try:
+            parsed = datetime.fromisoformat(started_at[:-1] + "+00:00" if started_at.endswith("Z") else started_at)
+            ended_at = (parsed + timedelta(minutes=30)).isoformat().replace("+00:00", "Z")
+        except (AttributeError, OverflowError, ValueError):
+            ended_at = "2026-01-08T04:30:00Z"
+    return {"id": route_id, "startedAt": started_at, "endedAt": ended_at, "distance": distance, **extra}
 
 
 class SavedManager:
@@ -122,7 +135,7 @@ def _run_import(root: Path, routes, *, client=None, secrets_store=None, now=NOW,
 
 def test_import_uses_one_synthetic_core_and_geo_get_and_writes_only_redacted_result(tmp_path):
     root = tmp_path / "history"
-    result, client, secrets_store, secure_calls = _run_import(root, [_route()])
+    result, client, secrets_store, secure_calls = _run_import(root, [_route(complete=False)])
 
     assert result == {
         "success": True,
@@ -157,9 +170,16 @@ def test_import_uses_one_synthetic_core_and_geo_get_and_writes_only_redacted_res
     ("routes", "pagination", "malformed", "now", "expected"),
     [
         ([_route("missing-id") | {"id": ""}], None, None, NOW, "route_invalid"),
-        ([_route("unfinished", complete=False)], None, None, NOW, "route_not_confirmed_complete"),
         ([_route("outside-before", started_at="2025-12-31T23:59:59Z")], None, None, NOW, "routes_outside_window"),
-        ([_route("outside-after", started_at="2026-02-01T00:00:00Z")], None, None, NOW, "routes_outside_window"),
+        ([_route("outside-after", started_at="2026-02-01T00:00:00Z")], None, None, NOW, "route_invalid"),
+        ([_route("missing-end") | {"endedAt": None}], None, None, NOW, "route_invalid"),
+        (
+            [_route("valid-first"), _route("future-second", started_at="2026-01-16T00:00:00Z")],
+            None,
+            None,
+            NOW,
+            "route_invalid",
+        ),
         ([_route()], "opaque-cursor", None, NOW, "pagination_unsupported"),
         ([], None, {"unexpected": []}, NOW, "routes_list_invalid"),
         ([_route()], None, None, datetime(2026, 1, 15), "time_invalid"),
@@ -185,6 +205,26 @@ def test_invalid_import_stops_before_directory_key_or_database_creation(tmp_path
     assert [call[0] for call in client.calls] == expected_stages
     assert ACCOUNT_ID not in json.dumps(result)
     assert VEHICLE_ID not in json.dumps(result)
+
+
+def test_injected_validation_instant_is_shared_by_preflight_and_import(tmp_path, monkeypatch):
+    seen = []
+    validate = DistanceLedger.validate_routes
+    import_routes = DistanceLedger.import_routes
+
+    def wrapped_validate(routes, *, now=None):
+        seen.append(("validate", now))
+        return validate(routes, now=now)
+
+    def wrapped_import(self, account_scope, vehicle_id, routes, *, now=None):
+        seen.append(("import", now))
+        return import_routes(self, account_scope, vehicle_id, routes, now=now)
+
+    monkeypatch.setattr(DistanceLedger, "validate_routes", staticmethod(wrapped_validate))
+    monkeypatch.setattr(DistanceLedger, "import_routes", wrapped_import)
+    result, _, _, _ = _run_import(tmp_path / "history", [_route()], now=NOW)
+    assert result["success"] is True
+    assert seen == [("validate", NOW), ("import", NOW)]
 
 
 def test_repeat_import_is_idempotent_and_local_query_makes_no_upstream_calls(tmp_path, monkeypatch):
