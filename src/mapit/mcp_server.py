@@ -46,7 +46,9 @@ def create_server(provider: ServiceProvider | None = None) -> MCPServer:
         description="Read-only vehicle status, details, routes and distance summaries from MAPIT.",
         instructions=(
             "All tools are read-only. MAPIT route metric units and route-history completeness are not yet confirmed; "
-            "preserve the explicit metadata returned by each tool."
+            "prefer explicitly returned *_km presentation fields, preserve conversion_basis and native-unit metadata, "
+            "and never label a native distance as kilometres. Route inference flags are descriptive only, not GPS "
+            "accuracy guarantees."
         ),
         version="0.4.0",
     )
@@ -63,37 +65,37 @@ def create_server(provider: ServiceProvider | None = None) -> MCPServer:
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def list_routes(from_time: str, to_time: str) -> RouteList:
-        """List normalized routes in an inclusive/exclusive ISO 8601 period of at most 366 days."""
+        """List normalized routes with *_km companions where available; inference quality is unknown unless GeoJSON was already present."""
         return _safe_call(lambda: selected.get().list_routes(from_time, to_time))
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def get_route_detail(route_id: str) -> RouteDetail:
-        """Get normalized detail and available GeoJSON for one route."""
+        """Get normalized detail, available GeoJSON, explicit *_km presentation, and bounded LineString inference flags."""
         return _safe_call(lambda: selected.get().get_route_detail(route_id))
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def get_distance(from_time: str, to_time: str) -> DistanceResult:
-        """Sum MAPIT's native distance values for a period of at most 366 days."""
+        """Sum native distance and provide a UI-correlated, unconfirmed *_km interpretation for a period of at most 366 days."""
         return _safe_call(lambda: selected.get().get_distance(from_time, to_time))
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def compare_distance_periods(period_a: DateRangeInput, period_b: DateRangeInput) -> DistanceComparison:
-        """Compare native MAPIT distance totals for two bounded periods."""
+        """Compare native totals and additive *_km companions for two bounded periods."""
         return _safe_call(lambda: selected.get().compare_distance_periods(period_a, period_b))
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def get_route_statistics(from_time: str, to_time: str) -> RouteStatistics:
-        """Summarize bounded route distance, count, elapsed duration, and maximum speed."""
+        """Summarize bounded route distance with *_km companions, count, elapsed duration, and maximum speed."""
         return _safe_call(lambda: selected.get().get_route_statistics(from_time, to_time))
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def get_distance_breakdown(from_time: str, to_time: str, group_by: GroupBy) -> DistanceBreakdown:
-        """Group bounded native route distance by UTC day, month, or year."""
+        """Group bounded native distance and *_km companions by UTC day, month, or year."""
         return _safe_call(lambda: selected.get().get_distance_breakdown(from_time, to_time, group_by))
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def get_route_extremes(from_time: str, to_time: str) -> RouteExtremes:
-        """Return deterministic bounded route and calendar distance extremes."""
+        """Return deterministic bounded route and calendar distance extremes with *_km companions."""
         return _safe_call(lambda: selected.get().get_route_extremes(from_time, to_time))
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)

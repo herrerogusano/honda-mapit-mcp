@@ -9,6 +9,8 @@ from typing import Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .distance_units import DISTANCE_CONVERSION_BASIS, native_distance_to_km
+
 MAPIT_NATIVE_UNIT = "mapit_native_unconfirmed"
 BUCKET_TIMEZONE = "UTC"
 COMPLETENESS = "unverified"
@@ -32,11 +34,14 @@ class RouteStatistics(AnalyticsModel):
     from_time: str
     to_time: str
     total_distance: float
+    total_distance_km: float | None = None
     observed_route_count: int
     average_route_distance: float | None
+    average_route_distance_km: float | None = None
     elapsed_duration_seconds: float
     maximum_speed: float | None
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
     bucket_timezone: Literal["UTC"] = BUCKET_TIMEZONE
     completeness: Literal["unverified"] = COMPLETENESS
 
@@ -44,6 +49,7 @@ class RouteStatistics(AnalyticsModel):
 class DistanceBucket(AnalyticsModel):
     bucket: str
     distance: float
+    distance_km: float | None = None
     observed_route_count: int
     elapsed_duration_seconds: float
 
@@ -51,6 +57,7 @@ class DistanceBucket(AnalyticsModel):
 class ExtremeBucket(AnalyticsModel):
     bucket: str
     distance: float
+    distance_km: float | None = None
     observed_route_count: int
 
 
@@ -60,6 +67,7 @@ class DistanceBreakdown(AnalyticsModel):
     group_by: GroupBy
     buckets: list[DistanceBucket] = Field(default_factory=list)
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
     bucket_timezone: Literal["UTC"] = BUCKET_TIMEZONE
     completeness: Literal["unverified"] = COMPLETENESS
 
@@ -67,6 +75,7 @@ class DistanceBreakdown(AnalyticsModel):
 class RouteExtreme(AnalyticsModel):
     route_id: str
     distance: float
+    distance_km: float | None = None
     started_at: str
 
 
@@ -79,6 +88,7 @@ class RouteExtremes(AnalyticsModel):
     maximum_speed: float | None
     ties_observed: bool = False
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
     bucket_timezone: Literal["UTC"] = BUCKET_TIMEZONE
     completeness: Literal["unverified"] = COMPLETENESS
 
@@ -87,12 +97,14 @@ class RoutePeriodComparison(AnalyticsModel):
     period_a: RouteStatistics
     period_b: RouteStatistics
     distance_difference: float
+    distance_difference_km: float | None = None
     distance_percentage_change: float | None
     observed_route_count_difference: int
     observed_route_count_percentage_change: float | None
     elapsed_duration_difference_seconds: float
     elapsed_duration_percentage_change: float | None
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
     bucket_timezone: Literal["UTC"] = BUCKET_TIMEZONE
     completeness: Literal["unverified"] = COMPLETENESS
 
@@ -207,8 +219,10 @@ def route_statistics(routes: Sequence[Any], from_time: str, to_time: str) -> Rou
         from_time=from_time,
         to_time=to_time,
         total_distance=total_distance,
+        total_distance_km=native_distance_to_km(total_distance),
         observed_route_count=count,
         average_route_distance=average_route_distance,
+        average_route_distance_km=native_distance_to_km(average_route_distance),
         elapsed_duration_seconds=elapsed,
         maximum_speed=maximum_speed,
     )
@@ -233,21 +247,25 @@ def distance_breakdown(
     buckets: dict[str, list[_PreparedRoute]] = {}
     for route in prepared:
         buckets.setdefault(_bucket_key(route.started_at, group_by), []).append(route)
-    return DistanceBreakdown(
-        from_time=from_time,
-        to_time=to_time,
-        group_by=group_by,
-        buckets=[
+    bucket_results: list[DistanceBucket] = []
+    for key, bucket_routes in sorted(buckets.items()):
+        bucket_distance = _safe_sum([route.distance for route in bucket_routes])
+        bucket_results.append(
             DistanceBucket(
                 bucket=key,
-                distance=_safe_sum([route.distance for route in bucket_routes]),
+                distance=bucket_distance,
+                distance_km=native_distance_to_km(bucket_distance),
                 observed_route_count=len(bucket_routes),
                 elapsed_duration_seconds=_safe_sum(
                     [(route.ended_at - route.started_at).total_seconds() for route in bucket_routes if route.ended_at]
                 ),
             )
-            for key, bucket_routes in sorted(buckets.items())
-        ],
+        )
+    return DistanceBreakdown(
+        from_time=from_time,
+        to_time=to_time,
+        group_by=group_by,
+        buckets=bucket_results,
     )
 
 
@@ -271,14 +289,18 @@ def route_extremes(routes: Sequence[Any], from_time: str, to_time: str) -> Route
         grouped: dict[str, list[_PreparedRoute]] = {}
         for route in prepared:
             grouped.setdefault(_bucket_key(route.started_at, group_by), []).append(route)
-        return [
-            ExtremeBucket(
-                bucket=key,
-                distance=_safe_sum([route.distance for route in bucket_routes]),
-                observed_route_count=len(bucket_routes),
+        results: list[ExtremeBucket] = []
+        for key, bucket_routes in sorted(grouped.items()):
+            bucket_distance = _safe_sum([route.distance for route in bucket_routes])
+            results.append(
+                ExtremeBucket(
+                    bucket=key,
+                    distance=bucket_distance,
+                    distance_km=native_distance_to_km(bucket_distance),
+                    observed_route_count=len(bucket_routes),
+                )
             )
-            for key, bucket_routes in sorted(grouped.items())
-        ]
+        return results
 
     day_buckets = aggregate("day")
     month_buckets = aggregate("month")
@@ -301,6 +323,7 @@ def route_extremes(routes: Sequence[Any], from_time: str, to_time: str) -> Route
         longest_route=RouteExtreme(
             route_id=longest.route_id,
             distance=longest.distance,
+            distance_km=native_distance_to_km(longest.distance),
             started_at=_iso_timestamp(longest.started_at),
         ),
         most_distance_day=most_day,
@@ -323,10 +346,17 @@ def compare_route_periods(
     count_difference = second.observed_route_count - first.observed_route_count
     if not math.isfinite(float(count_difference)):
         raise AnalyticsError("numeric_overflow", "MAPIT analytics exceeded finite numeric bounds")
+    distance_difference = _safe_difference(second.total_distance, first.total_distance)
+    distance_difference_magnitude_km = native_distance_to_km(abs(distance_difference))
     return RoutePeriodComparison(
         period_a=first,
         period_b=second,
-        distance_difference=_safe_difference(second.total_distance, first.total_distance),
+        distance_difference=distance_difference,
+        distance_difference_km=(
+            math.copysign(distance_difference_magnitude_km, distance_difference)
+            if distance_difference_magnitude_km is not None
+            else None
+        ),
         distance_percentage_change=_percentage_change(first.total_distance, second.total_distance),
         observed_route_count_difference=count_difference,
         observed_route_count_percentage_change=_percentage_change(

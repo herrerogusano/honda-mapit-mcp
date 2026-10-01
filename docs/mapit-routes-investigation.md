@@ -523,6 +523,61 @@ only to study default page size; it must not retain counts or values.
 | List envelope and pagination metadata | Root response keys in the bounded schema-only fixture | `CONFIRMED_SCHEMA_ONLY` for `{data: Route[]}`; pagination behavior remains PENDING |
 | Date boundary semantics | Controlled `from`/`to`, `month`, and `day` reads | PENDING |
 | Units for distance/speed/duration | Payload plus frontend formatting code | PENDING |
+
+### Screenshot-to-API metric comparison (2026-10-01)
+
+The user authorized one bounded read-only comparison with a finished route
+shown in the app. One Core and one Geo wire GET located a unique route matching
+the screenshot's start/end minute in the user's local timezone. Its average
+and maximum speed matched the UI; native distance divided by 1,000 was
+consistent with the UI's whole-kilometre display. This is strong meter-scale
+evidence for this example, not a universal unit contract, rounding-rule proof
+or independent GPS-distance accuracy validation. No detail GET, ledger import,
+coordinate persistence, MAPIT write or additional live retry was performed.
+Private IDs, timestamps, metric values and screenshot are not recorded here.
+The MCP/analytics still return native values with unconfirmed-unit metadata;
+no conversion or schema/ledger migration has been implemented by this check.
+
+The user separately authorized one second screenshot comparison including its
+route detail. One Core and two Geo wire GETs located the unique matching route;
+list/detail metrics agreed and dividing native distance by 1,000 again matched
+the UI kilometre display at its precision. Detail exposed `startsAtLastKnown=true`
+and mixed `inferred` LineString flags. The inferred line contained just its two
+endpoints; the other line contained intermediate vertices. Approximate geodesic
+lengths of the two polylines summed to the native distance at metre precision.
+This strongly supports inclusion of the straight inferred connection in this
+sample's reported distance, not proof of the universal backend algorithm or
+actual travel through an unobserved gap. The user confirmed that this sample's
+dashed segment happened to follow their real travel, but described other gaps
+crossing blocks diagonally and omitting turns. That report is not API ground
+truth. Flags must be presented as source quality indicators, not proof of all
+streets driven or a recovery of lost GPS distance. No private geometry, IDs,
+times or metric values were persisted and no MCP/ledger behavior was changed.
+
+### Approved presentation implementation — 2026-10-01
+
+After those research checks the user authorized offline implementation of
+kilometre presentation and the inferred-segment indicator, not reconstruction.
+Services, analytical outputs and local ledger summaries now add explicit
+`*_km` fields with
+`conversion_basis="ui_correlated_meter_interpretation_unconfirmed"`. Original
+native fields and metadata remain unchanged; SQLite facts/schema are not
+migrated. Speed, odometer, durations and percentages are not scaled. Negative
+source distances and nonfinite total distance fail closed when computing totals.
+
+Existing embedded GeoJSON can supply `has_inferred_segments`,
+`inference_quality_status`, source and warning. Quality analysis is bounded,
+accepts strictly boolean LineString flags, and keeps missing/malformed/partial
+evidence unknown rather than declaring accurate tracking. It performs no extra
+detail requests, geometry persistence or road reconstruction. The separate
+`starts_at_last_known` hint does not establish the meaning of `inferred`.
+
+Independent review accepted the changes. Offline Python 3.13 validation:
+**677 passed, 3 skipped**, compilation succeeds, and the existing deterministic
+model-free evaluator passes 12/12 synthetic cases. Independent regressions cover
+unsupported speed claims, signed values, raw-geometry grounding rejection and
+in-process MCP structured serialization. No live-model, new MAPIT/Telegram or
+AWS operation was used for implementation validation.
 | In-progress routes | `includeInProgress` comparison when safely observable | PENDING |
 | Detail GeoJSON shapes | Frontend parser plus one current detail response | `CONFIRMED_SCHEMA_ONLY` for one route; cross-route geometry/nullability remains open |
 | Statistics source | `includeStats=true` response versus derivable route values | `PARTIAL_SCHEMA_ONLY`: fields observed; semantics and effect of flag remain open |

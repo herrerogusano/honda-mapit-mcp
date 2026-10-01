@@ -13,6 +13,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Literal, Mapping, Sequence
 
+from .distance_units import DISTANCE_CONVERSION_BASIS, native_distance_to_km
+
 MAPIT_NATIVE_UNIT = "mapit_native_unconfirmed"
 COMPLETENESS = "unverified"
 SOURCE_VERSION = "mapit_route_v1"
@@ -104,6 +106,7 @@ class LedgerDistanceBucket:
     bucket: str
     distance: float
     observed_route_count: int
+    distance_km: float | None = None
 
 
 @dataclass(frozen=True)
@@ -113,6 +116,7 @@ class LedgerDistanceBreakdown:
     date_from: str | None
     date_to: str | None
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
     bucket_timezone: Literal["UTC"] = "UTC"
     completeness: Literal["unverified"] = COMPLETENESS
 
@@ -430,7 +434,11 @@ class DistanceLedger:
                 raise LedgerError("numeric_overflow") from None
             if not math.isfinite(numeric_distance):
                 raise LedgerError("numeric_overflow")
-            buckets.append(LedgerDistanceBucket(str(bucket), numeric_distance, int(count)))
+            buckets.append(
+                LedgerDistanceBucket(
+                    str(bucket), numeric_distance, int(count), native_distance_to_km(numeric_distance)
+                )
+            )
         return LedgerDistanceBreakdown(
             group_by=group_by,
             buckets=tuple(buckets),

@@ -61,7 +61,9 @@ All ten tools carry MCP `readOnlyHint` and `idempotentHint` annotations.
 
 Phase 2 analytics group native distance by UTC day, month, or year and report
 observed counts, elapsed durations, deterministic extremes, and bounded period
-comparisons. It never labels MAPIT values as kilometres or km/h, does not
+comparisons. Original values remain in native units; explicit `*_km` companions
+use the UI-correlated metre-scale interpretation described below. It does not
+label native speed as km/h, does not
 aggregate average speed, and fails closed when required distance, timestamp, or
 speed fields are unavailable. Negative distances/speeds and non-finite
 aggregates fail closed. At most 10,000 normalized routes are retained per
@@ -81,6 +83,30 @@ eligible vehicle in the account. MCP outputs can contain private vehicle data
 (including position, VIN, registration, route geometry, and dealer contact
 details), so the supported deployment in this phase is local stdio only; the
 server does not log or persist tool results.
+
+### Kilometre presentation and inferred segments (2026-10-01)
+
+Two authorized same-route UI/API comparisons supported a metre-scale source
+distance. Kilometre companions divide native distance by 1,000, without replacing
+original fields or changing SQLite facts/schema. Their conversion basis remains
+UI-correlated, not a universal provider guarantee or an accuracy measurement.
+Use the explicit kilometre field rather than relabelling the native distance.
+GPS-derived route totals are distinct from a calibrated app counter and the
+physical motorcycle odometer; no automatic correction to either is performed.
+
+Route detail can summarize strict boolean `inferred` flags on existing GeoJSON
+LineStrings. `has_inferred_segments` is true when a line is explicitly marked
+inferred, false only when nonempty inspected lines are all strictly false, and
+null when the evidence is insufficient. `inference_quality_status` and a warning
+retain partial/unknown cases. These source marks indicate possible estimated
+connections, not proof of streets travelled. Missing/malformed flags remain
+unknown, and false flags do
+not prove GPS accuracy. `starts_at_last_known` stays a separate source hint.
+No new per-route detail reads, route reconstruction, automatic collection or
+extra live test is implied by these presentation changes.
+The conversion metadata is
+`conversion_basis="ui_correlated_meter_interpretation_unconfirmed"`; speed and
+vehicle odometer fields are not converted.
 
 See [the Phase 1 contracts](docs/phase-1-mcp-contracts.md) and
 [implementation status](docs/phase-1-status.md).

@@ -9,6 +9,7 @@ from mapit.services import (
     MapitServices,
     ServiceError,
     _number,
+    _line_inference_quality,
     split_month_windows,
 )
 
@@ -255,6 +256,20 @@ def test_distance_fails_closed_when_any_route_has_no_distance():
     assert error.value.code == "distance_unavailable"
 
 
+def test_distance_fails_closed_when_negative_route_would_be_hidden_by_positive_total():
+    client = RecordingClient(route_windows=[{"data": [{"id": "negative", "distance": -1}, {"id": "positive", "distance": 2}]}])
+    with pytest.raises(ServiceError) as error:
+        MapitServices(client).get_distance("2026-01-01", "2026-02-01")
+    assert error.value.code == "distance_unavailable"
+
+
+def test_distance_fails_closed_when_finite_route_values_overflow_total():
+    client = RecordingClient(route_windows=[{"data": [{"id": "one", "distance": 1e308}, {"id": "two", "distance": 1e308}]}])
+    with pytest.raises(ServiceError) as error:
+        MapitServices(client).get_distance("2026-01-01", "2026-02-01")
+    assert error.value.code == "numeric_overflow"
+
+
 def test_route_detail_uses_current_encoded_get_contract():
     client = RecordingClient()
 
@@ -267,6 +282,77 @@ def test_route_detail_uses_current_encoded_get_contract():
         {"includeStats": "true"},
     )
     assert result.geojson == {"type": "FeatureCollection", "features": []}
+    assert result.has_inferred_segments is None
+    assert result.inference_quality_status == "unknown"
+    assert result.starts_at_last_known is None
+    assert len([call for call in client.calls if call[1] == "geo"]) == 1
+
+
+def _line_feature(flag, *, geometry_type="LineString", coordinates=None, feature_type="Feature"):
+    return {
+        "type": feature_type,
+        "geometry": {
+            "type": geometry_type,
+            "coordinates": coordinates if coordinates is not None else [[0, 0], [1, 1]],
+        },
+        "properties": {"inferred": flag},
+    }
+
+
+@pytest.mark.parametrize(
+    ("geojson", "has_inferred", "status"),
+    [
+        ({"type": "FeatureCollection", "features": [_line_feature(False)]}, False, "none_marked_inferred"),
+        ({"type": "FeatureCollection", "features": [_line_feature(True)]}, True, "inferred_present"),
+        ({"type": "FeatureCollection", "features": [_line_feature(1)]}, None, "unknown"),
+        ({"type": "FeatureCollection", "features": [_line_feature(False), _line_feature(None)]}, None, "partial_unknown"),
+        ({"type": "FeatureCollection", "features": []}, None, "unknown"),
+        ({"type": "FeatureCollection", "features": [_line_feature(False, feature_type="Unexpected")]}, None, "unknown"),
+        ({"type": "FeatureCollection", "features": [_line_feature(False, coordinates=[])]}, None, "unknown"),
+    ],
+)
+def test_line_inference_quality_requires_nonempty_well_formed_strict_flags(geojson, has_inferred, status):
+    assert _line_inference_quality(geojson)[:2] == (has_inferred, status)
+
+
+@pytest.mark.parametrize(
+    ("native", "expected"),
+    [(2000, 2.0), (0, 0.0), (None, None), (-1, None), (float("nan"), None)],
+)
+def test_route_list_adds_km_companion_without_relabeling_native_value(native, expected):
+    route = {"id": "synthetic-route", "distance": native}
+    result = MapitServices(RecordingClient(route_windows=[{"data": [route]}])).list_routes(
+        "2026-01-01", "2026-02-01"
+    )
+    summary = result.routes[0]
+    assert summary.distance_km == expected
+    assert summary.distance == (_number(native))
+    assert result.conversion_basis == "ui_correlated_meter_interpretation_unconfirmed"
+
+
+def test_detail_quality_is_derived_from_existing_geojson_without_an_extra_get():
+    geojson = {"type": "FeatureCollection", "features": [_line_feature(True)]}
+    client = RecordingClient(route_detail={"id": "synthetic-route", "distance": 1200, "geoJSON": geojson})
+    result = MapitServices(client).get_route_detail("synthetic-route")
+    assert result.distance == 1200
+    assert result.distance_km == pytest.approx(1.2)
+    assert result.has_inferred_segments is True
+    assert result.inference_quality_status == "inferred_present"
+    assert "does not establish real-street coverage or GPS accuracy" in result.inference_quality_warning
+    assert len([call for call in client.calls if call[1] == "geo"]) == 1
+
+
+def test_list_quality_uses_only_embedded_geojson_and_does_not_fetch_detail():
+    route = {
+        "id": "synthetic-route",
+        "distance": 1200,
+        "geoJSON": {"type": "FeatureCollection", "features": [_line_feature(False)]},
+    }
+    client = RecordingClient(route_windows=[{"data": [route]}])
+    result = MapitServices(client).list_routes("2026-01-01", "2026-02-01")
+    assert result.routes[0].has_inferred_segments is False
+    assert result.routes[0].inference_quality_status == "none_marked_inferred"
+    assert len([call for call in client.calls if call[1] == "geo"]) == 1
 
 
 def test_distance_comparison_uses_native_values_without_inventing_units():
@@ -288,6 +374,9 @@ def test_distance_comparison_uses_native_values_without_inventing_units():
     assert result.absolute_difference == 5
     assert result.percentage_difference == 50
     assert result.metric_unit == "mapit_native_unconfirmed"
+    assert result.absolute_difference_km == pytest.approx(0.005)
+    assert result.signed_difference == 5
+    assert result.signed_difference_km == pytest.approx(0.005)
 
 
 def test_only_read_methods_are_required_by_the_service_layer():

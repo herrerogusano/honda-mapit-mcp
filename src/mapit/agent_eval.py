@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,7 @@ class SyntheticToolResult(BaseModel):
 
     name: str
     status: str
+    structured_content: dict[str, Any] = Field(default_factory=dict)
 
 
 class SyntheticRun(BaseModel):
@@ -123,9 +125,23 @@ def _contains_mapping(expected: Mapping[str, Any], actual: Mapping[str, Any]) ->
 
 
 _UNIT_CLAIM = re.compile(
-    r"\b(?:\d+(?:[.,]\d+)?\s*)?(?:km/h|kmh|kph|km|kil[oó]metros?|kilomet(?:er|re)s?|mph|miles?|mi|meters?|metres?|m/s)\b",
+    r"\b(?:\d+(?:[.,]\d+)?\s*)?(?:km\s*/\s*h|kmh|kph|km|kil[oó]metros?|kilomet(?:er|re)s?|mph|miles?|mi|meters?|metres?|m/s)\b",
     re.IGNORECASE,
 )
+_NUMERIC_KM = re.compile(r"(?<![\w.])([−-]?\d+(?:[.,]\d+)?)\s*km\b", re.IGNORECASE)
+_DISTANCE_TOOL_NAMES = frozenset(
+    {
+        "list_routes",
+        "get_route_detail",
+        "get_distance",
+        "compare_distance_periods",
+        "get_route_statistics",
+        "get_distance_breakdown",
+        "get_route_extremes",
+        "compare_route_periods",
+    }
+)
+_CONVERSION_BASIS = "ui_correlated_meter_interpretation_unconfirmed"
 _UNSUPPORTED_PHRASES = (
     "historial completo",
     "complete history",
@@ -156,14 +172,101 @@ _COMPLETENESS_CLAIM = re.compile(
 )
 
 
-def _unsupported_claim(text: str) -> bool:
-    if _UNIT_CLAIM.search(text):
+def _grounded_km_values(record: SyntheticRun) -> set[tuple[float, bool]]:
+    grounded: set[tuple[float, bool]] = set()
+
+    def read_fields(
+        value: Any,
+        *,
+        fields: frozenset[str] = frozenset({"distance_km"}),
+        signed_fields: frozenset[str] = frozenset(),
+    ) -> None:
+        if not isinstance(value, Mapping):
+            return
+        if value.get("conversion_basis", _CONVERSION_BASIS) != _CONVERSION_BASIS:
+            return
+        for key in fields:
+            field_value = value.get(key)
+            if isinstance(field_value, bool) or not isinstance(field_value, (int, float)):
+                continue
+            try:
+                number = float(field_value)
+            except OverflowError:
+                continue
+            signed = key in signed_fields
+            if math.isfinite(number) and (signed or number >= 0):
+                grounded.add((number, signed))
+
+    def read_statistics(value: Any) -> None:
+        read_fields(value, fields=frozenset({"total_distance_km", "average_route_distance_km"}))
+
+    for result in record.tool_results:
+        if result.status != "ok" or result.name not in _DISTANCE_TOOL_NAMES:
+            continue
+        payload = result.structured_content
+        if payload.get("conversion_basis") != _CONVERSION_BASIS:
+            continue
+        if result.name in {"get_route_detail", "get_distance"}:
+            read_fields(payload, fields=frozenset({"distance_km"}))
+        elif result.name == "list_routes":
+            routes = payload.get("routes")
+            if isinstance(routes, list):
+                for route in routes[:10_000]:
+                    read_fields(route, fields=frozenset({"distance_km"}))
+        elif result.name == "compare_distance_periods":
+            read_fields(
+                payload,
+                fields=frozenset({"absolute_difference_km", "signed_difference_km"}),
+                signed_fields=frozenset({"signed_difference_km"}),
+            )
+            read_fields(payload.get("period_a"), fields=frozenset({"distance_km"}))
+            read_fields(payload.get("period_b"), fields=frozenset({"distance_km"}))
+        elif result.name == "get_route_statistics":
+            read_statistics(payload)
+        elif result.name == "get_distance_breakdown":
+            buckets = payload.get("buckets")
+            if isinstance(buckets, list):
+                for bucket in buckets[:10_000]:
+                    read_fields(bucket, fields=frozenset({"distance_km"}))
+        elif result.name == "get_route_extremes":
+            for key in ("longest_route", "most_distance_day", "most_distance_month"):
+                read_fields(payload.get(key), fields=frozenset({"distance_km"}))
+        elif result.name == "compare_route_periods":
+            read_fields(payload, fields=frozenset({"distance_difference_km"}), signed_fields=frozenset({"distance_difference_km"}))
+            read_statistics(payload.get("period_a"))
+            read_statistics(payload.get("period_b"))
+    return grounded
+
+
+def _unsupported_claim(text: str, grounded_km_values: set[tuple[float, bool]] | None = None) -> bool:
+    remaining = text
+    values = grounded_km_values or set()
+
+    def grounded(match: re.Match[str]) -> str:
+        numeric_text = match.group(1).replace(",", ".")
+        if re.match(r"\s*/\s*h\b", text[match.end() :], re.IGNORECASE):
+            return match.group(0)
+        try:
+            displayed = float(numeric_text.replace("−", "-"))
+        except ValueError:
+            return match.group(0)
+        decimals = len(numeric_text.split(".", 1)[1]) if "." in numeric_text else 0
+        signed_display = numeric_text.startswith(("-", "−"))
+        if any(
+            round(value, decimals) == displayed and (not signed_display or signed)
+            for value, signed in values
+        ):
+            return ""
+        return match.group(0)
+
+    remaining = _NUMERIC_KM.sub(grounded, remaining)
+    if _UNIT_CLAIM.search(remaining):
         return True
-    lowered = text.lower()
+    lowered = remaining.lower()
     for phrase in _UNSUPPORTED_PHRASES:
         if phrase in lowered:
             return True
-    return bool(_COMPLETENESS_CLAIM.search(text) or _REALTIME_CLAIM.search(text))
+    return bool(_COMPLETENESS_CLAIM.search(remaining) or _REALTIME_CLAIM.search(remaining))
 
 
 def evaluate_case(case: EvalCase | Mapping[str, Any], run: SyntheticRun | Mapping[str, Any] | None = None) -> EvaluationResult:
@@ -225,7 +328,7 @@ def evaluate_case(case: EvalCase | Mapping[str, Any], run: SyntheticRun | Mappin
     for claim in selected.forbidden_claims:
         if claim.lower() in lowered_answer:
             failures.append("forbidden_claim")
-    if _unsupported_claim(answer_text):
+    if _unsupported_claim(answer_text, _grounded_km_values(record)):
         failures.append("unsupported_claim")
     if record.answer.needs_clarification is not selected.needs_clarification:
         failures.append("clarification_mismatch")

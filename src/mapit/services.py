@@ -24,6 +24,7 @@ from .analytics import (
     route_statistics,
 )
 from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
+from .distance_units import DISTANCE_CONVERSION_BASIS, native_distance_to_km
 from .session import SessionManager, WindowsKeyringRefreshTokenStore
 
 MAX_PERIOD_DAYS = 366
@@ -32,6 +33,95 @@ MAX_ROUTE_LIST_BYTES = 2 * 1024 * 1024
 MAX_ROUTE_DETAIL_BYTES = 1024 * 1024
 MAX_ANALYTIC_ROUTES = 10_000
 MAPIT_NATIVE_UNIT = "mapit_native_unconfirmed"
+MAX_QUALITY_FEATURES = 4096
+MAX_QUALITY_COORDINATES = 100_000
+_QUALITY_WARNINGS = {
+    "inferred_present": "At least one LineString is marked inferred; this does not establish real-street coverage or GPS accuracy.",
+    "none_marked_inferred": "No inspected LineString is marked inferred; this does not guarantee GPS accuracy.",
+    "partial_unknown": "Some LineString inference flags are unavailable or malformed; startsAtLastKnown is a separate hint.",
+    "unknown": "Inference status is unknown because usable LineString flags are unavailable; startsAtLastKnown is a separate hint.",
+}
+
+
+def _line_inference_quality(geojson: Any) -> tuple[bool | None, str, str, str]:
+    """Summarize strict LineString inference flags after bounded shape validation."""
+    if not isinstance(geojson, Mapping) or geojson.get("type") != "FeatureCollection":
+        return None, "unknown", "unavailable", _QUALITY_WARNINGS["unknown"]
+    features = geojson.get("features")
+    if not isinstance(features, list) or not features or len(features) > MAX_QUALITY_FEATURES:
+        return None, "unknown", "unavailable", _QUALITY_WARNINGS["unknown"]
+    flags: list[bool] = []
+    uncertain = False
+    inspected_coordinates = 0
+    def finite_coordinate(value: Any) -> bool:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        try:
+            return math.isfinite(float(value))
+        except OverflowError:
+            return False
+
+    for feature in features:
+        if not isinstance(feature, Mapping):
+            uncertain = True
+            continue
+        if feature.get("type") != "Feature":
+            uncertain = True
+            continue
+        geometry = feature.get("geometry")
+        if not isinstance(geometry, Mapping):
+            uncertain = True
+            continue
+        geometry_type = geometry.get("type")
+        if not isinstance(geometry_type, str):
+            uncertain = True
+            continue
+        if geometry_type in {"Point", "MultiPoint", "MultiLineString", "Polygon", "MultiPolygon"}:
+            continue
+        if geometry_type != "LineString":
+            uncertain = True
+            continue
+        coordinates = geometry.get("coordinates")
+        if isinstance(coordinates, list):
+            inspected_coordinates += len(coordinates)
+        if (
+            not isinstance(coordinates, list)
+            or len(coordinates) < 2
+            or len(coordinates) > 8192
+            or inspected_coordinates > MAX_QUALITY_COORDINATES
+            or any(
+                not isinstance(position, list)
+                or len(position) < 2
+                or any(not finite_coordinate(coordinate) for coordinate in position[:2])
+                for position in coordinates
+            )
+        ):
+            uncertain = True
+            continue
+        properties = feature.get("properties")
+        flag = properties.get("inferred") if isinstance(properties, Mapping) else None
+        if type(flag) is bool:
+            flags.append(flag)
+        else:
+            uncertain = True
+    if not flags:
+        status = "unknown"
+        has_inferred = None
+        source = "unavailable"
+    elif uncertain:
+        status = "partial_unknown"
+        has_inferred = True if any(flags) else None
+        source = "geojson_linestring_properties"
+    elif any(flags):
+        status = "inferred_present"
+        has_inferred = True
+        source = "geojson_linestring_properties"
+    else:
+        status = "none_marked_inferred"
+        has_inferred = False
+        source = "geojson_linestring_properties"
+    warning_key = status if status in _QUALITY_WARNINGS else "unknown"
+    return has_inferred, status, source, _QUALITY_WARNINGS[warning_key]
 
 
 class ServiceError(RuntimeError):
@@ -96,6 +186,12 @@ class RouteSummary(OutputModel):
     started_at: str | None = None
     ended_at: str | None = None
     distance: float | None = None
+    distance_km: float | None = None
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
+    has_inferred_segments: bool | None = None
+    inference_quality_status: Literal["inferred_present", "none_marked_inferred", "partial_unknown", "unknown"] = "unknown"
+    inference_quality_source: str = "unavailable"
+    inference_quality_warning: str = _QUALITY_WARNINGS["unknown"]
     average_speed: float | None = None
     maximum_speed: float | None = None
     complete: bool | None = None
@@ -113,6 +209,7 @@ class RouteList(OutputModel):
     truncated: bool
     completeness: Literal["unverified"] = "unverified"
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
 
 
 class RouteDetail(RouteSummary):
@@ -126,6 +223,8 @@ class DistanceResult(OutputModel):
     from_time: str
     to_time: str
     distance: float
+    distance_km: float | None = None
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
     route_count: int
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
     completeness: Literal["unverified"] = "unverified"
@@ -135,8 +234,12 @@ class DistanceComparison(OutputModel):
     period_a: DistanceResult
     period_b: DistanceResult
     absolute_difference: float
+    absolute_difference_km: float | None = None
+    signed_difference: float | None = None
+    signed_difference_km: float | None = None
     percentage_difference: float | None
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
 
 
 def _string(value: Any) -> str | None:
@@ -319,11 +422,19 @@ class MapitServices:
         route_id = _string(raw.get("id"))
         if route_id is None:
             return None
+        geojson = raw.get("geoJSON", raw.get("geojson"))
+        inferred, quality_status, quality_source, quality_warning = _line_inference_quality(geojson)
+        native_distance = _number(raw.get("distance"))
         return RouteSummary(
             route_id=route_id,
             started_at=_string(raw.get("startedAt")),
             ended_at=_string(raw.get("endedAt")),
-            distance=_number(raw.get("distance")),
+            distance=native_distance,
+            distance_km=native_distance_to_km(native_distance),
+            has_inferred_segments=inferred,
+            inference_quality_status=quality_status,
+            inference_quality_source=quality_source,
+            inference_quality_warning=quality_warning,
             average_speed=_number(raw.get("avgSpeed")),
             maximum_speed=_number(raw.get("maxSpeed")),
             complete=raw.get("complete") if isinstance(raw.get("complete"), bool) else None,
@@ -406,23 +517,33 @@ class MapitServices:
         geojson = payload.get("geoJSON")
         if geojson is not None and not isinstance(geojson, dict):
             raise ServiceError("invalid_response", "MAPIT route detail contains invalid GeoJSON")
-        return RouteDetail(
-            **base.model_dump(),
+        inferred, quality_status, quality_source, quality_warning = _line_inference_quality(geojson)
+        detail_data = base.model_dump()
+        detail_data.update(
             merged=payload.get("merged") if isinstance(payload.get("merged"), bool) else None,
             starts_at_last_known=(
                 payload.get("startsAtLastKnown") if isinstance(payload.get("startsAtLastKnown"), bool) else None
             ),
             geojson=geojson,
+            has_inferred_segments=inferred,
+            inference_quality_status=quality_status,
+            inference_quality_source=quality_source,
+            inference_quality_warning=quality_warning,
         )
+        return RouteDetail(**detail_data)
 
     def get_distance(self, from_time: str, to_time: str) -> DistanceResult:
         normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
-        if any(route.distance is None for route in routes):
+        if any(route.distance is None or route.distance < 0 for route in routes):
             raise ServiceError("distance_unavailable", "one or more MAPIT routes do not provide distance")
+        total_distance = sum(route.distance for route in routes)
+        if not math.isfinite(total_distance):
+            raise ServiceError("numeric_overflow", "MAPIT distance total exceeded finite numeric bounds")
         return DistanceResult(
             from_time=normalized_from,
             to_time=normalized_to,
-            distance=sum(route.distance for route in routes),
+            distance=total_distance,
+            distance_km=native_distance_to_km(total_distance),
             route_count=len(routes),
         )
 
@@ -471,10 +592,16 @@ class MapitServices:
         second = self.get_distance(period_b.from_time, period_b.to_time)
         difference = second.distance - first.distance
         percentage = None if first.distance == 0 else difference / first.distance * 100.0
+        difference_magnitude_km = native_distance_to_km(abs(difference))
         return DistanceComparison(
             period_a=first,
             period_b=second,
             absolute_difference=abs(difference),
+            absolute_difference_km=native_distance_to_km(abs(difference)),
+            signed_difference=difference,
+            signed_difference_km=(
+                math.copysign(difference_magnitude_km, difference) if difference_magnitude_km is not None else None
+            ),
             percentage_difference=percentage,
         )
 

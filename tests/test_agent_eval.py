@@ -277,3 +277,63 @@ def test_evaluator_requires_exact_normalized_status_caveats():
     assert "tool_status_caveat_missing" in no_error.failures
     assert "tool_status_caveat_missing" in partial_free.failures
     assert valid.passed is True
+
+
+def test_km_claim_requires_exact_grounded_km_value_and_conversion_basis():
+    call = [{"name": "get_distance", "args": {}}]
+    result = [
+        {
+            "name": "get_distance",
+            "status": "ok",
+            "structured_content": {
+                "distance": 1200,
+                "distance_km": 1.2,
+                "metric_unit": "mapit_native_unconfirmed",
+                "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed",
+            },
+        }
+    ]
+    grounded_case = _base_case("The derived distance is 1.2 km.", calls=call, results=result)
+    fabricated_case = _base_case("The derived distance is 9 km.", calls=call, results=result)
+    for case in (grounded_case, fabricated_case):
+        case["allowed_tools"] = ["get_distance"]
+        case["required_tools"] = ["get_distance"]
+    grounded = evaluate_case(grounded_case)
+    fabricated = evaluate_case(fabricated_case)
+    assert grounded.passed is True
+    assert "unsupported_claim" in fabricated.failures
+
+
+@pytest.mark.parametrize(
+    ("claim", "structured_content"),
+    [
+        ("The result is 1.2 km/h.", {"distance_km": 1.2, "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed"}),
+        ("The result is -1.2 km.", {"signed_difference_km": 1.2, "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed"}),
+        ("The result is 1.2 km.", {"distance_km": 1.2, "conversion_basis": "missing"}),
+        ("The result is 1.2 km.", {"distance": 1200, "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed"}),
+        ("The result is 1.2 km.", {"distance_km": True, "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed"}),
+        ("The result is 1.2 km.", {"distance_km": float("nan"), "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed"}),
+        ("The result is 1.2 km.", {"distance_km": 10**10000, "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed"}),
+    ],
+)
+def test_km_grounding_rejects_unsupported_units_native_only_and_invalid_values(claim, structured_content):
+    calls = [{"name": "get_distance", "args": {}}]
+    results = [{"name": "get_distance", "status": "ok", "structured_content": structured_content}]
+    evaluated = evaluate_case(_base_case(claim, calls=calls, results=results))
+    assert "unsupported_claim" in evaluated.failures
+
+
+def test_only_signed_difference_fields_ground_negative_km_claims():
+    calls = [{"name": "compare_distance_periods", "args": {}}]
+    result = [{
+        "name": "compare_distance_periods",
+        "status": "ok",
+        "structured_content": {
+            "signed_difference_km": -1.25,
+            "conversion_basis": "ui_correlated_meter_interpretation_unconfirmed",
+        },
+    }]
+    case = _base_case("Difference: -1.25 km.", calls=calls, results=result)
+    case["allowed_tools"] = ["compare_distance_periods"]
+    case["required_tools"] = ["compare_distance_periods"]
+    assert evaluate_case(case).passed is True

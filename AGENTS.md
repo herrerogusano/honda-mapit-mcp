@@ -75,6 +75,20 @@ design, public price research, cost estimation and offline IaC preparation
 after Phase 7 acceptance. Do not use AWS SDK/account inventory, create or
 deploy resources, transfer credentials, or invoke paid models/APIs. Stop at
 the explicit dev deployment/cost/identity gate, with prod/model gates separate.
+On 2026-10-01 two separately authorized screenshot-to-API route comparisons
+were completed (the second included detail). Their live allowances are consumed.
+The user then approved offline additive kilometre presentation and a source
+inferred-segment indicator, not road reconstruction. Preserve native fields
+and ledger facts/schema; convert only explicit kilometre companions using the
+UI-correlated metre-scale interpretation, with its evidence limitation. Do not
+change vehicle odometer/speed units or imply physical-distance accuracy. Missing
+or malformed segment flags mean unknown, not verified tracking. No new detail
+reads per list route, live calls, re-imports, private data/geometry persistence,
+AWS deployment or model inference is authorized by that implementation gate.
+That additive presentation implementation is now independently accepted offline:
+677 tests pass with 3 skipped, including synthetic MCP structured serialization.
+Retain its UI-correlated conversion basis and nullable source-flag limitations;
+it is not authorization for new route probes or inferred-road reconstruction.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

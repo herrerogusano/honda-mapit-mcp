@@ -306,7 +306,10 @@ def test_scope_alias_query_isolated_and_manual_delete_removes_only_owned_facts(t
     ledger.import_routes(ACCOUNT_SCOPE, "other-vehicle", [_route("two", distance=7)])
     alias = ledger.scope_alias(ACCOUNT_SCOPE, VEHICLE_ID)
 
-    assert ledger.distance_breakdown_by_scope_alias(alias, "day").buckets[0].distance == 3
+    breakdown = ledger.distance_breakdown_by_scope_alias(alias, "day")
+    assert breakdown.buckets[0].distance == 3
+    assert breakdown.buckets[0].distance_km == pytest.approx(0.003)
+    assert breakdown.conversion_basis == "ui_correlated_meter_interpretation_unconfirmed"
     assert ledger.delete_scope(ACCOUNT_SCOPE, VEHICLE_ID) == 1
     assert ledger.distance_breakdown_by_scope_alias(alias, "day").buckets == ()
     assert ledger.distance_breakdown(ACCOUNT_SCOPE, "other-vehicle", "day").buckets[0].distance == 7

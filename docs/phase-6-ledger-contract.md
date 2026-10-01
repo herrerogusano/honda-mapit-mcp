@@ -51,7 +51,11 @@ polling, last-month fallback, unfiltered read or road reconstruction.
 `mapit-history summary --group-by day|month|year` uses only local facts and the
 native alias key, with no authentication or MAPIT call. Its output is private
 aggregate data intended for the user, not a redacted probe or CI log. Distances
-are **not labelled kilometres** while the source unit remains unconfirmed.
+retain their original native field and unconfirmed-unit metadata. Following
+the separately approved 2026-10-01 UI/API comparison, presentation may add
+explicit kilometre companions with the UI-correlated metre-scale conversion
+basis. This is output-only: no fact, schema, source version or alias changes,
+re-import, history rewrite, automatic collection or extra upstream call.
 Results are observed history, never a complete-city or complete-history claim.
 
 An exclusive empty operation lock serializes local operations. A crash can

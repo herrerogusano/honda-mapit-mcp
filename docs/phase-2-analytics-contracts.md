@@ -6,8 +6,12 @@ Status: implemented and validated with the bounded live MCP gate on 2026-09-28.
 
 Phase 0 confirmed route fields named `distance`, `avgSpeed`, `maxSpeed`,
 `startedAt`, and `endedAt`, but not their metric units, semantic stability, or
-historical completeness. Phase 2 therefore does not label values as kilometres
-or km/h and does not expose an aggregate average speed. It calls a timestamp
+historical completeness. Original native values remain unchanged. The user
+approved additive `*_km` presentation on 2026-10-01 after two UI/API comparisons
+supported metre-scale source distance; companions divide once by 1,000 and
+retain their UI-correlated conversion basis, not a universal unit/accuracy claim.
+Native speed is not labelled km/h and there is no aggregate average speed.
+The service calls a timestamp
 difference `elapsed_duration_seconds`, not riding or engine-on time.
 
 All results retain:
@@ -16,6 +20,12 @@ All results retain:
 - `bucket_timezone="UTC"` for calendar grouping;
 - `completeness="unverified"` for route-history coverage;
 - `observed_route_count` rather than an unqualified total route count.
+
+Totals, average route distance, buckets, route/calendar extremes and absolute
+or signed distance differences expose explicit kilometre companions. Native
+fields retain their meaning. Percentage changes, timestamps, durations and
+speeds are not scaled. Quality indicators do not alter or replace the total;
+analytics do not fetch geometry to derive them.
 
 ## Retrieval and safety
 
@@ -84,5 +94,5 @@ changes for native distance, observed route count, and elapsed duration. This
 single contract supports year-over-year and month-over-month questions without
 special endpoints.
 
-The existing Phase 1 `get_distance` remains unchanged and uses the same guarded
+The existing Phase 1 `get_distance` retains native totals and uses the same guarded
 retrieval path.

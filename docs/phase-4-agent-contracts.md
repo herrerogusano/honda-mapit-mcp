@@ -54,8 +54,10 @@ The prompt must require the agent to:
   route lists;
 - use only capabilities exposed by the ten current read-only tools;
 - preserve `metric_unit=mapit_native_unconfirmed` and
-  `completeness=unverified` instead of claiming kilometres, km/h, or complete
-  history;
+  `completeness=unverified`; prefer explicit `*_km` tool fields when present,
+  with their UI-correlated conversion caveat, rather than labelling a native
+  value as kilometres. Do not claim km/h, complete history, GPS accuracy or
+  actual streets through an inferred segment;
 - ask for clarification when a requested period lacks a deterministic date
   range, using the host-supplied current date and timezone;
 - state when a capability is unavailable or a tool result is partial/error;
@@ -96,10 +98,15 @@ no real vehicle/account/location data.
 Tool-result failures use exact normalized caveat markers: `tool_error` for an
 error result and `partial_result` for a partial result. Substrings such as
 `error-free`, `No error`, or `partial-free` do not satisfy the marker. The
-evaluator is deliberately conservative: any supported concrete unit mention
+The original native-only evaluator cases remain deliberately conservative:
+any supported concrete unit mention
 (`kph`, miles, metres, `m/s`, and similar forms) is rejected, including when it
 is negated or called unconfirmed. The only accepted unit form is the abstract
-metadata marker `metric_unit=mapit_native_unconfirmed`. Any mention of
+metadata marker `metric_unit=mapit_native_unconfirmed`. The additive km extension
+must permit only grounded kilometre claims backed by successful structured tool
+results with the supported conversion basis; a native-only result or merely
+mentioning a unit cannot justify that claim. Other unit-denial rules remain.
+Any mention of
 realtime/real-time/tiempo real is rejected, including an unavailable claim;
 capability unavailability must be stated without that term. Any route,
 history, data, record, or records completeness claim containing complete,

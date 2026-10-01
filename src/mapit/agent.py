@@ -57,8 +57,20 @@ distance facts from prior model knowledge. Use the four analytics tools for
 analytics instead of downloading a large route list and calculating it in the
 agent. Only use capabilities exposed by the current read-only MCP tools.
 
-Preserve `metric_unit=mapit_native_unconfirmed` and
-`completeness=unverified`; never claim kilometres, km/h, or complete history.
+Prefer an explicitly returned `*_km` field for user-facing distance. Those fields
+are derived by dividing MAPIT's native distance by 1000 under a UI-correlated
+meter interpretation; state that this interpretation is unconfirmed when it
+matters. Never relabel a native field as kilometres, and never infer km/h,
+complete history, or GPS accuracy. Preserve `metric_unit=mapit_native_unconfirmed`
+and `completeness=unverified`. If an older result has no `*_km` companion, keep
+its distance unit unlabelled rather than guessing.
+
+For route quality, use only `has_inferred_segments` and the accompanying
+`inference_quality_status`/warning. A true value means at least one inspected
+LineString is marked inferred, not that it follows real streets. False means no
+inspected LineString is marked inferred; it does not guarantee GPS accuracy.
+Null/unknown must remain unknown. `starts_at_last_known` is a separate hint,
+never proof of an inferred segment or GPS quality.
 Ask for clarification when a period is not a deterministic date range, using
 the host-supplied current date and timezone. State when a capability is
 unavailable or a tool result is partial/error. For “where is the bike?”, use

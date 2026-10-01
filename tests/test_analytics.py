@@ -13,6 +13,15 @@ from mapit.analytics import (
     route_extremes,
     route_statistics,
 )
+from mapit.distance_units import native_distance_to_km
+
+
+@pytest.mark.parametrize(
+    ("native", "expected"),
+    [(2000, 2.0), (0, 0.0), (None, None), (-1, None), (float("nan"), None), (True, None), (float("inf"), None)],
+)
+def test_native_distance_presentation_conversion_is_explicit_and_fail_closed(native, expected):
+    assert native_distance_to_km(native) == expected
 
 
 def _route(route_id, started, ended, distance, speed=30):
@@ -43,6 +52,9 @@ def test_statistics_normalizes_duration_and_keeps_native_units():
     assert result.metric_unit == "mapit_native_unconfirmed"
     assert result.bucket_timezone == "UTC"
     assert result.completeness == "unverified"
+    assert result.total_distance_km == pytest.approx(0.025)
+    assert result.average_route_distance_km == pytest.approx(0.025 / 3)
+    assert result.conversion_basis == "ui_correlated_meter_interpretation_unconfirmed"
     assert "average_speed" not in result.model_dump()
 
 
@@ -64,6 +76,7 @@ def test_breakdown_orders_utc_buckets_and_does_not_require_speed(group_by, bucke
 
     assert [bucket.bucket for bucket in result.buckets] == buckets
     assert [bucket.distance for bucket in result.buckets] == ([3] if group_by == "year" else [1, 2])
+    assert [bucket.distance_km for bucket in result.buckets] == ([0.003] if group_by == "year" else [0.001, 0.002])
 
 
 def test_extremes_choose_earliest_route_and_bucket_on_ties():
@@ -79,6 +92,7 @@ def test_extremes_choose_earliest_route_and_bucket_on_ties():
     assert result.most_distance_month.bucket == "2026-01"
     assert result.maximum_speed == 50
     assert result.ties_observed is True
+    assert result.longest_route.distance_km == pytest.approx(0.01)
 
 
 def test_empty_period_returns_zero_and_null_extremes():
@@ -95,6 +109,21 @@ def test_empty_period_returns_zero_and_null_extremes():
     assert extremes.most_distance_month is None
     assert extremes.maximum_speed is None
     assert extremes.ties_observed is False
+    assert stats.total_distance_km == 0
+    assert stats.average_route_distance_km is None
+
+
+def test_period_comparison_km_difference_preserves_direction():
+    result = compare_route_periods(
+        [_route("a", "2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", 3000)],
+        "2026-01-01",
+        "2026-02-01",
+        [_route("b", "2026-02-01T00:00:00Z", "2026-02-01T00:01:00Z", 1000)],
+        "2026-02-01",
+        "2026-03-01",
+    )
+    assert result.distance_difference == -2000
+    assert result.distance_difference_km == -2
 
 
 @pytest.mark.parametrize(
