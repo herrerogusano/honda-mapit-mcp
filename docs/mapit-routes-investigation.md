@@ -526,6 +526,18 @@ only to study default page size; it must not retain counts or values.
 
 ### Screenshot-to-API metric comparison (2026-10-01)
 
+Timestamp clock-source question (2026-10-01): Core route fields include
+`startedAt`, `endedAt` and `startTz`; normalization preserves them separately.
+The comparison below confirms API-to-app local-time agreement, not the clock
+that originally generated those timestamps. Public MAPIT installation material
+describes a GNSS tracker, but does not establish whether route time comes from
+GNSS, the tracker clock, the server or the motorcycle dashboard. Independence
+from a manually mis-set dashboard clock is plausible, not yet confirmed.
+A future user-observed comparison with an automatically synchronized phone
+and the known dashboard offset could test that hypothesis without changing the
+dashboard clock. No additional live API operation is authorized by this question.
+Primary reference: <https://mapit.me/instalacion-2/>.
+
 The user authorized one bounded read-only comparison with a finished route
 shown in the app. One Core and one Geo wire GET located a unique route matching
 the screenshot's start/end minute in the user's local timezone. Its average

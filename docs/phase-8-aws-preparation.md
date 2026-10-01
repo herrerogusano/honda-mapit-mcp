@@ -177,8 +177,8 @@ shutdown function. The shutdown role needs exact-resource update/readback rights
 for the owned API and MCP function, not access to secrets or either data provider.
 Attempt both closing actions even if API disablement fails, then verify both.
 Use a separate pinned Boto3 artifact, not the MCP dependency bundle. This is
-design evidence only: no shutdown implementation, IAM/template change or wiring
-acceptance has occurred.
+design evidence only for IAM/template/wiring. The subsequently accepted offline
+shutdown core below is not a deployed shutdown function.
 
 HTTP API Count is available by API/stage in one-minute periods. CloudWatch alarm
 actions fire on state transitions, Scheduler precision is 60 seconds, and API
@@ -344,8 +344,65 @@ Sources: [budget latency](https://docs.aws.amazon.com/cost-management/latest/use
 
 ## Next gates
 
+### Resumed offline preparation — 2026-10-01
+
+The user asked to resume work after the premature stop. The two-hour AWS gate
+has expired; this continuation is local implementation/testing only, not renewed
+AWS reads, quota mutation, resource creation, activation or paid calls.
+Approve two sequential bounded blocks with independent review:
+
+1. Add a required immutable dev execution window to the environment entrypoint:
+   explicit UTC epoch start/end, positive span at most 300 seconds, no defaults,
+   reject before start/at-or-after end and on malformed configuration/clock,
+   including warm invocations. Bind the cached runtime to the same window and
+   cap each invocation's remaining-time budget to the window. Deny late results.
+   This bounds synthetic tool use, not endpoint availability or billing.
+2. Implement an offline shutdown core with injected fake clients for tests:
+   fixed validated dev API/function targets, disable API then put MCP reserve 0,
+   attempt both even if the first fails, read back both states independently,
+   emit only closed error categories. Never enable/delete/invoke anything, accept
+   event-supplied targets or load AWS credentials. The core has no AWS SDK/network
+   construction; a real SDK entrypoint/package and IAM wiring remain separate.
+
+No modification of the other project, production, live MAPIT or Telegram is
+included. The disabled infrastructure scaffold remains unchanged for these blocks.
+
+Both blocks are independently accepted locally: **177 focused tests; 896 passed,
+3 skipped overall**, compilation and model-free evaluator 12/12. The required
+environment names are `MAPIT_DEV_EXECUTION_START_EPOCH` and
+`MAPIT_DEV_EXECUTION_END_EPOCH`; canonical UTC epoch strings define `[start,end)`.
+Successful warm-cache identity includes the exact window, policy and JWKS digest.
+The invocation budget never increases, even on wall-clock rollback; monotonic
+capture precedes potentially slow context reads. Context checks, immediate
+pre-dispatch checks and post-result checks reject an inactive window. These are
+cooperative execution guards, not thread termination or a billing hard cap.
+
+`aws_dev_shutdown.py` makes four logical calls without retries: API disable,
+Lambda reserve zero, API readback, Lambda readback. Each failure leaves the other
+attempts intact. It requires exact `DisableExecuteApiEndpoint is True` and an
+integer `ReservedConcurrentExecutions` of zero; `False` is not an integer zero.
+Readbacks determine verification, not successful write returns. Ambiguous writes
+retain safe warning categories even if both readbacks confirm closed. Tests use
+fake injected clients only; no SDK session or account call was made. Real SDK
+packaging, exact IAM grants, independent trigger/capacity, deployment wiring and
+crash-safe resource cleanup remain prerequisites, not accepted by this core.
+
+Final-source ARM probe: the generated-fixture ZIP (9,400,705 bytes; SHA-256
+`fc6874b7225954d1ab5b11754b2f57fbb1de378db71cb729bb42e019e06f22b0`)
+was extracted and imported in the same pinned official ARM image with networking
+disabled. Initialize, all ten tools, warm invocation and prior negative cases
+passed, including before-window, expired-window and warm-window rearming denials.
+This supersedes the earlier probe for the updated source, not a real Cognito
+deployment artifact or a live shutdown test. Private signing keys existed only
+in probe memory; the fixture bundle remains outside Git.
+
+Primary API shapes: [API update](https://docs.aws.amazon.com/boto3/latest/reference/services/apigatewayv2/client/update_api.html),
+[API readback](https://docs.aws.amazon.com/boto3/latest/reference/services/apigatewayv2/client/get_api.html),
+[Lambda update](https://docs.aws.amazon.com/boto3/latest/reference/services/lambda/client/put_function_concurrency.html),
+[Lambda readback](https://docs.aws.amazon.com/boto3/latest/reference/services/lambda/client/get_function_concurrency.html).
+
 1. **Bounded dev deployment/cost/identity gate**: the short synthetic dev window
-   above is approved but suspended at the concurrency decision. Before creation,
+   above was approved temporarily; that authority has expired. Before creation,
    finish the runtime/package/shutdown prerequisites and confirm the intended
    account/operator and exact owner/callback binding. For any later live-data
    expansion, approve region, minimal service

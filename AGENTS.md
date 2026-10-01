@@ -145,6 +145,13 @@ require a structural floor of 104, not yet requested. Actual public-key retrieva
 final deployment packaging, callback/owner binding, shutdown/IaC/cleanup wiring
 and cloud interoperability remain separate reviewed prerequisites. No resource
 has been created, quota requested or function invoked.
+The two-hour external authority has expired. Subsequent resumed work is local
+only: immutable 300-second maximum execution-window guards and the injected-client
+shutdown core are independently accepted with 896 tests passed (3 skipped),
+compilation and model-free evaluator 12/12. The shutdown core has no SDK/network
+construction and its tests use fake clients. Real shutdown packaging/IAM/triggers,
+independent capacity and crash-safe cleanup remain open; no cloud authority is
+renewed by that acceptance. See the resumed-preparation section in the AWS doc.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

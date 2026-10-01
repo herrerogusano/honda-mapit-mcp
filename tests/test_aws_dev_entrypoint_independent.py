@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -30,6 +32,7 @@ def _write_bundle(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(entrypoint, "__file__", str(tmp_path / "aws_dev_entrypoint.py"))
     monkeypatch.setattr(entrypoint, "_CACHED_RUNTIME", None)
     monkeypatch.setattr(entrypoint, "_CACHED_JWKS_SHA256", None)
+    monkeypatch.setattr(entrypoint, "_CACHED_WINDOW", None)
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     numbers = private.public_key().public_numbers()
     jwks = json.dumps(
@@ -71,6 +74,9 @@ def _write_bundle(tmp_path: Path, monkeypatch):
     monkeypatch.setenv(entrypoint.ENV_COGNITO_CLIENT_ID, CLIENT_ID)
     monkeypatch.setenv(entrypoint.ENV_OWNER_SUBJECT, OWNER)
     monkeypatch.setenv(entrypoint.ENV_COGNITO_JWKS_SHA256, digest)
+    window_start = int(time.time()) - 1
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, str(window_start))
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, str(window_start + 300))
     return policy, digest
 
 
@@ -124,3 +130,156 @@ def test_failed_initialization_is_not_negative_cached(tmp_path, monkeypatch):
     assert attempts == [True, True]
     assert entrypoint._CACHED_RUNTIME is None
     assert entrypoint._CACHED_JWKS_SHA256 is None
+
+
+def test_bounded_context_never_increases_when_wall_clock_rolls_back(monkeypatch):
+    monotonic = [50.0]
+    epoch = [198.0]
+    monkeypatch.setattr(entrypoint.time, "monotonic", lambda: monotonic[0])
+    monkeypatch.setattr(entrypoint, "_clock", lambda: epoch[0])
+    context = entrypoint._BoundedContext(100_000, 50.0, 100.0, 200.0)
+
+    initial = context.get_remaining_time_in_millis()
+    epoch[0] = 199.0
+    after_forward_jump = context.get_remaining_time_in_millis()
+    epoch[0] = 198.5
+    after_rollback = context.get_remaining_time_in_millis()
+
+    assert after_forward_jump <= initial
+    assert after_rollback <= after_forward_jump
+
+
+def test_capped_context_counts_time_spent_reading_lambda_budget(monkeypatch):
+    monotonic = [50.0]
+    monkeypatch.setattr(entrypoint.time, "monotonic", lambda: monotonic[0])
+    monkeypatch.setattr(entrypoint, "_clock", lambda: 100.0)
+
+    class SlowContext:
+        def get_remaining_time_in_millis(self):
+            monotonic[0] += 2.0
+            return 10_000
+
+    context = entrypoint._capped_context(SlowContext(), 90.0, 200.0)
+    assert context.get_remaining_time_in_millis() <= 8_000
+
+
+def test_invalid_lambda_budgets_never_reach_dispatch(tmp_path, monkeypatch):
+    _policy, digest = _write_bundle(tmp_path, monkeypatch)
+    policy = entrypoint._policy_from_environment()
+    dispatched = []
+
+    def fake_handler(_event, _context):
+        dispatched.append(True)
+        return {"statusCode": 200}
+
+    monkeypatch.setattr(
+        entrypoint,
+        "_load_runtime",
+        lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=fake_handler), digest),
+    )
+
+    class InvalidContext:
+        def __init__(self, value):
+            self.value = value
+
+        def get_remaining_time_in_millis(self):
+            if isinstance(self.value, BaseException):
+                raise self.value
+            return self.value
+
+    for invalid in (0, -1, True, 700.0, None, RuntimeError("private-canary")):
+        assert entrypoint.handler({}, InvalidContext(invalid)) == entrypoint._unavailable()
+    assert dispatched == []
+
+
+def test_late_result_is_suppressed_without_claiming_hard_cancellation(tmp_path, monkeypatch):
+    _write_bundle(tmp_path, monkeypatch)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    epoch = [150.0]
+    monkeypatch.setattr(entrypoint, "_clock", lambda: epoch[0])
+    policy = entrypoint._policy_from_environment()
+    invoked = []
+
+    def slow_returning_handler(_event, _context):
+        invoked.append(True)
+        epoch[0] = 200.0
+        return {"statusCode": 200, "body": "late-private-result"}
+
+    monkeypatch.setattr(
+        entrypoint,
+        "_load_runtime",
+        lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=slow_returning_handler), "a" * 64),
+    )
+    response = entrypoint.handler({}, _Context())
+    assert invoked == [True]
+    assert response == entrypoint._unavailable()
+    assert "late-private-result" not in response["body"]
+
+
+def test_result_after_clock_rolls_before_window_start_is_suppressed(tmp_path, monkeypatch):
+    _write_bundle(tmp_path, monkeypatch)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    epoch = [150.0]
+    monkeypatch.setattr(entrypoint, "_clock", lambda: epoch[0])
+    policy = entrypoint._policy_from_environment()
+
+    def clock_rollback_handler(_event, _context):
+        epoch[0] = 99.0
+        return {"statusCode": 200, "body": "outside-window-private-result"}
+
+    monkeypatch.setattr(
+        entrypoint,
+        "_load_runtime",
+        lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=clock_rollback_handler), "a" * 64),
+    )
+    response = entrypoint.handler({}, _Context())
+    assert response == entrypoint._unavailable()
+    assert "outside-window-private-result" not in response["body"]
+
+
+def test_clock_rollback_before_dispatch_does_not_invoke_runtime(tmp_path, monkeypatch):
+    _write_bundle(tmp_path, monkeypatch)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    samples = iter((150.0, 150.0, 99.0, 150.0))
+    monkeypatch.setattr(entrypoint, "_clock", lambda: next(samples, 150.0))
+    policy = entrypoint._policy_from_environment()
+    invoked = []
+
+    def fake_handler(_event, _context):
+        invoked.append(True)
+        return {"statusCode": 200, "body": "outside-window"}
+
+    monkeypatch.setattr(
+        entrypoint,
+        "_load_runtime",
+        lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=fake_handler), "a" * 64),
+    )
+    assert entrypoint.handler({}, _Context()) == entrypoint._unavailable()
+    assert invoked == []
+
+
+def test_dynamic_context_expires_at_window_end_without_adapter_reserve(tmp_path, monkeypatch):
+    _write_bundle(tmp_path, monkeypatch)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    samples = iter((150.0, 150.0, 150.0, 150.0, 200.0, 150.0))
+    monkeypatch.setattr(entrypoint, "_clock", lambda: next(samples, 150.0))
+    policy = entrypoint._policy_from_environment()
+    observed_remaining = []
+
+    def fake_adapter(_event, context):
+        remaining = context.get_remaining_time_in_millis()
+        observed_remaining.append(remaining)
+        return {"statusCode": 504 if remaining <= 0 else 200}
+
+    monkeypatch.setattr(
+        entrypoint,
+        "_load_runtime",
+        lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=fake_adapter), "a" * 64),
+    )
+    response = entrypoint.handler({}, _Context())
+    assert observed_remaining == [0]
+    assert response == {"statusCode": 504}

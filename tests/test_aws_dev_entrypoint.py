@@ -45,6 +45,7 @@ def isolated_entrypoint(monkeypatch, tmp_path):
     monkeypatch.setattr(entrypoint, "__file__", str(tmp_path / "aws_dev_entrypoint.py"))
     monkeypatch.setattr(entrypoint, "_CACHED_RUNTIME", None)
     monkeypatch.setattr(entrypoint, "_CACHED_JWKS_SHA256", None)
+    monkeypatch.setattr(entrypoint, "_CACHED_WINDOW", None)
     for name in (
         entrypoint.ENV_MAPIT_MCP_ENV,
         entrypoint.ENV_AWS_REGION,
@@ -53,6 +54,8 @@ def isolated_entrypoint(monkeypatch, tmp_path):
         entrypoint.ENV_COGNITO_CLIENT_ID,
         entrypoint.ENV_OWNER_SUBJECT,
         entrypoint.ENV_COGNITO_JWKS_SHA256,
+        entrypoint.ENV_EXECUTION_WINDOW_START,
+        entrypoint.ENV_EXECUTION_WINDOW_END,
     ):
         monkeypatch.delenv(name, raising=False)
     return tmp_path
@@ -93,6 +96,9 @@ def _set_environment(expected_digest: str | None):
     os.environ[entrypoint.ENV_API_ID] = API_ID
     os.environ[entrypoint.ENV_COGNITO_CLIENT_ID] = CLIENT_ID
     os.environ[entrypoint.ENV_OWNER_SUBJECT] = OWNER
+    now = int(time.time())
+    os.environ[entrypoint.ENV_EXECUTION_WINDOW_START] = str(now - 1)
+    os.environ[entrypoint.ENV_EXECUTION_WINDOW_END] = str(now + 299)
     if expected_digest is not None:
         os.environ[entrypoint.ENV_COGNITO_JWKS_SHA256] = expected_digest
     else:
@@ -138,9 +144,9 @@ def _event(policy, token, body):
     }
 
 
-def _request(private, policy, method="tools/list", params=None, request_id=1, *, kid=KID):
+def _request(private, policy, method="tools/list", params=None, request_id=1, *, kid=KID, context=None):
     token = _signed_token(private, policy, kid=kid)
-    return entrypoint.handler(_event(policy, token, _rpc(method, params, request_id)), LambdaContext())
+    return entrypoint.handler(_event(policy, token, _rpc(method, params, request_id)), context or LambdaContext())
 
 
 def test_public_environment_names_and_artifact_filenames_are_fixed():
@@ -151,6 +157,8 @@ def test_public_environment_names_and_artifact_filenames_are_fixed():
     assert entrypoint.ENV_COGNITO_CLIENT_ID == "MAPIT_COGNITO_CLIENT_ID"
     assert entrypoint.ENV_OWNER_SUBJECT == "MAPIT_OWNER_SUBJECT"
     assert entrypoint.ENV_COGNITO_JWKS_SHA256 == "MAPIT_COGNITO_JWKS_SHA256"
+    assert entrypoint.ENV_EXECUTION_WINDOW_START == "MAPIT_DEV_EXECUTION_START_EPOCH"
+    assert entrypoint.ENV_EXECUTION_WINDOW_END == "MAPIT_DEV_EXECUTION_END_EPOCH"
     assert entrypoint.JWKS_SNAPSHOT_FILENAME == "cognito-public-jwks.json"
     assert entrypoint.JWKS_MANIFEST_FILENAME == "cognito-public-jwks.manifest.json"
 
@@ -361,3 +369,155 @@ def test_initialization_errors_emit_no_diagnostics_or_untrusted_values(isolated_
     assert "private-marker" not in response["body"]
     assert "private-marker" not in captured.out
     assert "private-marker" not in captured.err
+
+
+@pytest.mark.parametrize("window", [
+    (None, "200"),
+    ("100", None),
+    ("0100", "200"),
+    ("+100", "200"),
+    ("1e2", "200"),
+    ("100.0", "200"),
+    ("100", "100"),
+    ("100", "400.0001"),
+    ("NaN", "200"),
+    ("9" * 33, "200"),
+])
+def test_invalid_window_fails_before_reading_artifacts(isolated_entrypoint, monkeypatch, window):
+    _set_environment("a" * 64)
+    if window[0] is None:
+        monkeypatch.delenv(entrypoint.ENV_EXECUTION_WINDOW_START, raising=False)
+    else:
+        monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, window[0])
+    if window[1] is None:
+        monkeypatch.delenv(entrypoint.ENV_EXECUTION_WINDOW_END, raising=False)
+    else:
+        monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, window[1])
+    monkeypatch.setattr(entrypoint, "_clock", lambda: 150.0)
+    reads = []
+    monkeypatch.setattr(entrypoint, "_read_fixed_sibling", lambda *args: reads.append(args) or b"private")
+    assert entrypoint.handler({"untrusted": "not echoed"}, LambdaContext()) == entrypoint._unavailable()
+    assert reads == []
+    assert entrypoint._CACHED_RUNTIME is None
+
+
+@pytest.mark.parametrize("now", [99.999, 200.0, 250.0, float("nan"), float("inf")])
+def test_window_not_started_expired_or_invalid_clock_fails_before_artifact_read(isolated_entrypoint, monkeypatch, now):
+    _set_environment("a" * 64)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    monkeypatch.setattr(entrypoint, "_clock", lambda: now)
+    reads = []
+    monkeypatch.setattr(entrypoint, "_read_fixed_sibling", lambda *args: reads.append(args) or b"private")
+    assert entrypoint.handler({}, LambdaContext()) == entrypoint._unavailable()
+    assert reads == []
+    assert entrypoint._CACHED_RUNTIME is None
+
+
+def test_window_start_is_inclusive_and_context_budget_never_exceeds_window_plus_adapter_reserve(isolated_entrypoint, monkeypatch):
+    from types import SimpleNamespace
+
+    _set_environment("a" * 64)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    clock = [100.0]
+    monkeypatch.setattr(entrypoint, "_clock", lambda: clock[0])
+    observed = []
+    policy = entrypoint._policy_from_environment()
+
+    def fake_handler(_event, context):
+        observed.append(context.get_remaining_time_in_millis())
+        return {"statusCode": 200}
+
+    monkeypatch.setattr(entrypoint, "_load_runtime", lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=fake_handler), "a" * 64))
+    class LongContext:
+        def get_remaining_time_in_millis(self):
+            return 300_000
+
+    response = entrypoint.handler({}, LongContext())
+    assert response == {"statusCode": 200}
+    assert len(observed) == 1
+    assert 0 < observed[0] <= 101_000
+    assert entrypoint._CACHED_WINDOW == ("100", "200")
+
+
+def test_execution_window_cannot_be_rearmed_after_warm_initialization(isolated_entrypoint, monkeypatch):
+    _set_environment("a" * 64)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    monkeypatch.setattr(entrypoint, "_clock", lambda: 150.0)
+    reads = []
+    monkeypatch.setattr(entrypoint, "_load_runtime", lambda policy, _digest: reads.append(policy) or (type("Runtime", (), {"policy": policy, "lambda_handler": lambda *_: {"statusCode": 200}})(), "a" * 64))
+    assert entrypoint.handler({}, LambdaContext()) == {"statusCode": 200}
+    assert len(reads) == 1
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "101")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "201")
+    assert entrypoint.handler({}, LambdaContext()) == entrypoint._unavailable()
+    assert len(reads) == 1
+
+
+def test_result_finishing_at_or_after_window_end_is_denied(isolated_entrypoint, monkeypatch):
+    from types import SimpleNamespace
+
+    _set_environment("a" * 64)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    clock = [199.5]
+    monkeypatch.setattr(entrypoint, "_clock", lambda: clock[0])
+    policy = entrypoint._policy_from_environment()
+
+    def late_handler(_event, _context):
+        clock[0] = 200.0
+        return {"statusCode": 200, "body": "late private result"}
+
+    monkeypatch.setattr(entrypoint, "_load_runtime", lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=late_handler), "a" * 64))
+    assert entrypoint.handler({}, LambdaContext()) == entrypoint._unavailable()
+
+
+@pytest.mark.parametrize("clock_samples", [
+    [150.0, 150.0, 99.0, 150.0],
+    [150.0, 150.0, 150.0, 99.0],
+])
+def test_window_clock_rollback_during_context_setup_never_dispatches(isolated_entrypoint, monkeypatch, clock_samples):
+    from types import SimpleNamespace
+
+    _set_environment("a" * 64)
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_START, "100")
+    monkeypatch.setenv(entrypoint.ENV_EXECUTION_WINDOW_END, "200")
+    samples = iter(clock_samples)
+    monkeypatch.setattr(entrypoint, "_clock", lambda: next(samples))
+    policy = entrypoint._policy_from_environment()
+    dispatched = []
+
+    def fake_handler(_event, _context):
+        dispatched.append(True)
+        return {"statusCode": 200}
+
+    monkeypatch.setattr(entrypoint, "_load_runtime", lambda *_args: (SimpleNamespace(policy=policy, lambda_handler=fake_handler), "a" * 64))
+    assert entrypoint.handler({}, LambdaContext()) == entrypoint._unavailable()
+    assert dispatched == []
+
+
+def test_context_budget_decays_and_stays_below_original_and_window_cap(monkeypatch):
+    monotonic = [50.0]
+    epoch = [199.5]
+    monkeypatch.setattr(entrypoint.time, "monotonic", lambda: monotonic[0])
+    monkeypatch.setattr(entrypoint, "_clock", lambda: epoch[0])
+    context = entrypoint._BoundedContext(100_000, 50.0, 100.0, 200.0)
+    assert context.get_remaining_time_in_millis() <= 1_500
+    monotonic[0] += 0.25
+    epoch[0] = 199.75
+    decayed = context.get_remaining_time_in_millis()
+    assert 0 <= decayed <= 1_250
+    assert decayed < 100_000
+
+
+def test_adapter_timeout_from_short_lambda_context_is_preserved(isolated_entrypoint):
+    class ShortContext:
+        def get_remaining_time_in_millis(self):
+            return 700
+
+    tmp_path = isolated_entrypoint
+    private, policy, _, _, _ = _fixture_bundle(tmp_path)
+    response = _request(private, policy, context=ShortContext())
+    assert response["statusCode"] == 504

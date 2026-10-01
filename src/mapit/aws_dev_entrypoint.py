@@ -12,6 +12,9 @@ import hmac
 import json
 import os
 import re
+import math
+import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -24,16 +27,118 @@ ENV_API_ID = "MAPIT_API_ID"
 ENV_COGNITO_CLIENT_ID = "MAPIT_COGNITO_CLIENT_ID"
 ENV_OWNER_SUBJECT = "MAPIT_OWNER_SUBJECT"
 ENV_COGNITO_JWKS_SHA256 = "MAPIT_COGNITO_JWKS_SHA256"
+ENV_EXECUTION_WINDOW_START = "MAPIT_DEV_EXECUTION_START_EPOCH"
+ENV_EXECUTION_WINDOW_END = "MAPIT_DEV_EXECUTION_END_EPOCH"
 
 JWKS_SNAPSHOT_FILENAME = "cognito-public-jwks.json"
 JWKS_MANIFEST_FILENAME = "cognito-public-jwks.manifest.json"
 MAX_JWKS_SNAPSHOT_BYTES = 32 * 1024
 MAX_JWKS_MANIFEST_BYTES = 2 * 1024
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+_CANONICAL_EPOCH = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$")
 _UNAVAILABLE_BODY = b'{"error":"service_unavailable"}'
+_MAX_EXECUTION_WINDOW_SECONDS = Decimal("300")
+_ADAPTER_SERIALIZATION_RESERVE_SECONDS = 1.0
 
 _CACHED_RUNTIME: AwsDevSyntheticRuntime | None = None
 _CACHED_JWKS_SHA256: str | None = None
+_CACHED_WINDOW: tuple[str, str] | None = None
+
+
+def _clock() -> float:
+    """Private test seam; production uses the system UTC epoch clock."""
+    return time.time()
+
+
+class _BoundedContext:
+    """Pass a non-increasing Lambda budget capped at the absolute window end."""
+
+    def __init__(self, remaining_ms: int, captured_monotonic: float, window_start: float, window_end: float) -> None:
+        self._remaining_ms = remaining_ms
+        self._captured_monotonic = captured_monotonic
+        self._window_start = window_start
+        self._window_end = window_end
+        self._last_remaining_ms = remaining_ms
+
+    def get_remaining_time_in_millis(self) -> int:
+        elapsed = max(0.0, time.monotonic() - self._captured_monotonic)
+        elapsed_ms = math.ceil(elapsed * 1000)
+        lambda_remaining = self._remaining_ms - elapsed_ms
+        now = _clock()
+        if (
+            type(now) not in (int, float)
+            or not math.isfinite(now)
+            or now < self._window_start
+            or now >= self._window_end
+        ):
+            self._last_remaining_ms = 0
+            return 0
+        window_cap = math.floor((self._window_end - now + _ADAPTER_SERIALIZATION_RESERVE_SECONDS) * 1000)
+        self._last_remaining_ms = max(0, min(self._last_remaining_ms, lambda_remaining, window_cap))
+        return self._last_remaining_ms
+
+
+def _epoch_window_from_environment(now: Any) -> tuple[str, str, float, float]:
+    start_text = os.environ.get(ENV_EXECUTION_WINDOW_START)
+    end_text = os.environ.get(ENV_EXECUTION_WINDOW_END)
+    if (
+        not isinstance(start_text, str)
+        or not isinstance(end_text, str)
+        or len(start_text) > 32
+        or len(end_text) > 32
+        or not _CANONICAL_EPOCH.fullmatch(start_text)
+        or not _CANONICAL_EPOCH.fullmatch(end_text)
+    ):
+        raise ValueError("execution window configuration is invalid")
+    try:
+        start_decimal = Decimal(start_text)
+        end_decimal = Decimal(end_text)
+    except InvalidOperation:
+        raise ValueError("execution window configuration is invalid") from None
+    span = end_decimal - start_decimal
+    if span <= 0 or span > _MAX_EXECUTION_WINDOW_SECONDS:
+        raise ValueError("execution window span is invalid")
+    try:
+        clock_is_finite = type(now) in (int, float) and math.isfinite(now)
+    except (OverflowError, TypeError, ValueError):
+        clock_is_finite = False
+    if not clock_is_finite:
+        raise ValueError("clock is invalid")
+    start, end = float(start_decimal), float(end_decimal)
+    if not math.isfinite(start) or not math.isfinite(end):
+        raise ValueError("execution window is outside numeric range")
+    if now < start or now >= end:
+        raise ValueError("execution window is not active")
+    return start_text, end_text, start, end
+
+
+def _capped_context(context: Any, window_start: float, window_end: float) -> _BoundedContext:
+    captured_monotonic = time.monotonic()
+    try:
+        original_ms = context.get_remaining_time_in_millis()
+    except Exception:
+        raise ValueError("invocation budget is unavailable") from None
+    if type(original_ms) is not int or original_ms <= 0:
+        raise ValueError("invocation budget is invalid")
+    now = _clock()
+    if (
+        type(now) not in (int, float)
+        or not math.isfinite(now)
+        or now < window_start
+        or now >= window_end
+    ):
+        raise ValueError("execution window has no remaining budget")
+    # The adapter itself reserves one second for response serialization. Add
+    # that reserve to its context budget; the dynamic wrapper recomputes this
+    # ceiling at dispatch time so wrapper overhead cannot extend the window.
+    until_window_plus_reserve = (window_end - now + _ADAPTER_SERIALIZATION_RESERVE_SECONDS) * 1000
+    if not math.isfinite(until_window_plus_reserve) or until_window_plus_reserve <= 0:
+        raise ValueError("execution window has no remaining budget")
+    if math.floor(until_window_plus_reserve) <= 0:
+        raise ValueError("execution window has no remaining budget")
+    # Keep the pre-read monotonic sample: a slow context getter consumes this
+    # same invocation budget and must not cause the value to be overstated.
+    return _BoundedContext(original_ms, captured_monotonic, window_start, window_end)
 
 
 def _unavailable() -> dict[str, Any]:
@@ -131,8 +236,10 @@ def _load_runtime(policy, expected_sha256: str) -> tuple[AwsDevSyntheticRuntime,
 
 def handler(event: Any, context: Any) -> dict[str, Any]:
     """Synchronous Lambda entrypoint; failures before runtime readiness are constant 503."""
-    global _CACHED_RUNTIME, _CACHED_JWKS_SHA256
+    global _CACHED_RUNTIME, _CACHED_JWKS_SHA256, _CACHED_WINDOW
     try:
+        start_text, end_text, window_start, window_end = _epoch_window_from_environment(_clock())
+        window_binding = (start_text, end_text)
         policy = _policy_from_environment()
         expected_sha256 = os.environ.get(ENV_COGNITO_JWKS_SHA256)
         if not isinstance(expected_sha256, str) or not _SHA256_HEX.fullmatch(expected_sha256):
@@ -140,10 +247,35 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
         if _CACHED_RUNTIME is None:
             runtime, digest = _load_runtime(policy, expected_sha256)
             # Publish cache state only after the entire runtime constructed.
-            _CACHED_RUNTIME, _CACHED_JWKS_SHA256 = runtime, digest
-        elif _CACHED_RUNTIME.policy != policy or not hmac.compare_digest(_CACHED_JWKS_SHA256 or "", expected_sha256):
+            _CACHED_RUNTIME, _CACHED_JWKS_SHA256, _CACHED_WINDOW = runtime, digest, window_binding
+        elif (
+            _CACHED_RUNTIME.policy != policy
+            or _CACHED_WINDOW != window_binding
+            or not hmac.compare_digest(_CACHED_JWKS_SHA256 or "", expected_sha256)
+        ):
             return _unavailable()
-        return _CACHED_RUNTIME.lambda_handler(event, context)
+        dispatch_now = _clock()
+        if type(dispatch_now) not in (int, float) or not math.isfinite(dispatch_now) or dispatch_now < float(start_text) or dispatch_now >= window_end:
+            return _unavailable()
+        bounded_context = _capped_context(context, window_start, window_end)
+        before_dispatch = _clock()
+        if (
+            type(before_dispatch) not in (int, float)
+            or not math.isfinite(before_dispatch)
+            or before_dispatch < window_start
+            or before_dispatch >= window_end
+        ):
+            return _unavailable()
+        result = _CACHED_RUNTIME.lambda_handler(event, bounded_context)
+        completed_at = _clock()
+        if (
+            type(completed_at) not in (int, float)
+            or not math.isfinite(completed_at)
+            or completed_at < window_start
+            or completed_at >= window_end
+        ):
+            return _unavailable()
+        return result
     except Exception:
         # Do not expose environment values, paths, parser details, or exception text.
         return _unavailable()
@@ -155,6 +287,8 @@ __all__ = [
     "ENV_COGNITO_CLIENT_ID",
     "ENV_COGNITO_JWKS_SHA256",
     "ENV_COGNITO_USER_POOL_ID",
+    "ENV_EXECUTION_WINDOW_END",
+    "ENV_EXECUTION_WINDOW_START",
     "ENV_MAPIT_MCP_ENV",
     "ENV_OWNER_SUBJECT",
     "JWKS_MANIFEST_FILENAME",
