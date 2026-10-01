@@ -108,6 +108,21 @@ focused and 754 full offline tests passing (3 skipped). Keep infrastructure disa
 unchanged; no account SDK operation, deployment, private-data transfer, live
 MAPIT/Telegram/model call or credential handoff is implied. Do not commit
 private financial balances, account/credit identifiers or browser/session data.
+The user subsequently approved a bounded dev gate on 2026-10-01: eu-west-1,
+synthetic tools only, resources for at most one hour, endpoint active at most
+five minutes, USD 1 gross allowance (not a guaranteed billing hard cap), and
+shutdown/deletion of newly created resources. No prod, MAPIT data/session,
+Telegram or paid model call is included. The supervisor made exactly one STS
+identity read and one Lambda account-settings read, with one CLI attempt each
+and only categorical/count outputs. Authentication succeeded with a non-root
+identity; regional concurrency limit and unreserved pool were both 10.
+No resource was created or activated. Provisioning is suspended: positive
+reserved concurrency is unavailable under the documented unreserved-pool rule.
+Do not remove reserved concurrency 0, increase quotas, or switch region/runtime
+without the user's next decision. A shared-pool fallback would lose an exact
+per-function concurrency cap and needs explicit approval plus tested independent
+shutdown. Runtime Cognito configuration, ARM packaging, exact callback/owner
+binding and cleanup still require preparation and review before creation.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

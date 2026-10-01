@@ -1,19 +1,60 @@
 # Phase 8 — AWS preparation and next gate
 
 Status: LOCAL SYNTHETIC HTTP/AUTH AND LAMBDA COMPOSITION ACCEPTED;
-deployment not authorized.
+bounded dev gate approved, provisioning suspended at concurrency decision.
 The user authorized design, public price research and offline infrastructure as
 code on 2026-09-30, then the bounded local HTTP/auth tests on 2026-10-01; see
 [local HTTP contract](phase-8-local-http-contract.md). Phase 7 is complete. A later
 user-authorized read-only billing-console review confirmed active credits and
 eligibility of core proposed services; exact balances and private identifiers
 are not recorded in Git. The Free Tier view had no usage data, which is not
-proof of eligibility or zero charges. No account SDK/inventory operation,
-resource creation, deployment, credential transfer or paid inference occurred.
+proof of eligibility or zero charges. Before the dev gate below, no account
+SDK/inventory operation, resource creation, deployment, credential transfer or
+paid inference occurred.
 The local [Lambda composition block](phase-8-lambda-local-contract.md) is now
 independently accepted offline: 42 focused tests and 754 full tests pass (3
 skipped), compilation succeeds and the model-free evaluator passes 12/12.
 Phase 8 exit criteria remain open.
+
+## Approved dev gate and preflight — 2026-10-01
+
+The user approved dev in `eu-west-1`, synthetic data/tools only, resources for
+at most one hour, endpoint active at most five minutes, a USD 1 gross allowance
+expected against credits (not an AWS-enforced billing cap), and shutdown plus
+deletion of newly created resources. Prod, real MAPIT data/session migration,
+Telegram and paid model inference remain excluded. The window has not opened;
+the resource-lifetime clock starts only with the first resource creation.
+
+Two bounded read-only CLI operations were made: one STS identity check and one
+Lambda account-settings read, each with one attempt and short timeouts. Only
+booleans/categories and quota counts were emitted, not identities or credentials.
+Authentication succeeded with a non-root identity. Lambda reported regional
+concurrency limit **10** and unreserved concurrency **10**. No resources,
+identities, alarms or schedules were created, and no function was invoked.
+
+AWS currently documents positive reserved concurrency as at most the unreserved
+pool minus 100. The observed reduced quota therefore offers no positive reserve
+for the intended one-execution cap. This is a documented-rule inference; no
+concurrency mutation was attempted. See [reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html)
+and [reduced account quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
+
+Provisioning is suspended pending a specific fallback decision. Removing reserve
+0 during activation would use the shared account pool rather than enforce one
+execution per function. Stage throttling is not an equivalent concurrency cap.
+Do not silently remove the reserve, request a quota increase or change region.
+A fallback, if approved, still needs bounded requests, independently armed
+shutdown, restoration of reserve 0, post-close verification and complete cleanup.
+The historical vault example's retained pool of 10 must not be treated as AWS's
+currently documented general rule of 100; recheck effective settings before any
+activation.
+
+Other prerequisites remain: a separate synthetic-only runtime policy for real
+Cognito issuer/resource/owner (no weakening of the accepted `.invalid` factories),
+Linux ARM Python 3.13 package/import tests, exact client callback and owner
+binding, reviewed creation/cleanup orchestration and independent shutdown.
+The existing inline-503 template remains unchanged and must not be deployed as
+if it were a working MCP artifact. No CloudFormation validation or OAuth E2E
+was performed by this preflight.
 
 ## Proposed minimal service
 
@@ -162,7 +203,11 @@ Sources: [budget latency](https://docs.aws.amazon.com/cost-management/latest/use
 
 ## Next gates
 
-1. **Bounded dev deployment/cost/identity gate**: approve region, minimal service
+1. **Bounded dev deployment/cost/identity gate**: the short synthetic dev window
+   above is approved but suspended at the concurrency decision. Before creation,
+   finish the runtime/package/shutdown prerequisites and confirm the intended
+   account/operator and exact owner/callback binding. For any later live-data
+   expansion, approve region, minimal service
    scope, account read/provisioning authority, a defined gross spend envelope and
    test duration, operator/owner identity, exact callback/resource URI, secret
    handoff/rotation and cleanup. First complete synthetic transport/deadline,
