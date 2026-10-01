@@ -112,7 +112,7 @@ The user subsequently approved a bounded dev gate on 2026-10-01: eu-west-1,
 synthetic tools only, resources for at most one hour, endpoint active at most
 five minutes, USD 1 gross allowance (not a guaranteed billing hard cap), and
 shutdown/deletion of newly created resources. No prod, MAPIT data/session,
-Telegram or paid model call is included. The supervisor made exactly one STS
+Telegram or paid model call is included. The initial preflight made one STS
 identity read and one Lambda account-settings read, with one CLI attempt each
 and only categorical/count outputs. Authentication succeeded with a non-root
 identity; regional concurrency limit and unreserved pool were both 10.
@@ -128,13 +128,23 @@ The user then authorized gates of the agreed work for a two-hour window on
 USD 1 gross, five-minute endpoint and one-hour resource limits; no prod,
 MAPIT/session migration or paid inference. Coordinate a regional increase only
 after independent project controls are reviewed; no shared-pool fallback.
-The `aws-remote-mcp` owner chat is preparing its own offline concurrency change;
+The `aws-remote-mcp` owner chat completed its own offline concurrency preparation;
 do not modify that repository here. A single Service Quotas read confirmed
 applied quota 10 and adjustable=true; no increase request was made.
-The next approved local block is the dev-only Cognito/public-key synthetic
-factory in `docs/phase-8-aws-preparation.md`, preserving immutable `.invalid`
-factories and no general/live provider injection. Require independent review
-before an env entrypoint, JWKS network fetch, packaging or IaC activation.
+The dev-only Cognito/public-key synthetic factory and fail-closed environment
+entrypoint are independently accepted locally with 830 tests (3 skipped),
+compilation and evaluator 12/12. The exact generated-fixture ZIP passed all ten
+tools and negative authorization/configuration cases in the pinned official
+ARM image with networking disabled. Immutable `.invalid` factories remain closed;
+no arbitrary/live provider, runtime key discovery or local credential lookup.
+See `docs/phase-8-aws-preparation.md`. Additional read-only inventory confirmed
+both other-project MCP handlers have reserve 0 and both default HTTP endpoints
+are disabled; shutdown reservations and intended billing-account binding remain
+unverified. Two MCP reserves plus two dedicated DEV shutdown reserves would
+require a structural floor of 104, not yet requested. Actual public-key retrieval,
+final deployment packaging, callback/owner binding, shutdown/IaC/cleanup wiring
+and cloud interoperability remain separate reviewed prerequisites. No resource
+has been created, quota requested or function invoked.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

@@ -116,9 +116,59 @@ Shutdown Lambdas in the shared pool are not guaranteed capacity under saturation
 Fresh allocation inventory, explicit shutdown-capacity review and intended-account
 verification must precede a precise increase request. No request has been submitted.
 
+A subsequent bounded read-only inventory found 15 regional Lambda functions and
+four matching the existing remote-MCP project prefix. Both MCP handlers report
+reserve 0. The two shutdown functions' concurrency reads did not yield a parsed
+configuration, so their reservation remains unverified rather than inferred.
+Both matching HTTP APIs have their default execute-api endpoints disabled.
+Regional limit/unreserved limit remain 10/10. The CLI JSON query was made explicit
+after an initial output-parse failure; no raw account payload was emitted. These
+checks neither activate that project nor prove custom-domain closure, workload
+demand, credentials-to-billing-account binding or guaranteed shutdown capacity.
+No AWS mutation, quota request or function invocation occurred.
+
 Sources: [Lambda packaging](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html),
 [reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html),
 [concurrency metrics](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-concurrency.html).
+
+Next approved offline block: a separately named synthetic-dev Lambda entrypoint.
+Load only explicit dev/eu-west-1 identity parameters and a public JWKS snapshot
+from a fixed sibling artifact file, bounded before reading/parsing, bound by an
+expected SHA-256 plus exact derived issuer/JWKS URI manifest. Generated manifests,
+real identifiers and bundles remain outside Git. Missing/malformed/prod/mismatched
+configuration yields a constant unavailable response, never a local default.
+Cache only a successfully initialized synthetic runtime; do not fetch/refresh keys,
+read secrets, accept an arbitrary path/provider or add runtime network/AWS SDK use.
+Unknown rotated keys remain denied. No infra, IAM or activation edits in this block.
+Tests use only generated synthetic snapshot files; independent review and testing
+of the exact staged source in the network-disabled ARM image precede acceptance.
+Operator retrieval of actual public Cognito keys is a later bounded action, not
+implied by this entrypoint. Avoid storing the 32 KiB snapshot in Lambda's aggregate
+4 KiB environment allowance.
+
+This entrypoint block is independently accepted: 30 focused tests, **830 passed,
+3 skipped** overall, compilation and the model-free evaluator 12/12. The exact
+staged synthetic-fixture ZIP was extracted and tested in the pinned official ARM
+image with networking disabled. ZIP size: 9,397,697 bytes; SHA-256:
+`c3cee4bab4f08bc2e57fc28e639624ed1792a4655c13e2fe187090961ccc8bb4`.
+Its actual imported entrypoint passed initialize, discovery of all ten tools,
+all ten tool calls and a warm repeated call. Unknown key, changed warm owner,
+snapshot hash mismatch and missing environment were denied. Generated keys and
+identifiers were synthetic; private signing material existed only in probe memory.
+The dependency directory passed a strict known-advisory audit on 2026-10-01;
+this is not proof of absence of unknown vulnerabilities. SDK lifecycle logging
+was generic; no real identity, token, route or account payload was used or logged.
+The probe ZIP and fixture data remain outside Git and are not an actual Cognito
+deployment artifact. Actual public-key retrieval, final reproducible packaging,
+IaC/shutdown wiring and authenticated cloud interoperability remain open.
+
+The other project's follow-up offline design recommends a static reserve 1 for
+its DEV shutdown rather than mutating capacity dynamically. Two MCP reserves plus
+two dedicated DEV shutdown reserves imply a structural floor of 104, before any
+other allocations. This is a design figure, not an approved/submitted quota request
+or a guarantee against control-plane/IAM/handler failures. Reserving PROD shutdowns
+is not part of this dev test. An alternative Step Functions control-plane closure
+adds complexity/roles/cost and remains unverified, not selected for implementation.
 
 One private, single-owner read-only MCP per environment in `eu-west-1`
 (Ireland): HTTP API Gateway, ARM Lambda, Cognito authorization-code/PKCE login,
