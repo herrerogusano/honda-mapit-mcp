@@ -170,6 +170,35 @@ or a guarantee against control-plane/IAM/handler failures. Reserving PROD shutdo
 is not part of this dev test. An alternative Step Functions control-plane closure
 adds complexity/roles/cost and remains unverified, not selected for implementation.
 
+The shutdown design investigation confirms direct CloudWatch alarm-to-Lambda
+actions can avoid SNS. Scope invocation permission to the alarm principal,
+account and exact alarm ARN; the Scheduler role invokes only the dedicated
+shutdown function. The shutdown role needs exact-resource update/readback rights
+for the owned API and MCP function, not access to secrets or either data provider.
+Attempt both closing actions even if API disablement fails, then verify both.
+Use a separate pinned Boto3 artifact, not the MCP dependency bundle. This is
+design evidence only: no shutdown implementation, IAM/template change or wiring
+acceptance has occurred.
+
+HTTP API Count is available by API/stage in one-minute periods. CloudWatch alarm
+actions fire on state transitions, Scheduler precision is 60 seconds, and API
+throttling is best-effort. Scheduling at exactly five minutes does not establish
+an at-most-five-minute endpoint guarantee. The opener needs advance closure,
+verified readback and an application-level absolute tool-use expiry as defense
+in depth. Tool expiry alone does not disable/bill-cap the endpoint; no strict
+availability or spend guarantee should be claimed under control-plane failure.
+Operator `finally` cleanup does not guarantee deletion if the operator dies;
+independent resource-lifetime cleanup and failure recovery remain unresolved
+before provisioning. Missing first login/MFA and exact callback/owner/account
+binding remain additional prerequisites, not permission requests already supplied
+by the time-bounded authorization.
+
+Sources: [alarm Lambda actions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarms-and-actions-Lambda.html),
+[alarm transitions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarm-actions.html),
+[HTTP API metrics](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-metrics.html),
+[Scheduler precision](https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html),
+[best-effort throttling](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-throttling.html).
+
 One private, single-owner read-only MCP per environment in `eu-west-1`
 (Ireland): HTTP API Gateway, ARM Lambda, Cognito authorization-code/PKCE login,
 and short-retention redacted CloudWatch logs. No hosted LLM, Bedrock, persistent
