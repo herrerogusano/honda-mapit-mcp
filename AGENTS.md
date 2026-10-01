@@ -101,6 +101,13 @@ The local block is independently accepted: 35 focused HTTP tests and 712 full
 offline tests pass (3 skipped), with real SDK protocol serialization but only
 synthetic data. No deployment, actual OAuth login or live upstream deadline
 acceptance follows from this result; stop at the separate dev gate.
+After a read-only console credit review, the user requested advancing. The next
+approved implementation is the offline synthetic Lambda/payload-v2 composition
+in `docs/phase-8-lambda-local-contract.md`, now independently accepted with 42
+focused and 754 full offline tests passing (3 skipped). Keep infrastructure disabled and
+unchanged; no account SDK operation, deployment, private-data transfer, live
+MAPIT/Telegram/model call or credential handoff is implied. Do not commit
+private financial balances, account/credit identifiers or browser/session data.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

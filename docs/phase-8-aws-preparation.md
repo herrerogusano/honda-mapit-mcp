@@ -1,11 +1,19 @@
 # Phase 8 — AWS preparation and next gate
 
-Status: LOCAL SYNTHETIC HTTP/AUTH ACCEPTED; deployment not authorized.
+Status: LOCAL SYNTHETIC HTTP/AUTH AND LAMBDA COMPOSITION ACCEPTED;
+deployment not authorized.
 The user authorized design, public price research and offline infrastructure as
 code on 2026-09-30, then the bounded local HTTP/auth tests on 2026-10-01; see
-[local HTTP contract](phase-8-local-http-contract.md). Phase 7 is complete. No AWS
-account was queried, resources created, deployment performed, credentials
-transferred, or paid inference invoked. Phase 8 exit criteria remain open.
+[local HTTP contract](phase-8-local-http-contract.md). Phase 7 is complete. A later
+user-authorized read-only billing-console review confirmed active credits and
+eligibility of core proposed services; exact balances and private identifiers
+are not recorded in Git. The Free Tier view had no usage data, which is not
+proof of eligibility or zero charges. No account SDK/inventory operation,
+resource creation, deployment, credential transfer or paid inference occurred.
+The local [Lambda composition block](phase-8-lambda-local-contract.md) is now
+independently accepted offline: 42 focused tests and 754 full tests pass (3
+skipped), compilation succeeds and the model-free evaluator passes 12/12.
+Phase 8 exit criteria remain open.
 
 ## Proposed minimal service
 
@@ -34,8 +42,9 @@ The installed MCP SDK exposes stateless Streamable HTTP with JSON responses.
 This suggests a buffered Lambda adaptation, without an always-running process.
 The local synthetic stateless JSON handshake and all ten tool calls are now
 accepted, with cryptographic token verification and negative tests; see the
-local contract. No Lambda/API Gateway adapter or actual OAuth login E2E has
-been accepted. HTTP API integration timeout is at most 30 seconds; the proposed
+local contract. The synthetic Lambda/payload-v2 adapter is independently
+accepted locally, not in AWS. No actual OAuth login E2E has been accepted.
+HTTP API integration timeout is at most 30 seconds; the proposed
 Lambda budget is 20 seconds. Existing upstream timeout/recovery can exceed that
 combined budget, so an end-to-end deadline is a prerequisite, not something the
 scaffold fixes. HTTP API response streaming is not assumed: API Gateway's
@@ -167,5 +176,6 @@ Sources: [budget latency](https://docs.aws.amazon.com/cost-management/latest/use
    evaluation scope and explicit inference spend approval. Not required to use
    this MCP from Codex. No paid model evaluation is currently approved.
 
-Do not ask for credentials pasted into chat or Git. Preparation remains entirely
-public/offline; the next user decision precedes any billable AWS operation.
+Do not ask for credentials pasted into chat or Git. Implementation remains
+offline; the separately authorized billing-console review was read-only. The
+next user decision precedes provisioning or any billable AWS operation.

@@ -520,3 +520,11 @@ ledger. Separate `.invalid` dev/prod policies and injected public verification
 keys test the resource-server boundary without a listener, cloud resources or
 inference. This does not establish real Cognito/PKCE or Codex OAuth acceptance,
 and does not make the disabled AWS scaffold deploy-ready.
+
+Local Lambda composition is also independently accepted: a synchronous synthetic
+handler factory translates strictly bounded API Gateway v2 fixtures to the HTTP
+app. See the [Lambda-local contract](docs/phase-8-lambda-local-contract.md) for
+lifecycle, remaining-time reserve and acceptance limits. It does not load a
+MAPIT session or call AWS; the infrastructure scaffold remains disabled.
+Its 42 focused tests pass; the full offline suite has 754 passed and 3 skipped.
+This proves local composition only, not cloud deployment or real OAuth login.
