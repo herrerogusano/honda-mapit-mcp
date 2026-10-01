@@ -512,3 +512,11 @@ The approved preparation is documented in
 [AWS design, regional cost assumptions and gates](docs/phase-8-aws-preparation.md).
 The offline IaC scaffold is deliberately disabled and has no working remote MCP
 or credentials. Nothing has been deployed; dev deployment remains a separate gate.
+
+The accepted offline block is a deliberately synthetic local HTTP/auth adapter;
+see its [contract and acceptance limits](docs/phase-8-local-http-contract.md).
+It constructs fixed fake services rather than loading MAPIT credentials or the
+ledger. Separate `.invalid` dev/prod policies and injected public verification
+keys test the resource-server boundary without a listener, cloud resources or
+inference. This does not establish real Cognito/PKCE or Codex OAuth acceptance,
+and does not make the disabled AWS scaffold deploy-ready.

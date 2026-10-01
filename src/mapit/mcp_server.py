@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Callable, TypeVar
 
 from mcp.server import MCPServer
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
@@ -37,9 +39,18 @@ def _safe_call(operation: Callable[[], T]) -> T:
         raise ToolError(f"{exc.code}: {exc.public_message}") from None
 
 
-def create_server(provider: ServiceProvider | None = None) -> MCPServer:
+def create_server(
+    provider: ServiceProvider | None = None,
+    *,
+    auth_settings: AuthSettings | None = None,
+    token_verifier: TokenVerifier | None = None,
+) -> MCPServer:
     """Build an injectable MCP server; handlers contain no business logic."""
-    selected = provider or ServiceProvider()
+    if (auth_settings is None) != (token_verifier is None):
+        raise ValueError("auth_settings and token_verifier must be provided together")
+    if auth_settings is not None and provider is None:
+        raise ValueError("authenticated server construction requires an explicit provider")
+    selected = provider if provider is not None else ServiceProvider()
     server = MCPServer(
         "honda-mapit",
         title="Honda MAPIT (read-only)",
@@ -51,6 +62,8 @@ def create_server(provider: ServiceProvider | None = None) -> MCPServer:
             "accuracy guarantees."
         ),
         version="0.4.0",
+        auth=auth_settings,
+        token_verifier=token_verifier,
     )
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)

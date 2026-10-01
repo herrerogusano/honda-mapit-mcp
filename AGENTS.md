@@ -89,6 +89,18 @@ That additive presentation implementation is now independently accepted offline:
 677 tests pass with 3 skipped, including synthetic MCP structured serialization.
 Retain its UI-correlated conversion basis and nullable source-flag limitations;
 it is not authorization for new route probes or inferred-road reconstruction.
+On 2026-10-01 the user approved the next Phase 8 local-only block: synthetic
+Streamable HTTP integration, cryptographic access-token verification, dev/prod
+policy isolation, and bounded-request/authorization-negative tests. Require an
+explicitly synthetic factory/provider; no default local MAPIT session, private ledger,
+credential loading, live MAPIT/Telegram/model call, AWS account operation,
+deployment or Codex configuration/login change is authorized. Keep the IaC
+disabled. Real Cognito/PKCE interoperability and live upstream deadline handling
+remain separate acceptance requirements before activation.
+The local block is independently accepted: 35 focused HTTP tests and 712 full
+offline tests pass (3 skipped), with real SDK protocol serialization but only
+synthetic data. No deployment, actual OAuth login or live upstream deadline
+acceptance follows from this result; stop at the separate dev gate.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

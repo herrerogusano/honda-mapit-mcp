@@ -1,7 +1,9 @@
 # Phase 8 — AWS preparation and next gate
 
-Status: PREPARATION ONLY. The user authorized design, public price research and
-offline infrastructure as code on 2026-09-30. Phase 7 is complete. No AWS
+Status: LOCAL SYNTHETIC HTTP/AUTH ACCEPTED; deployment not authorized.
+The user authorized design, public price research and offline infrastructure as
+code on 2026-09-30, then the bounded local HTTP/auth tests on 2026-10-01; see
+[local HTTP contract](phase-8-local-http-contract.md). Phase 7 is complete. No AWS
 account was queried, resources created, deployment performed, credentials
 transferred, or paid inference invoked. Phase 8 exit criteria remain open.
 
@@ -23,14 +25,16 @@ The offline [template](../infra/aws/template.json) is a guardrail scaffold, not
 a deploy-ready MCP. Its Lambda is a constant unavailable response, concurrency
 is zero, and the default execute-api endpoint is disabled. It contains no MAPIT
 session or IAM access to one. It must not be deployed as a way of testing it:
-creating even disabled resources can have costs. Only local template tests are
-within the current approval.
+creating even disabled resources can have costs. Local template tests and the
+separately bounded synthetic HTTP/auth block are within the current approval.
 
 ## Transport feasibility, not interoperability acceptance
 
 The installed MCP SDK exposes stateless Streamable HTTP with JSON responses.
 This suggests a buffered Lambda adaptation, without an always-running process.
-However, no remote adapter, synthetic client handshake or OAuth E2E has yet
+The local synthetic stateless JSON handshake and all ten tool calls are now
+accepted, with cryptographic token verification and negative tests; see the
+local contract. No Lambda/API Gateway adapter or actual OAuth login E2E has
 been accepted. HTTP API integration timeout is at most 30 seconds; the proposed
 Lambda budget is 20 seconds. Existing upstream timeout/recovery can exceed that
 combined budget, so an end-to-end deadline is a prerequisite, not something the
@@ -90,7 +94,7 @@ Sources: [SSM parameters](https://docs.aws.amazon.com/systems-manager/latest/use
   URI and callback must be replaced only through a reviewed future patch.
 - The protected POST `/mcp` route has JWT audience and required resource scope.
   There is no anonymous MCP route or default wildcard route. GET handling/405 and
-  public OAuth metadata remain future transport-interoperability work.
+  public OAuth metadata are locally tested but remain unwired in the AWS scaffold.
 - Reserved concurrency is literally zero; there is no activation toggle. Lambda
   cannot currently read secrets or MAPIT, and its code does not log request data.
 - Seven-day application log retention is proposed. No payload/token/location
