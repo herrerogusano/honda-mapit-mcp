@@ -21,4 +21,3 @@ def native_distance_to_km(value: Any) -> float | None:
         return None
     converted = native / 1000.0
     return converted if math.isfinite(converted) else None
-
