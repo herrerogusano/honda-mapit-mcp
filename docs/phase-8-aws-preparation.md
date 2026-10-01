@@ -335,4 +335,8 @@ Sources: [budget latency](https://docs.aws.amazon.com/cost-management/latest/use
 
 Do not ask for credentials pasted into chat or Git. Implementation remains
 offline; the separately authorized billing-console review was read-only. The
-next user decision precedes provisioning or any billable AWS operation.
+temporary gate authority does not supply a missing operator identity, exact
+callback or first interactive login/MFA. Do not start the one-hour resource
+lifetime while waiting for the operator to return. Complete offline prerequisites
+first; actual provisioning remains suspended until those checks can be satisfied,
+and authority must be renewed if the two-hour approval has expired.
