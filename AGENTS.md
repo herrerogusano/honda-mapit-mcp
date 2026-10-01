@@ -123,6 +123,18 @@ without the user's next decision. A shared-pool fallback would lose an exact
 per-function concurrency cap and needs explicit approval plus tested independent
 shutdown. Runtime Cognito configuration, ARM packaging, exact callback/owner
 binding and cleanup still require preparation and review before creation.
+The user then authorized gates of the agreed work for a two-hour window on
+2026-10-01, ending about 17:53 Europe/Madrid. Maintain the dev-only/synthetic,
+USD 1 gross, five-minute endpoint and one-hour resource limits; no prod,
+MAPIT/session migration or paid inference. Coordinate a regional increase only
+after independent project controls are reviewed; no shared-pool fallback.
+The `aws-remote-mcp` owner chat is preparing its own offline concurrency change;
+do not modify that repository here. A single Service Quotas read confirmed
+applied quota 10 and adjustable=true; no increase request was made.
+The next approved local block is the dev-only Cognito/public-key synthetic
+factory in `docs/phase-8-aws-preparation.md`, preserving immutable `.invalid`
+factories and no general/live provider injection. Require independent review
+before an env entrypoint, JWKS network fetch, packaging or IaC activation.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

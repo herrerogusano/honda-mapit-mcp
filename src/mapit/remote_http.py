@@ -551,8 +551,13 @@ def create_synthetic_http_app(
     """Create an offline-only, authenticated stateless MCP ASGI app."""
     if type(config) is not RemoteHTTPConfig:
         raise ValueError("a validated synthetic HTTP config is required")
-    provider = SyntheticServicesProvider()
     verifier = FixedRS256TokenVerifier(config, public_keys)
+    return _build_synthetic_http_app(config, verifier)
+
+
+def _build_synthetic_http_app(config: Any, verifier: Any):
+    """Private composition seam; always binds the fixed synthetic provider."""
+    provider = SyntheticServicesProvider()
     server = create_server(
         provider,
         auth_settings=AuthSettings(

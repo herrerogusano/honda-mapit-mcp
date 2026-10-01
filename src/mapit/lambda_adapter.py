@@ -213,6 +213,24 @@ def create_synthetic_lambda_handler(config: RemoteHTTPConfig, public_keys: Mappi
     """Build a synchronous, offline-only API Gateway v2 handler for synthetic MCP data."""
     if type(config) is not RemoteHTTPConfig:
         raise ValueError("a validated synthetic HTTP config is required")
+    from .remote_http import FixedRS256TokenVerifier
+
+    return _build_synthetic_lambda_handler(
+        config,
+        public_keys,
+        key_validator=FixedRS256TokenVerifier,
+        app_builder=lambda selected_config, selected_keys: create_synthetic_http_app(selected_config, selected_keys),
+    )
+
+
+def _build_synthetic_lambda_handler(
+    config: Any,
+    public_keys: Mapping[str, bytes | str],
+    *,
+    key_validator: Any,
+    app_builder: Any,
+):
+    """Private adapter seam for separately validated fixed synthetic policies."""
     if not isinstance(public_keys, Mapping) or not 1 <= len(public_keys) <= 8:
         raise ValueError("a fixed public key mapping is required")
     copied: dict[str, bytes | str] = {}
@@ -235,9 +253,7 @@ def create_synthetic_lambda_handler(config: RemoteHTTPConfig, public_keys: Mappi
             raise ValueError("invalid public key mapping")
     frozen_keys = MappingProxyType(copied)
     # Validate and parse the key set once before returning a callable.
-    from .remote_http import FixedRS256TokenVerifier
-
-    FixedRS256TokenVerifier(config, frozen_keys)
+    key_validator(config, frozen_keys)
 
     def handler(event: Any, context: Any) -> dict[str, Any]:
         # Context is intentionally the first user-controlled input accessed.
@@ -276,7 +292,7 @@ def create_synthetic_lambda_handler(config: RemoteHTTPConfig, public_keys: Mappi
             )
             if remaining() < _MIN_DISPATCH_SECONDS:
                 raise _RequestError(504)
-            app = create_synthetic_http_app(invocation_config, frozen_keys)
+            app = app_builder(invocation_config, frozen_keys)
 
             async def invoke() -> dict[str, Any]:
                 response_started = False

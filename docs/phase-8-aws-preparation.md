@@ -38,7 +38,9 @@ for the intended one-execution cap. This is a documented-rule inference; no
 concurrency mutation was attempted. See [reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html)
 and [reduced account quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
 
-Provisioning is suspended pending a specific fallback decision. Removing reserve
+Provisioning is suspended pending reviewed independent controls and a coordinated
+quota decision; the user selected separate project limits, not shared-pool fallback.
+Removing reserve
 0 during activation would use the shared account pool rather than enforce one
 execution per function. Stage throttling is not an equivalent concurrency cap.
 Do not silently remove the reserve, request a quota increase or change region.
@@ -57,6 +59,66 @@ if it were a working MCP artifact. No CloudFormation validation or OAuth E2E
 was performed by this preflight.
 
 ## Proposed minimal service
+
+### Time-bounded coordination and next offline runtime block
+
+On 2026-10-01 the user authorized proceeding through gates of the agreed work
+for two hours, ending about 17:53 Europe/Madrid. This does not extend the dev
+endpoint's five-minute limit, the one-hour resource lifetime or USD 1 gross
+allowance. Prod, MAPIT data/session migration and paid inference remain outside
+this work. Authorization must be rechecked after that time before new external
+actions. No resource-creation window has begun.
+
+The existing `aws-remote-mcp` owner chat was explicitly authorized to prepare
+and independently review its own offline switch from shared-pool dependence to
+reserved concurrency. It reported its local preparation complete with 280 tests,
+fixed MCP reserve 1, fail-closed capacity preflight, independently armed shutdown
+and post-close audit. No commit, deployment or AWS operation was performed there.
+The historical quota/pool-10 fallback remains explicit opt-in in that project;
+it is not selected here. Honda must not mutate that repository or activate its service.
+An additional single-attempt Service Quotas read confirmed applied quota 10,
+adjustable=true. No increase request was submitted. Do not use a shared-pool
+fallback; review independent project controls before any coordinated increase.
+
+Approve the next bounded offline implementation: a separately named dev-only
+Cognito policy and synthetic runtime composition, with injected public keys
+and strictly derived/bounded JWKS parsing. Keep immutable `.invalid` public
+factories closed. Reuse private transport helpers where necessary without
+adding general provider injection. Always construct `SyntheticServicesProvider`;
+no local credential/session/ledger lookup, AWS SDK, secret read or MAPIT client.
+Require exact eu-west-1 Cognito issuer, owner/client/access-token claims,
+canonical execute-api `/mcp` audience and its `/use` scope. For this five-minute
+synthetic test, use a fixed public-key snapshot; unknown/rotated keys fail closed
+rather than trigger unbounded discovery. Tests use generated keys/JWKS fixtures
+only, never contact Cognito. Real JWKS retrieval, env entrypoint, ARM artifact,
+runtime IAM and independent shutdown are separate reviewed steps, not implied
+by this factory. Do not wire or activate the disabled scaffold yet.
+
+The supervisor's final local tree passes **800 tests, 3 skipped**; compilation
+and the model-free evaluator (12/12) succeed. Independent review accepted the
+final tree with 110 focused tests and the same 800-test full result. The new factory is an offline
+composition, not a Lambda environment entrypoint or proof of Cognito interoperability.
+It checks identifier format, not whether a shaped identifier exists in AWS.
+
+A local dependency-only packaging probe used the official Lambda Python 3.13 ARM
+image pinned to digest `sha256:69b91b6e0b637c459f80bc103c2e566be76cbeb934f32bf2d8c14e028ce57719`.
+Linux ARM wheels installed successfully. A subsequent container with networking
+disabled imported MCP, cryptography, pydantic-core, JWT and httpx2 on `aarch64`:
+38,257,691 dependency bytes, four native shared objects, no Windows `.pyd` files.
+This is not a final artifact, dependency vulnerability acceptance or deployed test.
+`httpx2` is a core dependency of the pinned MCP SDK, not an optional extra to remove.
+
+For two one-execution MCP reservations, the structural regional floor is
+`Q >= R + 2 + max(100, C + S)`, with other allocated reservations `R`, bounded
+shared workload demand `C` and shutdown demand `S`. A floor of 102 only applies
+when `R=0` and `C+S<=100`; no present workload bound has been established.
+Shutdown Lambdas in the shared pool are not guaranteed capacity under saturation.
+Fresh allocation inventory, explicit shutdown-capacity review and intended-account
+verification must precede a precise increase request. No request has been submitted.
+
+Sources: [Lambda packaging](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html),
+[reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html),
+[concurrency metrics](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-concurrency.html).
 
 One private, single-owner read-only MCP per environment in `eu-west-1`
 (Ireland): HTTP API Gateway, ARM Lambda, Cognito authorization-code/PKCE login,
