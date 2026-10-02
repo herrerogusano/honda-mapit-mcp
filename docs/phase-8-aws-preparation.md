@@ -588,6 +588,75 @@ checkpoint precedes the separate reusable ARM probe helper and does not include
 that helper's acceptance. The new isolated schema CI job must also pass before
 claiming its hosted result.
 
+The schema CI result for commit `24411b7` is accepted: **seven green jobs**,
+including the isolated actual four-template lint and the separate tooling audit.
+
+#### Reproducible local ARM probe — 2026-10-02
+
+`scripts/probe_aws_dev_runtime_arm.py --wheel-dir <external-local-wheel-directory>`
+rebuilds the fixed runtime ZIP from the 28 locked local ARM wheels and a fresh
+synthetic public JWKS. The pinned official image must already exist locally:
+`--pull=never`, `--network none`, ARM64, one read-only runtime ZIP mount and no
+host credential mounts. A validated local Docker context is used explicitly;
+TCP/SSH contexts are rejected. This command does not download dependencies or
+read an AWS account. Signing keys stay in host memory, synthetic tokens go only
+through stdin, and temporary public fixtures/ZIPs are removed on exit.
+
+Each run has a unique container name, ownership/run labels and bounded CID file.
+Following completion or a CLI timeout, cleanup checks the exact container's
+identity before removal and verifies absence. An inaccessible daemon or unknown
+ownership returns `cleanup_unverified`, never success; it does not prune or
+delete other containers. Unexpected preparation failures are reduced to closed
+categories without tracebacks. The 8 KiB output check occurs after capture; it
+is not an OS-level memory limit, and cleanup cannot be guaranteed if Docker is
+unreachable or the host process is forcibly terminated.
+
+The supervisor repeated the helper successfully against the exact generated ZIP:
+9,242,365 bytes, 949 entries, 28 wheels and 14 source modules; SHA-256
+`33354c42201ca3a39ac4d8c350cbbc55349c24b8dd70aad273efa678cb8a90d1`.
+Initialize, the exact ten tools, all ten calls, warm reuse, missing auth, unknown
+key, wrong audience/scope and prod/missing-config rejection all passed. Fresh
+synthetic RSA keys mean different runs have different ZIP digests. The execution
+window is established inside the container, not before slow ARM startup; its
+digest binding uses the raw JWKS hash, not the ZIP hash. This is synthetic local
+runtime acceptance only, not real Cognito, Codex OAuth or AWS deployment.
+
+Independent review accepted the frozen helper: 41 focused probe/builder tests.
+The supervisor's final full run passed **1,097 tests, with four Windows symlink
+skips**, compilation and the 12/12 model-free evaluator. The four-template static
+schema check also passed again. Hosted CI for this new checkpoint must be checked
+separately; the seven-job result above belongs to `24411b7`.
+
+#### Prepared request-tripwire contract (not implemented or activated)
+
+Reuse the official AWS CDK **HTTP Stage** request metric, not a guessed statistic:
+`AWS/ApiGateway`, `Count`, dimensions fixed `ApiId` and `Stage=$default`,
+`Statistic=SampleCount`, `Period=60`, threshold `>=100`, one evaluation/one
+datapoint, `TreatMissingData=notBreaching`. Do not add a unit filter without
+publication evidence. This is 100 requests in one minute, not a cumulative
+five-minute budget. The alarm's actions stay off and an initially DISABLED
+EventBridge rule matches only the exact owned alarm's ALARM event, account,
+region and ARN. CloudWatch state events are independent of alarm actions;
+events emitted while the rule is disabled are not replayed.
+
+Use static `{}` target input, an exact existing Standard shutdown machine ARN,
+a dedicated StartExecution-only role and exact rule SourceArn/SourceAccount
+trust. A static ARN derived from the fixed rule name avoids a role/rule CFN
+dependency cycle. Proposed delivery retry count is zero and maximum age 60
+seconds; failures need the separately armed time-based shutdown fallback.
+No Lambda execution capacity is used by this control path.
+
+Collection/evaluation is delayed; missing datapoints cannot trip the alarm, and
+excessive throttled requests may lack metrics. This is best-effort early closure,
+not a request, availability or billing hard cap. Actual metric publication,
+IAM/event delivery, closure readbacks and activation sequencing still require
+accepted cloud tests under renewed authority. No resource or trigger is created
+by this documented contract. Primary reuse basis:
+[pinned CDK HttpStage metric](https://github.com/aws/aws-cdk/blob/818574f2026c4a31f51e7bc03c0079fb9fd76478/packages/aws-cdk-lib/aws-apigatewayv2/lib/http/stage.ts#L130-L132),
+[pinned stage dimensions](https://github.com/aws/aws-cdk/blob/818574f2026c4a31f51e7bc03c0079fb9fd76478/packages/aws-cdk-lib/aws-apigatewayv2/lib/common/base.ts#L88-L91),
+[HTTP API metrics](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-metrics.html),
+[alarm state events](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch-and-eventbridge.html).
+
 The user additionally approved preparing a temporary Codex connection for this
 development MCP only, and removing it after the test. Do not change other MCPs
 or global defaults. An installed-CLI loopback-only OAuth-URL preparation probe

@@ -271,6 +271,10 @@ were checkpointed and replaced because the agent tools cannot change an
 existing worker's model. Reuse the replacement researcher, implementer and
 tester roles; do not silently inherit a different model or escalate to Astra.
 
+On 2026-10-02 the user explicitly changed the supervisor to Astra. This changes
+only the supervisor selected in the app; keep the existing GPT-6 Luna/high
+workers. It does not authorize paid model API calls or extend any AWS gate.
+
 Use this normal sequence when practical:
 
 1. Researcher gathers and documents evidence.
