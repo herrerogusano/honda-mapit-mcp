@@ -18,6 +18,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "closed_bootstrap_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
         "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",
+        "closed_oauth_setup_draft",
         "closed_oauth_runtime_draft",
         "closed_oauth_cleanup_draft",
     }
@@ -32,6 +33,12 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
     combined = json.loads(documents["combined_control_draft"])
     assert combined["Resources"]["CleanupSchedule"]["Properties"]["State"] == "DISABLED"
     assert combined["Resources"]["RequestTripwireAlarmRule"]["Properties"]["State"] == "DISABLED"
+    oauth_setup = json.loads(documents["closed_oauth_setup_draft"])
+    assert len(oauth_setup["Resources"]) == 10
+    assert oauth_setup["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
+    assert oauth_setup["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
+    assert "McpPostRoute" not in oauth_setup["Resources"]
+    assert "McpLambdaInvokePermission" not in oauth_setup["Resources"]
 
 
 def test_socket_and_dns_guard_restores_after_success_and_exception():

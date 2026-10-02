@@ -7,7 +7,7 @@ import pytest
 
 from mapit.aws_dev_runtime import cognito_dev_policy
 from scripts import build_aws_dev_oauth_template as composer
-from scripts.build_aws_dev_bootstrap import _read_scaffold
+from scripts.build_aws_dev_bootstrap import fixed_bootstrap_template, _read_scaffold
 from scripts.build_aws_dev_runtime_template import fixed_runtime_candidate_template
 
 
@@ -202,6 +202,66 @@ def test_changed_pool_mfa_in_fixed_source_scaffold_rejected(monkeypatch: pytest.
     monkeypatch.setattr(composer, "_read_scaffold", lambda: scaffold)
     with pytest.raises(composer.OAuthTemplateError, match="oauth_pool_policy_invalid"):
         _build()
+
+
+def test_setup_stage_adds_exactly_four_cognito_resources_without_runtime_or_fake_identity():
+    setup = composer.build_dev_oauth_setup_template(API, callback_url=CALLBACK)
+    final = _build()
+    base = fixed_bootstrap_template()
+    setup_resources = setup["Resources"]
+    assert len(setup_resources) == 10
+    assert set(setup_resources) == set(base["Resources"]) | set(composer._SETUP_RESOURCE_NAMES)
+    for name, resource in base["Resources"].items():
+        if name == "McpHandler":
+            assert setup_resources[name]["Properties"]["Code"] == resource["Properties"]["Code"]
+            assert "Environment" not in setup_resources[name]["Properties"]
+        elif name == "McpHandlerRole":
+            assert setup_resources[name] == resource
+        else:
+            assert setup_resources[name] == resource
+    assert all(setup_resources[name] == final["Resources"][name] for name in composer._SETUP_RESOURCE_NAMES)
+    assert all(item["Condition"] == "SupportedDeployment" for item in setup_resources.values())
+    assert all(item["DeletionPolicy"] == item["UpdateReplacePolicy"] == "Delete" for item in setup_resources.values())
+    assert setup["Parameters"]["McpResourceUri"]["Default"] == f"https://{API}.execute-api.eu-west-1.amazonaws.com/mcp"
+    assert setup["Parameters"]["McpResourceUri"]["AllowedValues"] == [setup["Parameters"]["McpResourceUri"]["Default"]]
+    assert setup["Parameters"]["OAuthCallbackURL"]["Default"] == CALLBACK
+    assert setup["Parameters"]["OAuthCallbackURL"]["AllowedValues"] == [CALLBACK]
+    assert setup["Parameters"]["McpResourceUri"] == final["Parameters"]["McpResourceUri"]
+    assert setup["Parameters"]["OAuthCallbackURL"] == final["Parameters"]["OAuthCallbackURL"]
+    assert setup["Outputs"]["McpClientId"] == {"Condition": "SupportedDeployment", "Value": {"Ref": "McpUserPoolClient"}}
+    assert setup_resources["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
+    assert setup_resources["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
+    assert setup_resources["McpHandler"]["Properties"]["Code"]["ZipFile"].find('"statusCode": 503') >= 0
+    assert "McpLambdaIntegration" not in setup_resources
+    assert "McpPostRoute" not in setup_resources and "McpLambdaInvokePermission" not in setup_resources
+    assert all(item["Type"] != "AWS::Cognito::UserPoolUser" for item in setup_resources.values())
+    assert "McpOwnerSubject" not in setup["Parameters"]
+    assert setup["Metadata"]["Readiness"] == "OAUTH_SETUP_NOT_DEPLOY_READY"
+    assert setup["Metadata"]["OAuthConfigured"] is True
+    assert setup["Metadata"]["NoActivation"] is True
+    assert setup["Metadata"]["NoRuntimeImplementation"] is True
+
+
+@pytest.mark.parametrize("api_id", ["ABC123DEF4", "short", "abc123def!", "a" * 11, True])
+def test_setup_stage_requires_exact_synthetic_api_id(api_id):
+    with pytest.raises(composer.OAuthTemplateError, match="oauth_api_id_invalid"):
+        composer.build_dev_oauth_setup_template(api_id, callback_url=CALLBACK)
+
+
+def test_setup_stage_rejects_oauth_source_drift(monkeypatch: pytest.MonkeyPatch):
+    scaffold = copy.deepcopy(_read_scaffold())
+    scaffold["Resources"]["McpUserPoolClient"]["Properties"]["AccessTokenValidity"] = 60
+    monkeypatch.setattr(composer, "_read_scaffold", lambda: scaffold)
+    with pytest.raises(composer.OAuthTemplateError, match="oauth_client_invalid"):
+        composer.build_dev_oauth_setup_template(API, callback_url=CALLBACK)
+
+
+def test_setup_stage_rejects_boolean_token_lifetime(monkeypatch: pytest.MonkeyPatch):
+    scaffold = copy.deepcopy(_read_scaffold())
+    scaffold["Resources"]["McpUserPoolClient"]["Properties"]["AccessTokenValidity"] = True
+    monkeypatch.setattr(composer, "_read_scaffold", lambda: scaffold)
+    with pytest.raises(composer.OAuthTemplateError, match="oauth_client_invalid"):
+        composer.build_dev_oauth_setup_template(API, callback_url=CALLBACK)
 
 
 @pytest.mark.parametrize(("resource", "property_name", "value"), [

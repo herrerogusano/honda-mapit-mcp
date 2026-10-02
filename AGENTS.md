@@ -282,6 +282,14 @@ Expanded-app integration/readbacks, optional Cognito-provider deletion branches,
 actual callback/owner enrollment/MFA, real-bound ARM package and synthetic cloud
 OAuth interoperability remain pending. Do not treat local/schema acceptance as
 permission or evidence of activation. See current preparation and rehearsal docs.
+Evening continuation after the 15:29 UTC expiry is local only. A ten-resource
+OAuth setup factory is independently accepted: six unchanged bootstrap resources
+plus four Cognito resources, with no invented client/owner binding, routes,
+runtime environment, users or activation. It prepares the intermediate owned
+bootstrap update needed before the final sixteen-resource runtime composition.
+Thirteen synthetic templates pass schema checks. The original runner remains
+six-resource-only; exact setup readbacks, expanded cleanup/update orchestration
+and actual human OAuth/MFA are still pending. No external authority was renewed.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

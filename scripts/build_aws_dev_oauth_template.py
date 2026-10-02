@@ -16,6 +16,7 @@ from typing import Any
 from mapit.aws_dev_runtime import CognitoDevPolicy
 from scripts.build_aws_dev_bootstrap import (
     BootstrapTemplateError,
+    fixed_bootstrap_template,
     _read_scaffold,
     _validate_scaffold,
 )
@@ -26,6 +27,7 @@ from scripts.build_aws_dev_runtime_template import (
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_API_ID = re.compile(r"^[a-z0-9]{10}$")
 _METADATA_PATH = "/.well-known/oauth-protected-resource/mcp"
 _RESOURCE_TYPES = {
     "McpUserPoolDomain": "AWS::Cognito::UserPoolDomain",
@@ -58,6 +60,9 @@ _RESOURCE_DEPENDS_ON = {
     "McpUserPoolClient": ["McpResourceServer", "McpUserPoolDomain"],
     "McpManagedLoginBranding": ["McpUserPoolDomain"],
 }
+_SETUP_RESOURCE_NAMES = (
+    "McpUserPoolDomain", "McpResourceServer", "McpUserPoolClient", "McpManagedLoginBranding",
+)
 
 
 class OAuthTemplateError(ValueError):
@@ -112,7 +117,7 @@ def _validate_windows(start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-def _validate_source_oauth(source: dict[str, Any], policy: CognitoDevPolicy) -> dict[str, dict[str, Any]]:
+def _validate_source_oauth(source: dict[str, Any]) -> dict[str, dict[str, Any]]:
     resources = source.get("Resources")
     if not isinstance(resources, dict):
         _fail("oauth_scaffold_invalid")
@@ -153,6 +158,17 @@ def _validate_source_oauth(source: dict[str, Any], policy: CognitoDevPolicy) -> 
         or client.get("CallbackURLs") != [{"Ref": "OAuthCallbackURL"}]
         or client.get("DefaultRedirectURI") != {"Ref": "OAuthCallbackURL"}
         or client.get("SupportedIdentityProviders") != ["COGNITO"]
+        or type(client.get("AccessTokenValidity")) is not int
+        or client.get("AccessTokenValidity") != 5
+        or type(client.get("IdTokenValidity")) is not int
+        or client.get("IdTokenValidity") != 5
+        or type(client.get("RefreshTokenValidity")) is not int
+        or client.get("RefreshTokenValidity") != 1
+        or client.get("TokenValidityUnits") != {
+            "AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "days"
+        }
+        or client.get("EnableTokenRevocation") is not True
+        or client.get("PreventUserExistenceErrors") != "ENABLED"
     ):
         _fail("oauth_client_invalid")
     branding = props["McpManagedLoginBranding"]
@@ -213,9 +229,91 @@ def _validate_source_oauth(source: dict[str, Any], policy: CognitoDevPolicy) -> 
         or pool.get("AdminCreateUserConfig") != {"AllowAdminCreateUserOnly": True}
     ):
         _fail("oauth_pool_policy_invalid")
-    if policy.resource_url != f"https://{policy.api_host}/mcp":
-        _fail("oauth_policy_invalid")
     return selected
+
+
+def _oauth_parameters(resource_uri: str, callback_url: str) -> dict[str, dict[str, Any]]:
+    return {
+        "McpResourceUri": {
+            "Type": "String",
+            "Default": resource_uri,
+            "AllowedValues": [resource_uri],
+            "Description": "Exact dev MCP audience and Cognito resource-server identifier.",
+        },
+        "OAuthCallbackURL": {
+            "Type": "String",
+            "Default": callback_url,
+            "AllowedValues": [callback_url],
+            "Description": "Explicit operator-confirmed loopback callback; syntax does not prove client registration.",
+        },
+    }
+
+
+def build_dev_oauth_setup_template(api_id: str, *, callback_url: str) -> dict[str, Any]:
+    """Compose the pre-runtime Cognito setup stage without fake identities.
+
+    The API and pool are created/owned by the existing fixed bootstrap stack.
+    This update adds only Cognito domain/resource-server/client/branding; it
+    does not require the generated client ID or future owner subject as input.
+    """
+    if type(api_id) is not str or not _API_ID.fullmatch(api_id):
+        _fail("oauth_api_id_invalid")
+    callback_url = _validate_callback(callback_url)
+    resource_uri = f"https://{api_id}.execute-api.eu-west-1.amazonaws.com/mcp"
+    try:
+        template = fixed_bootstrap_template()
+        source = _read_scaffold()
+        _validate_scaffold(source)
+        oauth_resources = _validate_source_oauth(source)
+    except OAuthTemplateError:
+        raise
+    except BootstrapTemplateError:
+        _fail("oauth_scaffold_invalid")
+    resources = template.get("Resources")
+    if not isinstance(resources, dict) or set(resources) != {
+        "McpApi", "McpApiStage", "McpUserPool", "McpHandlerRole", "McpHandlerLogGroup", "McpHandler"
+    }:
+        _fail("oauth_setup_base_invalid")
+    if (
+        resources["McpApi"].get("Properties", {}).get("DisableExecuteApiEndpoint") is not True
+        or type(resources["McpHandler"].get("Properties", {}).get("ReservedConcurrentExecutions")) is not int
+        or resources["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] != 0
+    ):
+        _fail("oauth_setup_base_not_closed")
+    for name in _SETUP_RESOURCE_NAMES:
+        cloned = copy.deepcopy(oauth_resources[name])
+        cloned["Condition"] = "SupportedDeployment"
+        cloned["DeletionPolicy"] = "Delete"
+        cloned["UpdateReplacePolicy"] = "Delete"
+        if name in resources:
+            _fail("oauth_setup_resource_collision")
+        resources[name] = cloned
+    template["Parameters"].update({
+        **_oauth_parameters(resource_uri, callback_url),
+    })
+    template["Outputs"]["McpClientId"] = {
+        "Condition": "SupportedDeployment",
+        "Value": {"Ref": "McpUserPoolClient"},
+    }
+    template["Metadata"].update({
+        "Readiness": "OAUTH_SETUP_NOT_DEPLOY_READY",
+        "OAuthSetupStageOnly": True,
+        "UpdateOnlyForObservedBootstrapApiAndPool": True,
+        "ObservedBootstrapOwnershipAndReadbackRequired": True,
+        "NoActivation": True,
+        "NoUserCreation": True,
+        "NoRuntimeImplementation": True,
+        "NoRoutesOrInvokePermissions": True,
+        "MissingPrerequisites": [
+            "verify the existing dev bootstrap API and pool belong to the intended stack before update",
+            "read back generated client ID before constructing the separate final runtime binding",
+            "confirm actual owner subject and the client's effective registered callback",
+            "review exact cleanup permissions and enrollment/retirement procedure before provisioning",
+        ],
+    })
+    template["Description"] = "Dev-only Cognito OAuth setup stage with API disabled and inline 503 handler; not deploy-ready."
+    template["Metadata"]["OAuthConfigured"] = True
+    return template
 
 
 def build_dev_oauth_template(
@@ -244,7 +342,7 @@ def build_dev_oauth_template(
     try:
         source = _read_scaffold()
         _validate_scaffold(source)
-        oauth_resources = _validate_source_oauth(source, validated_policy)
+        oauth_resources = _validate_source_oauth(source)
     except OAuthTemplateError:
         raise
     except BootstrapTemplateError:
@@ -260,6 +358,8 @@ def build_dev_oauth_template(
         or resources["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] != 0
     ):
         _fail("oauth_runtime_candidate_not_closed")
+    if validated_policy.resource_url != f"https://{validated_policy.api_host}/mcp":
+        _fail("oauth_policy_invalid")
     for name, resource in oauth_resources.items():
         cloned = copy.deepcopy(resource)
         cloned["Condition"] = "SupportedDeployment"
@@ -295,20 +395,7 @@ def build_dev_oauth_template(
             },
         },
     }
-    template["Parameters"].update({
-        "McpResourceUri": {
-            "Type": "String",
-            "Default": validated_policy.resource_url,
-            "AllowedValues": [validated_policy.resource_url],
-            "Description": "Exact dev MCP audience and Cognito resource-server identifier.",
-        },
-        "OAuthCallbackURL": {
-            "Type": "String",
-            "Default": callback_url,
-            "AllowedValues": [callback_url],
-            "Description": "Explicit operator-confirmed loopback callback; syntax does not prove client registration.",
-        },
-    })
+    template["Parameters"].update(_oauth_parameters(validated_policy.resource_url, callback_url))
     variables = {
         "MAPIT_MCP_ENV": "dev",
         "MAPIT_COGNITO_USER_POOL_ID": validated_policy.user_pool_id,
@@ -351,4 +438,4 @@ def build_dev_oauth_template(
     return template
 
 
-__all__ = ["OAuthTemplateError", "build_dev_oauth_template"]
+__all__ = ["OAuthTemplateError", "build_dev_oauth_setup_template", "build_dev_oauth_template"]

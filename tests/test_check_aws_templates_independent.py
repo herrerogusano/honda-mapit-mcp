@@ -22,6 +22,7 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "cleanup_schedule_draft", "combined_control_draft", "closed_bootstrap_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
         "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",
+        "closed_oauth_setup_draft",
         "closed_oauth_runtime_draft",
         "closed_oauth_cleanup_draft",
     }

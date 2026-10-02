@@ -52,7 +52,7 @@ def fixed_documents() -> dict[str, str]:
     from mapit.aws_dev_shutdown_control import build_dev_shutdown_control
     from mapit.aws_dev_runtime import cognito_dev_policy
     from scripts.build_aws_dev_bootstrap import fixed_bootstrap_template
-    from scripts.build_aws_dev_oauth_template import build_dev_oauth_template
+    from scripts.build_aws_dev_oauth_template import build_dev_oauth_setup_template, build_dev_oauth_template
     from scripts.build_aws_dev_runtime_template import (
         fixed_runtime_bucket_template, fixed_runtime_candidate_template,
     )
@@ -98,6 +98,9 @@ def fixed_documents() -> dict[str, str]:
     documents["runtime_artifact_bucket_draft"] = json.dumps(fixed_runtime_bucket_template())
     documents["runtime_artifact_candidate_draft"] = json.dumps(fixed_runtime_candidate_template(
         "honda-mapit-mcp-dev-synthetic-artifact", "a" * 64,
+    ))
+    documents["closed_oauth_setup_draft"] = json.dumps(build_dev_oauth_setup_template(
+        "a1b2c3d4e5", callback_url="http://localhost:39031/callback/synthetic",
     ))
     documents["closed_oauth_runtime_draft"] = json.dumps(build_dev_oauth_template(
         cognito_dev_policy(

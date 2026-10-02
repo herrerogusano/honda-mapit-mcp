@@ -158,6 +158,37 @@ Primary contracts: [conditional object deletion](https://docs.aws.amazon.com/bot
 [bucket versioning](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/get_bucket_versioning.html),
 [multipart listing](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/list_multipart_uploads.html).
 
+### Closed OAuth setup sequencing — 2026-10-02 evening
+
+The earlier two-hour AWS allowance expired at 15:29 UTC. Resumed work is local
+only; no resource recreation or renewed account operations follow from it.
+Review found a sequencing gap: the final runtime composition requires a real
+client ID and owner subject, but the six-resource bootstrap creates neither.
+The next bounded implementation adds an intermediate ten-resource setup factory:
+the six bootstrap resources unchanged plus the existing Cognito domain,
+resource server, public app client and managed-login branding. It accepts the
+observed bootstrap API ID and exact confirmed loopback callback, not placeholder
+client/owner identifiers. Its output exposes the generated client through Ref.
+
+Keep the API disabled, the inline 503 handler reserved at zero, and no routes,
+invoke permissions, runtime environment, S3 package, user or enrollment-scope
+expansion. Preserve stable logical IDs and OAuth settings when moving to the
+final runtime template. This setup candidate is for an update to the owned
+bootstrap after readback, not independent initial deployment. The unchanged
+six-resource rehearsal runner cannot create/check/delete it. Expanded cleanup,
+readback integration and actual human enrollment remain prerequisites.
+
+Implemented and independently accepted offline: the setup factory preserves
+all six bootstrap resources and shares exact OAuth parameters/resources with
+the final stage. Short integer token lifetimes and revocation are now explicitly
+guarded against source drift. Thirteen fixed templates pass the pinned regional
+schema checker with zero findings. Callback validation establishes syntax only,
+not real registration or ownership. No AWS operation or runner expansion occurred.
+Final local regression: **1,450 passed, five Windows skips**; compilation and
+the model-free evaluator (**12/12**) also passed.
+Next: integrate exact owned-stack and generated-client readbacks before preparing
+the bounded closed-update/cleanup workflow; do not deploy this candidate directly.
+
 ### Remaining execution order and callback evidence — 2026-10-02
 
 Official OpenAI documentation now explicitly describes a server-specific
