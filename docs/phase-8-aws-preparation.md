@@ -344,6 +344,144 @@ Sources: [budget latency](https://docs.aws.amazon.com/cost-management/latest/use
 
 ## Next gates
 
+### Renewed bounded authority — 2026-10-02
+
+The user renewed authorization for two hours and requested continuous work and
+display wakefulness. The recorded window is 09:32:29–11:32:29 UTC
+(11:32:29–13:32:29 Europe/Madrid). Retain dev/eu-west-1, synthetic tools only,
+USD 1 gross envelope, at most five minutes endpoint exposure and one hour resource
+lifetime, with shutdown/deletion; no production, live MAPIT/Telegram or paid
+model inference. This renewal permits proceeding through the agreed gates, not
+silently increasing the scope or selecting a shared-pool fallback.
+
+A fresh single-attempt STS read succeeded with a non-root identity; one Lambda
+account-settings read still reports regional/unreserved concurrency 10/10.
+No AWS mutation or resource creation was made by that check. A temporary native
+execution-state helper requests display/system wakefulness for 7,200 seconds
+without changing permanent power settings; normal settings resume on exit.
+Next bounded local block: dedicated SDK shutdown entrypoint/package followed
+by reviewed IAM/independent closure and crash-safe cleanup preparation. Keep the
+current disabled scaffold unchanged until the replacement is independently
+reviewed. No bootstrap resource creation before its cleanup is planned.
+
+Capacity decision later in this window: a single request for 104 was rejected
+because the Service Quotas path required a value greater than the service
+default of 1,000. No larger request was made or approved, and no quota changed.
+After discussing shared concurrency, the user explicitly selected keeping 10
+and continuing. Prepare the bounded synthetic-dev shared-pool alternative with
+independent control-plane shutdown that does not require a Lambda execution
+slot. Preserve IAM/OAuth/data/resource isolation; do not change the other
+project, production or the regional quota. Activation must still require fresh
+regional/unreserved quota 10/10, reviewed/armed closure and cleanup, the exact
+owner/callback and the original time/spend limits. A permanent shared-pool
+production service is not approved by this temporary-dev decision.
+
+Dedicated SDK shutdown preparation is independently accepted offline. The
+entrypoint validates dev/region/fixed targets before SDK construction, ignores
+event-supplied targets, configures one total attempt and bounded socket timeouts,
+and uses the previously reviewed four-call core. The component template keeps
+its Lambda reservation at zero, has no trigger, and is not a deployable shutdown
+system. In particular, this Lambda component cannot be the independent kill
+mechanism when using the shared pool of ten; it remains an unused alternative.
+
+The separate seven-package pinned SDK archive builder rejects unknown staging
+roots, links, extra launchers and inconsistent launcher records; metadata and
+files are read with explicit size limits. The exact permitted jmespath launcher
+is validated then omitted. Pins and records are not wheel provenance or a
+supply-chain guarantee. The SDK advisory audit found no known vulnerabilities.
+CI adds a credential-free SDK job using real botocore models with offline
+Stubber responses; no AWS request is made by those tests.
+
+The exact SDK ZIP (16,619,909 bytes; SHA-256
+`dc7c7d67abc2e9f1ebaac3b3b985188ad00a8ea087209bb7a65fc49357545c4e`)
+passed extraction/import, all four real SDK stubs, verified closure and prod
+denial in the pinned official Lambda Python 3.13 ARM image with networking
+disabled. This is an artifact/SDK-shape probe, not cloud interoperability or
+actual shutdown acceptance. The generated ZIP and staging directory remain
+outside Git; the minimal package initializer loads no MAPIT credentials.
+
+The shared-pool replacement under preparation uses Step Functions AWS SDK tasks
+to perform control-plane API disable, Lambda reserve zero and both readbacks,
+without invoking a shutdown Lambda. A separate pre-armed schedule/control stack
+can survive the operator session or application stack. It does not guarantee
+successful cleanup: DeleteStack is asynchronous, control-plane calls can fail,
+and the control stack itself still needs a reviewed removal plan. No resource
+may be created while this prerequisite or owner/first-login binding is missing.
+Standard workflow execution history can retain provider responses/resource
+metadata even with CloudWatch logging disabled; sanitized final output is not
+erasure of internal AWS history.
+
+Cleanup research: a separate Scheduler universal target can initiate deletion
+of a fixed application stack through `cloudformation:deleteStack`, using the
+CloudFormation service role previously associated with that stack. The schedule
+role needs only DeleteStack on that exact stack, not broad resource permissions.
+This is a documented design candidate, not an account-validated target. One
+schedule has one target; DeleteStack starts asynchronous deletion and cannot
+confirm completion. A second fixed-time deletion of the control stack could
+remove the safety anchor before application deletion succeeds. A workflow must
+not delete its own state machine before it finishes: deletion can terminate
+running executions on their next transition. The accepted planning boundary is
+therefore application shutdown/deletion scheduling plus operator readback and
+control-stack removal, not guaranteed self-cleanup. `DELETE_FAILED` or retained
+resources require explicit investigation. No bootstrap creation yet.
+
+Primary references: [SDK integration syntax](https://docs.aws.amazon.com/step-functions/latest/dg/supported-services-awssdk.html),
+[Choice guards](https://docs.aws.amazon.com/step-functions/latest/dg/state-choice.html),
+[catch limitations](https://docs.aws.amazon.com/step-functions/latest/dg/concepts-error-handling.html),
+[Scheduler universal targets](https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-targets-universal.html),
+[DeleteStack semantics](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_DeleteStack.html),
+[CloudFormation service roles](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html),
+[state-machine deletion](https://docs.aws.amazon.com/step-functions/latest/apireference/API_DeleteStateMachine.html).
+
+The pure `aws_dev_shutdown_workflow.py` generator is independently accepted as
+an offline artifact. It replaces caller input, fixes the development targets,
+has four SDK tasks (5-second task / 45-second workflow timeouts), no Retry,
+explicit DataLimitExceeded and ALL catches, typed presence-guarded readbacks and
+a closed final projection. Uncatchable runtime/top-level failures still exist;
+this is not a guarantee that all attempts always complete. One single-attempt
+`ValidateStateMachineDefinition` call in eu-west-1 returned OK with zero error
+diagnostics and no truncation. That validation used a synthetic API ID and did
+not create a state machine, execute tasks or validate the intended IAM/targets,
+schedule, cleanup or real interoperability. No quota change or activation follows.
+
+Independent synthetic flow tests cover poisoned caller input, exact four-call
+order, write/readback failures including task timeouts and data-limit errors,
+missing/null/wrong-type values, and ambiguous writes confirmed by readbacks.
+Their minimal Pass/Task/Choice interpreter is not an AWS runtime emulator.
+Acceptance checkpoint: **980 passed, 4 skipped** overall, compilation succeeded,
+model-free evaluator **12/12**. The added skip is the unavailable Windows symlink
+fixture; the actual staged SDK ZIP was exercised by the explicit ARM probe above.
+
+Added closure cost basis: the official regional price list for `AmazonStates`
+in EU (Ireland), published 2026-09-11, lists `EU-StateTransition` at USD
+0.000025 per transition (USD 0.025 per 1,000). A conservative 40-transition
+single closure estimate is USD 0.001 before other services, taxes or retries;
+no free-tier/credits deduction is assumed. This is not the total deployment
+estimate or a billing cap. Source: [regional price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonStates/current/eu-west-1/index.json).
+
+The pure `aws_dev_shutdown_control.py` component generator is independently
+accepted. Five resources describe exact-scope workflow/Scheduler roles, Standard
+workflow, owned schedule group and a DISABLED one-time UTC schedule. It creates
+no Lambda and has no general event/target input. API PATCH alone requires the
+disable=true request condition; GET is separate. Lambda IAM cannot restrict the
+concurrency value to zero: the reviewed fixed definition supplies that value.
+Schedule time is syntax/calendar-validated, not yet accepted against a clock.
+CloudFormation currently does not expose the Scheduler API ActionAfterCompletion
+field; it is omitted with the default retention intent recorded in metadata,
+and must be checked by readback before activation. Logs/tracing are off, not
+execution-history erasure. This draft adds neither app deletion nor control-stack
+cleanup and does not replace the unchanged disabled application scaffold.
+
+Final local acceptance: **1013 passed, 4 skipped** (Windows symlink fixtures),
+compilation succeeded, model-free evaluator **12/12**. IAM, trust, resource scope,
+region, disabled schedule, wrong types/manipulated policies and synthetic ASL
+failure/dataflow tests are independently covered. A second categorical STS
+identity check remained non-root; the intended billing-account match still needs
+the operator's confirmation. The user is available for first login/MFA; that is
+not proof of account binding or completed OAuth interoperability. No resources
+have been created, activated or invoked. Keep quota 10 and stop before creation
+until account/owner/callback and complete reviewed timing/cleanup wiring exist.
+
 ### Resumed offline preparation — 2026-10-01
 
 The user asked to resume work after the premature stop. The two-hour AWS gate

@@ -152,6 +152,37 @@ compilation and model-free evaluator 12/12. The shutdown core has no SDK/network
 construction and its tests use fake clients. Real shutdown packaging/IAM/triggers,
 independent capacity and crash-safe cleanup remain open; no cloud authority is
 renewed by that acceptance. See the resumed-preparation section in the AWS doc.
+On 2026-10-02 the user renewed the same bounded dev authority for two hours,
+09:32:29–11:32:29 UTC (11:32:29–13:32:29 Europe/Madrid), including temporary
+display/system wakefulness. Retain synthetic-only eu-west-1, USD 1 gross,
+five-minute endpoint and one-hour resource limits; no prod or paid inference.
+One regional increase request for 104 was rejected as below the default 1,000;
+no larger request was made or quota changed. The user explicitly chose keeping
+10 and continuing. Prepare the bounded dev shared-pool alternative without
+changing project IAM/OAuth/data isolation or the other repository. Independent
+control-plane closure must not depend on obtaining another Lambda execution
+slot. Fresh quota/unreserved 10/10, reviewed/armed closure and cleanup, exact
+owner/callback and first login remain prerequisites before activation.
+The dedicated SDK shutdown entrypoint/minimal ZIP/component are independently
+accepted offline; actual botocore Stubber and exact ARM ZIP probes passed with
+networking disabled. The component Lambda remains reserve 0, unused by the
+shared-pool approach, and is not a complete deployable shutdown system.
+No resources have been created or activated. See the renewed-authority section
+of docs/phase-8-aws-preparation.md; renewal is not perpetual authority.
+The pure fixed-target Step Functions shutdown definition is independently
+accepted offline and one account-side ValidateStateMachineDefinition call
+returned OK with zero error diagnostics. No workflow execution, schedule or
+resource was created; IAM/closure/cleanup and interactive owner login are still
+prerequisites. Control-stack deletion cannot be assumed automatic or guaranteed.
+The disabled five-resource Step Functions/Scheduler control component generator
+is independently accepted with the final local suite at 1013 passed, 4 skipped
+(Windows symlink fixtures), compilation and model-free evaluator 12/12. Exact
+API/function/IAM/trust scopes are tested; PATCH requires disable=true, schedule
+is DISABLED, date validation is syntax-only and no deletion wiring is included.
+The original application scaffold remains unchanged/disabled. The user can do
+first login/MFA, but the available AWS session's match to the intended credit
+account remains unconfirmed. Do not create resources until that binding and
+complete reviewed cleanup/timing/owner/callback prerequisites are satisfied.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

@@ -18,6 +18,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  shutdown-sdk:
+    name: Offline shutdown SDK contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Reject AWS credentials
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_PROFILE|AWS_DEFAULT_PROFILE|AWS_ROLE_ARN|AWS_WEB_IDENTITY_TOKEN_FILE|AWS_CONTAINER_CREDENTIALS_FULL_URI|AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|AWS_CONTAINER_AUTHORIZATION_TOKEN|AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE|AWS_SHARED_CREDENTIALS_FILE|AWS_CONFIG_FILE)$/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "AWS credentials must not be present in SDK tests"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install isolated SDK test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test]" "pip-audit==2.10.1"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+      - name: Test real SDK shapes with offline stubs
+        run: python -m pytest -q tests/test_aws_dev_shutdown_sdk.py tests/test_aws_dev_shutdown_entrypoint.py tests/test_aws_dev_shutdown_entrypoint_independent.py tests/test_aws_dev_shutdown_template_independent.py tests/test_build_aws_dev_shutdown.py tests/test_build_aws_dev_shutdown_independent.py
+      - name: Audit pinned SDK dependencies (networked advisory lookup only)
+        run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/shutdown-requirements.txt --progress-spinner off --timeout 20 --desc off
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
