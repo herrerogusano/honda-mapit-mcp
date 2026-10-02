@@ -269,6 +269,17 @@ Capacity stayed 10/10. No endpoint activation, handler invocation, human OAuth,
 MAPIT/Telegram/private-data or model operation occurred. No app-deletion fallback
 or IAM expansion was needed. AWS audit/deleted-pool retention is distinct from
 operational resource removal. Do not recreate those stacks implicitly.
+Subsequent work in that window remained offline. Private runtime binding-file
+input, conditional exact-key S3 publication, a closed 16-resource OAuth/runtime
+composition, exact observed-child cleanup policy and guarded artifact retirement
+are independently accepted. The checkpoint has 1434 passing tests, five Windows
+skips, twelve valid synthetic schema fixtures and model-free evaluation 12/12.
+No bucket/object was created or deleted; these operator helpers are not MCP tools.
+Keep the original rehearsal runner restricted to its six-resource bootstrap.
+Expanded-app integration/readbacks, optional Cognito-provider deletion branches,
+actual callback/owner enrollment/MFA, real-bound ARM package and synthetic cloud
+OAuth interoperability remain pending. Do not treat local/schema acceptance as
+permission or evidence of activation. See current preparation and rehearsal docs.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

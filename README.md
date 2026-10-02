@@ -510,8 +510,12 @@ performed only behind an explicit cost gate. See
 [`PHASE_8_AWS_REMOTE.md`](PHASE_8_AWS_REMOTE.md).
 The approved preparation is documented in
 [AWS design, regional cost assumptions and gates](docs/phase-8-aws-preparation.md).
-The offline IaC scaffold is deliberately disabled and has no working remote MCP
-or credentials. Nothing has been deployed; dev deployment remains a separate gate.
+The IaC candidates remain deliberately closed and contain no credentials.
+On 2026-10-02 a bounded [closed AWS rehearsal](docs/phase-8-closed-rehearsal.md)
+verified scheduled shutdown and scoped deletion; all six application and twelve
+control resources were then removed. The regional concurrency quota remains 10.
+No remote MCP is currently active. Real OAuth/owner enrollment and synthetic
+tool interoperability are still pending; Phase 8 is not complete.
 
 The accepted offline block is a deliberately synthetic local HTTP/auth adapter;
 see its [contract and acceptance limits](docs/phase-8-local-http-contract.md).
@@ -526,5 +530,8 @@ handler factory translates strictly bounded API Gateway v2 fixtures to the HTTP
 app. See the [Lambda-local contract](docs/phase-8-lambda-local-contract.md) for
 lifecycle, remaining-time reserve and acceptance limits. It does not load a
 MAPIT session or call AWS; the infrastructure scaffold remains disabled.
-Its 42 focused tests pass; the full offline suite has 754 passed and 3 skipped.
-This proves local composition only, not cloud deployment or real OAuth login.
+Its initial acceptance was 42 focused tests and 754 full offline tests (3 skipped).
+Later accepted preparation adds a fixed ARM package, private binding-file input,
+conditional artifact publication, and closed OAuth/runtime and cleanup candidates.
+See the current AWS preparation record for test checkpoints and remaining gates;
+local/schema success does not establish real OAuth interoperability.

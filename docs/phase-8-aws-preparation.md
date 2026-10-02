@@ -136,9 +136,53 @@ and offline; no S3 object exists from this turn's completed rehearsal.
 The operator must exclude concurrent writers and versioning changes during this
 bounded retirement; an object listing alone cannot detect historical versions.
 
+The retirement core is independently accepted offline: **61 focused tests**
+passed, including the pinned SDK's request shapes and independent race/filter/
+partial-readback regressions. Full checkpoint: **1,434 passed, five Windows
+skips**, successful compilation and model-free evaluator **12/12**. No object
+or bucket was actually deleted by these tests. The separate bucket-stack
+deletion/integration procedure and cloud interoperability remain pending.
+
 Primary contracts: [conditional object deletion](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/delete_object.html),
 [bucket versioning](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/get_bucket_versioning.html),
 [multipart listing](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/list_multipart_uploads.html).
+
+### Remaining execution order and callback evidence — 2026-10-02
+
+Official OpenAI documentation now explicitly describes a server-specific
+callback identifier derived from the full MCP URL, including path/query.
+For a fixed loopback URL port, the server's `oauth.callback_port` must also
+select that listener port; the URL alone does not select it. Retain the exact
+callback displayed for the actual MCP URI, not an inferred suffix. The installed
+CLI's read-only `mcp add --help` confirms pre-registered-client/resource options;
+no configuration or login was changed during this check.
+Sources: [Codex MCP callbacks](https://learn.chatgpt.com/docs/extend/mcp),
+[server-specific configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+The next operator session still needs reviewed integration/readback steps,
+not simply deployment of a static template:
+
+1. Confirm user availability, account, private journal and remaining authority
+   before creating resources. Reuse the accepted closed-bootstrap approach;
+   preserve the first-resource timestamp throughout all later steps.
+2. Read actual API/pool IDs and provider metadata; establish the actual callback
+   and closed OAuth client/resources. Complete the owner's first enrollment/MFA
+   through a reviewed browser/PKCE flow without putting secrets in chat or Git.
+   This enrollment procedure and provider interoperability remain unverified.
+3. Bind actual client/owner/JWKS values; build and verify the real ARM artifact,
+   publish it to the independently verified owned bucket, and update the closed
+   app. Verify literal runtime bindings against observed resource IDs.
+4. Bind the full app's cleanup permissions to observed children and verify armed
+   independent controls before the separate five-minute synthetic MCP window.
+   Do not begin that window while waiting for human enrollment. Abort/clean up
+   if insufficient resource lifetime remains; login does not reset its clock.
+5. Verify shutdown, exact app deletion and artifact retirement, then remove
+   control/artifact stacks and the temporary MCP connection. Record independent
+   absence checks and any cost/cleanup uncertainty.
+
+The rehearsal runner intentionally accepts only its six-resource bootstrap;
+it must not be repurposed to activate or delete the expanded app without an
+independently reviewed integration change. No such live integration was run.
 
 The sections below retain the chronological evidence and decisions. Later dated
 decisions supersede earlier alternatives; old test counts are historical.
