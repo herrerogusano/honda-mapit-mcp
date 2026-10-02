@@ -4,7 +4,8 @@
   "Metadata": {
     "Readiness": "DRAFT_NOT_DEPLOY_READY",
     "ExpectedSessionParameterName": "honda-mapit-mcp/{EnvironmentName}/mapit-session",
-    "UserPoolDomainConstraint": "The generated domain prefix hm-${EnvironmentName}-${AWS::StackName} must be globally unique, lowercase, and at most 63 characters; choose a lowercase environment-specific stack name no longer than 55 characters.",
+    "UserPoolDomainConstraint": "The generated domain prefix hm-<environment>-<stack-name> must be globally unique, lowercase, and at most 63 characters; choose a lowercase environment-specific stack name no longer than 55 characters.",
+    "StageTagPolicy": "Explicit stage tags omitted because current public documentation and bundled regional schema disagree on their shape; project/environment tags are explicit on the API parent, without claiming stage inheritance.",
     "NoSecretValuesOrResources": true,
     "NoRuntimeImplementation": true
   },
@@ -33,7 +34,11 @@
         "Name": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-api"},
         "ProtocolType": "HTTP",
         "DisableExecuteApiEndpoint": true,
-        "Description": "Phase 8 draft; default public execute-api endpoint disabled."
+        "Description": "Phase 8 draft; default public execute-api endpoint disabled.",
+        "Tags": {
+          "Project": "honda-mapit-mcp",
+          "Environment": {"Ref": "EnvironmentName"}
+        }
       }
     },
     "McpApiStage": {
@@ -46,11 +51,7 @@
           "ThrottlingRateLimit": 1,
           "ThrottlingBurstLimit": 1,
           "DetailedMetricsEnabled": false
-        },
-        "Tags": [
-          {"Key": "Project", "Value": "honda-mapit-mcp"},
-          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}}
-        ]
+        }
       }
     },
     "McpUserPool": {

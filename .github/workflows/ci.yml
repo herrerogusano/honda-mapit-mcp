@@ -18,6 +18,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cloudformation-schema:
+    name: Offline CloudFormation schemas
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Reject AWS credentials and credential sources
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_PROFILE|AWS_DEFAULT_PROFILE|AWS_ROLE_ARN|AWS_WEB_IDENTITY_TOKEN_FILE|AWS_CONTAINER_CREDENTIALS_FULL_URI|AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|AWS_CONTAINER_AUTHORIZATION_TOKEN|AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE|AWS_SHARED_CREDENTIALS_FILE|AWS_CONFIG_FILE)$/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "AWS credentials must not be present in static schema checks"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install isolated static-lint tools (public package downloads)
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test]" -r infra/aws/schema-requirements.txt
+      - name: Test static-check guards
+        run: python -m pytest -q tests/test_check_aws_templates.py tests/test_aws_infrastructure_draft.py
+      - name: Validate fixed synthetic templates (Python networking denied)
+        run: python scripts/check_aws_templates.py
   shutdown-sdk:
     name: Offline shutdown SDK contract
     runs-on: ubuntu-latest
@@ -115,3 +143,5 @@ jobs:
         run: python -m pip_audit --strict --no-deps --disable-pip -r audit-requirements.txt --progress-spinner off --timeout 20 --desc off
       - name: Audit pinned ARM runtime versions (advisories only, no ARM installation)
         run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/runtime-requirements.txt --progress-spinner off --timeout 20 --desc off
+      - name: Audit isolated static-lint tools (not Lambda dependencies)
+        run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/schema-requirements.txt --progress-spinner off --timeout 20 --desc off

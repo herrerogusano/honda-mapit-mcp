@@ -89,6 +89,11 @@ def test_api_and_lambda_are_closed_by_default_and_only_protect_post_mcp():
     api = resources["McpApi"]["Properties"]
     assert api["ProtocolType"] == "HTTP"
     assert api["DisableExecuteApiEndpoint"] is True
+    assert api["Tags"] == {
+        "Project": "honda-mapit-mcp", "Environment": {"Ref": "EnvironmentName"},
+    }
+    assert "Tags" not in resources["McpApiStage"]["Properties"]
+    assert "without claiming stage inheritance" in document["Metadata"]["StageTagPolicy"]
     routes = resources_by_type(document, "AWS::ApiGatewayV2::Route")
     assert len(routes) == 1
     route = next(iter(routes.values()))["Properties"]

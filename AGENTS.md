@@ -205,6 +205,26 @@ ASL ResultPath null and passed one bounded CloudFormation syntax check; cleanup
 also passed syntax only. Runtime IAM, tripwire alarm/EventBridge, reviewed timing,
 owner/callback, real ARM artifact acceptance and cleanup orchestration remain
 separate before deployment. No resources have been created, activated or invoked.
+The renewed two-hour external authority ended at 11:32:29 UTC on 2026-10-02.
+No resources were created or activated during it. Subsequent work is local/public
+research only; no further account reads, deployment or quota mutation without
+renewal. Commit 021cbb7 has six green CI jobs. A new isolated cfn-lint schema
+check has unresolved metadata interpolation findings and a Stage Tags schema/
+documentation discrepancy; do not treat that check or ARM packaging as accepted
+until the specific failures are resolved and independently reviewed.
+Subsequent local ARM acceptance passed the exact builder-produced synthetic ZIP
+in the pinned official ARM image with network disabled: all ten tools, warm
+repeat, authorization negatives and prod/missing-config denial. The original
+failed harnesses used an expired startup window and ZIP rather than JWKS digest;
+runtime guards were unchanged. No real Cognito login is implied.
+The additional static schema checker is independently accepted with 24 focused
+tests. The offline app draft changed only metadata prose and tag placement:
+ambiguous optional Stage Tags were omitted and identical project/environment
+tags placed on the API parent, with no inheritance claim, ignored rule, runtime,
+IAM, throttle or disabled-default change. All four drafts passed the isolated
+pinned cfn-lint checker with Python socket/DNS denied. A reusable ARM probe and
+the request-tripwire contract remain separate local preparation; no renewed
+account authority or deploy-ready claim follows.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

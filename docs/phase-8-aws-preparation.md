@@ -538,6 +538,56 @@ Full final-source suite: **1062 passed, 4 skipped**, compilation and model-free
 evaluator **12/12**. Exact extracted-ZIP ARM acceptance is recorded separately
 once complete; an earlier handwritten fixture ZIP does not substitute for it.
 
+Commit `021cbb7` passed all six CI jobs. The two-hour external authority ended
+at **2026-10-02 11:32:29 UTC**, with no resources created or activated. Further
+account reads/provisioning need renewed authority; local and public preparation
+may continue. An isolated tooling environment installed `cfn-lint==1.57.1` (not
+the runtime). Static lint with socket construction denied and user/project lint
+configuration replaced by the null device found E1029 for interpolation-looking
+documentation text in metadata, and E3012 for Stage Tags. The latter conflicts
+with the consulted public Stage documentation and needs schema/source research,
+not an unsupported ignored warning or a premature deploy-ready claim. Exact ARM
+probe acceptance also remains pending after an initial synthetic-case failure.
+
+The subsequent exact ARM probe passed on a builder-produced synthetic archive:
+9,242,365 bytes, 949 entries, SHA-256
+`4b12fd799ed949d02fc3407114ffde28c32780b79ff591608bf7b7ba62b4bf5c`.
+The pinned official ARM image above ran with networking disabled and imported
+the extracted ZIP without relocating artifacts. Initialize/list, all ten tools,
+warm repeat, missing bearer/unknown kid/wrong audience (401), wrong scope (403),
+prod isolation and missing API configuration (503) passed. The supervisor verified
+the exact ZIP hash, empty initializer, fourteen modules, sibling placement and
+snapshot/manifest digest binding. Private fixture keys remained in host memory;
+synthetic tokens crossed Docker stdin only, not files, logs or Git. This remains
+synthetic offline acceptance, not a real Cognito login or AWS execution.
+
+The two preceding harness failures were fail-closed behavior: a fixture window
+expired during ARM startup, and the harness supplied the ZIP hash instead of the
+raw public-JWKS hash. The corrected harness selects its test window at container
+dispatch and binds the raw snapshot digest; runtime guards were not weakened.
+Persist a reusable probe for this distinction rather than relying on handwritten
+test assembly for future packaging changes.
+
+The schema/docs conflict was avoided without choosing an unconfirmed Stage Tags
+shape or suppressing E3012: omit that optional field and place identical
+project/environment tags on the API parent. No stage inheritance is claimed and
+IAM, closure targets, API throttling and disabled defaults are unchanged. The
+metadata prose now describes placeholders without interpolation-looking tokens.
+All four drafts passed `cfn-lint==1.57.1` with zero findings under the Python
+socket/DNS guard and null-device config. This is a static check, not an OS sandbox,
+IAM/service acceptance or activation gate. The isolated lint-tool pins are kept
+out of Lambda and passed a separate advisory audit. The new checker/CI block
+is independently accepted with **24 focused tests**; public package/advisory downloads are
+separate from static validation. Sources: [API tag contract](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-api.html),
+[optional Stage Tags](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-stage.html),
+[AWS static-lint documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-lint.html).
+
+Schema-block acceptance checkpoint: **1079 passed, 4 skipped** in the complete
+offline suite, compilation succeeded and model-free evaluator **12/12**. This
+checkpoint precedes the separate reusable ARM probe helper and does not include
+that helper's acceptance. The new isolated schema CI job must also pass before
+claiming its hosted result.
+
 The user additionally approved preparing a temporary Codex connection for this
 development MCP only, and removing it after the test. Do not change other MCPs
 or global defaults. An installed-CLI loopback-only OAuth-URL preparation probe
