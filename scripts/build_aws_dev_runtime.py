@@ -27,6 +27,7 @@ MAX_FILE_COUNT = 20_000
 MAX_LOCK_BYTES = 16 * 1024
 MAX_JWKS_BYTES = 32 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024
+MAX_BINDING_BYTES = 4 * 1024
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
@@ -69,6 +70,13 @@ _TEST_DIRS = frozenset({"test", "tests", "testing", "__pycache__"})
 
 class BuildError(ValueError):
     """Fixed-category local build error without source values or paths."""
+
+
+class _SafeArgumentParser(argparse.ArgumentParser):
+    """Argparse variant that never echoes caller-supplied argument values."""
+
+    def error(self, message: str) -> None:
+        raise BuildError("runtime_binding_source_invalid")
 
 
 @dataclass(frozen=True)
@@ -378,6 +386,57 @@ def _validate_policy(policy: CognitoDevPolicy) -> CognitoDevPolicy:
         raise BuildError("runtime_identity_invalid") from None
 
 
+def _reject_duplicate_binding_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise BuildError("runtime_binding_invalid")
+        result[key] = value
+    return result
+
+
+def _read_binding_file(path: Path, repo: Path) -> CognitoDevPolicy:
+    """Load a tiny exact-field binding from an operator-protected external file.
+
+    The builder checks location and bounded syntax, not filesystem ACLs. The
+    caller must create the file outside the checkout/OneDrive with a private
+    ACL verified for the operator before use.
+    """
+    if _has_symlink_or_reparse_ancestor(path) or not path.is_file():
+        raise BuildError("runtime_binding_file_invalid")
+    resolved = _outside_repo_and_onedrive(path, repo, "runtime_binding_file_invalid")
+    try:
+        if resolved.stat().st_size > MAX_BINDING_BYTES:
+            raise BuildError("runtime_binding_file_invalid")
+    except BuildError:
+        raise
+    except OSError:
+        raise BuildError("runtime_binding_file_invalid") from None
+    raw = _read_bounded(resolved, MAX_BINDING_BYTES, "runtime_binding_file_invalid")
+    try:
+        value = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=_reject_duplicate_binding_keys,
+        )
+    except BuildError:
+        raise
+    except (UnicodeError, json.JSONDecodeError, TypeError, ValueError, RecursionError):
+        raise BuildError("runtime_binding_invalid") from None
+    required = {"user_pool_id", "api_id", "client_id", "owner_subject"}
+    if not isinstance(value, dict) or set(value) != required or any(type(value[key]) is not str for key in required):
+        raise BuildError("runtime_binding_invalid")
+    try:
+        policy = cognito_dev_policy(
+            user_pool_id=value["user_pool_id"],
+            api_id=value["api_id"],
+            client_id=value["client_id"],
+            owner_subject=value["owner_subject"],
+        )
+    except (AttributeError, TypeError, ValueError):
+        raise BuildError("runtime_binding_invalid") from None
+    return _validate_policy(policy)
+
+
 def _snapshot_file(path: Path, repo: Path) -> bytes:
     if _has_symlink_or_reparse_ancestor(path) or not path.is_file():
         raise BuildError("public_jwks_file_invalid")
@@ -516,23 +575,34 @@ def build_runtime_archive(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _SafeArgumentParser(description=__doc__)
     parser.add_argument("--wheel-dir", type=Path, required=True)
     parser.add_argument("--public-jwks", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--user-pool-id", required=True)
-    parser.add_argument("--api-id", required=True)
-    parser.add_argument("--client-id", required=True)
-    parser.add_argument("--owner-subject", required=True)
-    args = parser.parse_args(argv)
     try:
-        policy = cognito_dev_policy(
-            user_pool_id=args.user_pool_id,
-            api_id=args.api_id,
-            client_id=args.client_id,
-            owner_subject=args.owner_subject,
-        )
+        parser.add_argument("--binding-file", type=Path)
+        parser.add_argument("--user-pool-id")
+        parser.add_argument("--api-id")
+        parser.add_argument("--client-id")
+        parser.add_argument("--owner-subject")
+        args = parser.parse_args(argv)
+        legacy_values = (args.user_pool_id, args.api_id, args.client_id, args.owner_subject)
+        if args.binding_file is not None:
+            if any(value is not None for value in legacy_values):
+                raise BuildError("runtime_binding_source_invalid")
+            policy = _read_binding_file(args.binding_file, _repo_root())
+        elif all(value is not None for value in legacy_values):
+            policy = cognito_dev_policy(
+                user_pool_id=args.user_pool_id,
+                api_id=args.api_id,
+                client_id=args.client_id,
+                owner_subject=args.owner_subject,
+            )
+        else:
+            raise BuildError("runtime_binding_source_invalid")
         summary = build_runtime_archive(args.wheel_dir, args.public_jwks, args.output, policy)
+    except SystemExit as exc:
+        return 0 if exc.code == 0 else 1
     except Exception:
         print(json.dumps({"success": False, "category": "runtime_package_build_failed"}))
         return 1

@@ -11,6 +11,40 @@ OAuth and private-data/model operations were not part of that rehearsal.
 Remaining work is the real runtime artifact/configuration and OAuth owner/callback
 flow, followed by bounded synthetic interoperability. Phase 8 is not complete.
 
+### Private runtime binding and artifact preparation — 2026-10-02
+
+The runtime builder now accepts `--binding-file` for the exact four-string JSON
+object containing `user_pool_id`, `api_id`, `client_id` and `owner_subject`.
+Use this option for real bindings rather than placing identifiers in terminal
+arguments/history. The file must be outside Git and OneDrive, at most 4 KiB,
+without symlink/reparse ancestors; duplicate/extra keys and invalid policies are
+rejected. The operator must separately verify private filesystem ACLs: path
+validation is not an ACL check. This file contains identifiers, never passwords,
+tokens or signing keys. Legacy flags remain for synthetic compatibility and
+cannot be mixed with the file. Errors do not echo supplied values or paths.
+The ZIP format and runtime source allowlist are unchanged. Independent binding
+review passed; no real binding file or AWS package was created by these tests.
+The resulting full offline suite passed **1,290 tests with five Windows skips**;
+compilation and the model-free evaluator (**12/12**) also passed.
+
+The next approved local block is a small injected-client S3 publisher, not a
+deployment runner or an MCP tool. Its contract is one content-addressed key
+`runtime/<ZIP SHA-256>.zip`, conditional `PutObject` with `IfNoneMatch="*"`,
+SSE-S3, expected account owner and Base64 SHA-256, followed by exact size/checksum
+readback. Existing-object conflicts may only succeed after the same readback;
+ambiguous writes and other failures stop without retry or overwrite. All tests
+use synthetic bytes and fake/SDK-stubbed clients. No upload is authorized by
+passing these tests. The operator must independently bind the newly created
+private, unversioned bucket to this project's stack/account/region before
+injecting a single-attempt client. `ExpectedBucketOwner` does not establish
+project ownership or privacy. Object retirement and empty-bucket verification
+remain separate from this publication-only block; never add S3 rights to the
+Lambda execution role or empty/adopt another project's artifact bucket.
+
+Primary API contracts: [S3 PutObject](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/put_object.html),
+[S3 HeadObject](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/head_object.html),
+[conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html).
+
 The sections below retain the chronological evidence and decisions. Later dated
 decisions supersede earlier alternatives; old test counts are historical.
 The user authorized design, public price research and offline infrastructure as
