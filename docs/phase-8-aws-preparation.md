@@ -41,9 +41,43 @@ project ownership or privacy. Object retirement and empty-bucket verification
 remain separate from this publication-only block; never add S3 rights to the
 Lambda execution role or empty/adopt another project's artifact bucket.
 
+Publication core accepted independently: **26 focused tests passed**, including
+the pinned SDK's offline request shapes. It reads at most the existing builder's
+50 MiB ZIP ceiling, verifies the local bytes before the first request, and
+requires HEAD HTTP 200 plus exact integer size, SHA-256 and AES256. Only a known
+`PreconditionFailed` exception with consistent 412 permits idempotent readback;
+other PUT outcomes remain conservatively unknown, never evidence of absence.
+A confirmed PUT 200 remains recorded even when subsequent HEAD verification
+fails. No bucket was created and no object was uploaded by these tests.
+
 Primary API contracts: [S3 PutObject](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/put_object.html),
 [S3 HeadObject](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/head_object.html),
 [conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html).
+
+### Next closed composition contract — 2026-10-02
+
+Inspection found a concrete gap beyond the eventual human login: the accepted
+six-resource runtime candidate has no OAuth resources, Lambda environment or
+public protected-resource metadata route. The next local-only block composes
+these from the existing scaffold, with explicit validated development bindings,
+an exact loopback callback, separate ZIP/JWKS hashes and an execution window of
+at most 300 seconds. Add only the unauthenticated metadata GET alongside the
+JWT/scope-protected MCP POST, with separate exact invoke permissions. Keep
+endpoint disabled, reserve zero, fixed synthetic runtime and log-only handler
+IAM. `AWS_REGION` is supplied by Lambda and is reserved: validate eu-west-1 via
+the deployment condition, never set this key in `Environment.Variables`.
+
+This is a review-only final-composition candidate, not a deployment command.
+All generated real-ID templates would belong outside Git/OneDrive under private
+ACLs. Observed pool/API/client identities must match the supplied binding before
+any update; callback syntax validation does not discover or prove the client's
+effective redirect URI. The existing six-resource cleanup role does not cover
+new Cognito/API child resources. Its reviewed permission delta, exact object
+retirement and empty-bucket verification remain mandatory before provisioning
+this composition. No new live session or login is part of this block.
+
+Primary references: [Lambda reserved environment variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html),
+[Cognito callback contract](https://docs.aws.amazon.com/botocore/latest/reference/services/cognito-idp/client/create_user_pool_client.html).
 
 The sections below retain the chronological evidence and decisions. Later dated
 decisions supersede earlier alternatives; old test counts are historical.
