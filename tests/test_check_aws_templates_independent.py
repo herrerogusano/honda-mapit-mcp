@@ -19,7 +19,8 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
     docs = checker.fixed_documents()
     assert set(docs) == {
         "application_draft", "shutdown_lambda_draft", "shutdown_control_draft",
-        "cleanup_schedule_draft", "combined_control_draft",
+        "cleanup_schedule_draft", "combined_control_draft", "closed_bootstrap_draft",
+        "bootstrap_cleanup_draft", "bootstrap_control_draft",
     }
     rendered = "\n".join(docs.values())
     assert "synthetic-access-canary" not in rendered
@@ -34,6 +35,30 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
     assert bundle["Resources"]["CleanupSchedule"]["Properties"]["State"] == "DISABLED"
     assert bundle["Resources"]["RequestTripwireAlarmRule"]["Properties"]["State"] == "DISABLED"
     assert bundle["Resources"]["RequestTripwireAlarm"]["Properties"]["ActionsEnabled"] is False
+    bootstrap = json.loads(docs["closed_bootstrap_draft"])
+    assert bootstrap["Metadata"]["NoActivation"] is True
+    assert bootstrap["Parameters"]["EnvironmentName"]["AllowedValues"] == ["dev"]
+    assert bootstrap["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
+    assert bootstrap["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
+    assert set(bootstrap["Resources"]) == {
+        "McpApi", "McpApiStage", "McpUserPool", "McpHandlerRole",
+        "McpHandlerLogGroup", "McpHandler",
+    }
+    assert not any("OAuth" in key or "Client" in key or "Integration" in key or "Permission" in key
+                   for key in bootstrap["Resources"])
+    bootstrap_cleanup = json.loads(docs["bootstrap_cleanup_draft"])
+    assert bootstrap_cleanup["Metadata"]["NoActivation"] is True
+    assert bootstrap_cleanup["Resources"]["BootstrapCleanupSchedule"]["Properties"]["State"] == "DISABLED"
+    assert bootstrap_cleanup["Resources"]["BootstrapCleanupSchedule"]["Properties"]["Target"]["Input"]["Fn::Sub"][1]["StackArn"]["Fn::Sub"].endswith(
+        "/11111111-2222-3333-4444-555555555555"
+    )
+    bootstrap_control = json.loads(docs["bootstrap_control_draft"])
+    assert bootstrap_control["Metadata"]["NoActivation"] is True
+    assert len(bootstrap_control["Resources"]) == 12
+    assert bootstrap_control["Resources"]["BootstrapCleanupSchedule"]["Properties"]["State"] == "DISABLED"
+    assert bootstrap_control["Resources"]["ShutdownSchedule"]["Properties"]["State"] == "DISABLED"
+    assert bootstrap_control["Resources"]["RequestTripwireAlarmRule"]["Properties"]["State"] == "DISABLED"
+    assert bootstrap_control["Resources"]["RequestTripwireAlarm"]["Properties"]["ActionsEnabled"] is False
     assert not inspect.signature(checker.fixed_documents).parameters
     assert not inspect.signature(checker.main).parameters
 

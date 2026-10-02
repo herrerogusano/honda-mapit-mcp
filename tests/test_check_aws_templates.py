@@ -15,6 +15,8 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
     assert set(documents) == {
         "application_draft", "shutdown_lambda_draft",
         "shutdown_control_draft", "cleanup_schedule_draft", "combined_control_draft",
+        "closed_bootstrap_draft",
+        "bootstrap_cleanup_draft", "bootstrap_control_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True

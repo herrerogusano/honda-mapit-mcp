@@ -240,6 +240,16 @@ creation and before activation; requiring generated IDs before creation is
 circular. Callback is resolved before configuring the client. A closed bootstrap
 and exact deletion-role/artifact procedure remain preparation work, with AWS
 authority still expired. No resources have been created or activated.
+The subsequent closed-rehearsal preparation is independently reviewed: the
+six-resource dev-only bootstrap rejects inherited integrations and remains
+endpoint-disabled/reserve-zero. Its twelve-resource control bundle retains
+eight shutdown/tripwire resources and adds four exact-stack cleanup resources,
+including a dedicated deletion role explicitly passed to CloudFormation.
+The local checkpoint passed 1197 tests (five Windows symlink skips), compilation,
+the 12/12 model-free evaluator and eight fixed synthetic schema checks. See
+`docs/phase-8-closed-rehearsal.md` for the next concrete renewed-authority gate.
+Actual scheduled shutdown, deletion permissions and final cleanup still require
+closed AWS acceptance; no OAuth login or endpoint activation is part of it.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

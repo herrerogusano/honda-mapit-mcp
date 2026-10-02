@@ -693,6 +693,24 @@ checkpoint passed 1,136 tests (four Windows symlink skips), compilation and the
 12/12 model-free evaluator; all five fixed templates passed the pinned schema
 check. This result does not validate actual event delivery or deletion permissions.
 
+#### Closed infrastructure rehearsal preparation
+
+The next concrete gate is documented in [the closed rehearsal runbook](phase-8-closed-rehearsal.md).
+The fixed dev-only bootstrap contains six resources, with no OAuth client,
+runtime artifact or live provider. Its API is disabled and handler reserve is
+zero. The independent twelve-resource control bundle includes exact generated
+API/pool/stack targets and an explicit scoped CloudFormation deletion role.
+All triggers remain disabled in the generated drafts.
+
+Independent review added inherited-Cognito-integration rejection regressions,
+exact-role/stack-target checks and resolved synthetic scheduled-input checks.
+The checkpoint passed 1,197 tests (five Windows symlink skips), compilation,
+the 12/12 model-free evaluator and all eight pinned synthetic schema checks.
+This is offline acceptance only: no AWS operation occurred. Renew authority
+before the closed creation/scheduled-shutdown/deletion rehearsal; actual IAM
+and scheduling acceptance, followed later by OAuth/runtime interoperability,
+remain unproven.
+
 #### Bootstrap identity ordering
 
 An API ID, Cognito pool/client IDs and owner subject are generated during closed
