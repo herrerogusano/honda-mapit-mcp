@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import boto3
-from botocore.stub import Stubber
 import json
 import pytest
 
@@ -17,6 +15,8 @@ from tests.test_aws_closed_rehearsal_runner import ACCOUNT, APP_ARN, AwsError, m
 
 
 def test_preflight_uses_real_stepfunctions_sdk_arn_and_not_found_shape():
+    boto3 = pytest.importorskip("boto3")
+    Stubber = pytest.importorskip("botocore.stub").Stubber
     client = boto3.client(
         "stepfunctions",
         region_name="eu-west-1",
