@@ -311,6 +311,32 @@ model-free evaluator 12/12 pass. No cloud call/login or renewed external authori
 The six-resource rehearsal runner is unchanged. Actual expanded setup deletion,
 absence verification and the bounded operator execution path still precede a new
 cloud gate; this result does not accept real deletion permissions or OAuth/MFA.
+On 2026-10-02 the user approved retaining a separate definitive Cognito identity
+and MFA for later production use. The protected four-resource identity stack
+and owner TOTP enrollment/login were created and read back successfully; the
+same owner subject was confirmed through authenticated UserInfo. Do not reset
+or delete that retained user, pool, domain or enrollment client during dev cleanup.
+See `docs/phase-8-persistent-identity.md`; production activation and MAPIT session
+migration are not accepted by identity enrollment alone.
+
+The user renewed bounded synthetic-dev authority for two hours starting at
+21:36:42 UTC, ending at 23:36:42 UTC on 2026-10-02. Preserve eu-west-1, quota 10,
+USD 1 gross allowance, endpoint at most five minutes, temporary resource lifetime
+at most one hour, no paid inference and no live MAPIT/Telegram or production.
+Keep the display awake temporarily, without permanent power-policy changes.
+The shared-identity dev rehearsal reached and verified a closed fourteen-resource
+runtime and twelve scoped controls, including exact trust/inline policies for
+five roles. It missed the immutable arming lead and was never activated: no
+successful MCP E2E follows. Compute, its three retained dev-only Cognito children,
+runtime object/bucket and controls were deleted and read back; all 21 final
+rehearsal absence checks passed. Owner subject/TOTP preservation and full Codex
+configuration preservation outside the removed temporary connection were verified.
+Another activation requires the reviewed complete executor, exact owned bindings,
+all independent closures armed, an available human login if requested, and time
+remaining in that renewed authority. Never reset an existing resource's start time
+or execution window to extend the test. No credential, token or real binding
+belongs in Git/vault; private journals remain ACL-protected outside OneDrive.
+
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
+import json
 import uuid
 from datetime import datetime, timezone
 
 import pytest
 
 from scripts.aws_dev_oauth_setup_readback import check_oauth_setup_readback
+from scripts.build_aws_shared_identity_dev import build_shared_identity_oauth_setup_retained_template
 
 ACCOUNT = "123456789012"
 STACK_UUID = "01234567-89ab-cdef-0123-456789abcdef"
@@ -17,6 +19,7 @@ POOL_ID = "eu-west-1_Abcdefghi"
 CLIENT_ID = "SyntheticClient123"
 CALLBACK = "http://127.0.0.1:39031/callback"
 RESOURCE_URI = f"https://{API_ID}.execute-api.eu-west-1.amazonaws.com/mcp"
+BRANDING_UUID = "12345678-1234-4234-8234-123456789abc"
 
 
 class FakeClient:
@@ -56,7 +59,7 @@ def _stack_response():
     }]}
 
 
-def _resource_response():
+def _resource_response(*, shared=False):
     ids = {
         "McpApi": API_ID,
         "McpApiStage": "$default",
@@ -67,8 +70,11 @@ def _resource_response():
         "McpUserPoolDomain": "opaque-domain-physical-id",
         "McpResourceServer": "opaque-resource-server-physical-id",
         "McpUserPoolClient": CLIENT_ID,
-        "McpManagedLoginBranding": "opaque-branding-physical-id",
+        "McpManagedLoginBranding": f"{POOL_ID}|{BRANDING_UUID}",
     }
+    if shared:
+        ids.pop("McpUserPool")
+        ids.pop("McpUserPoolDomain")
     return {"StackResources": [
         {"LogicalResourceId": name, "PhysicalResourceId": physical_id, "ResourceStatus": "UPDATE_COMPLETE",
          "Timestamp": datetime(2026, 10, 2, tzinfo=timezone.utc),
@@ -85,7 +91,7 @@ def _resource_response():
     ]}
 
 
-def _valid_clients():
+def _valid_clients(*, shared=False):
     described = {
         "UserPoolId": POOL_ID,
         "ClientId": CLIENT_ID,
@@ -102,9 +108,9 @@ def _valid_clients():
         "RefreshTokenValidity": 1,
         "TokenValidityUnits": {"AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "days"},
     }
-    return [
+    rows = [
         ("list_users", {"Users": []}),
-        ("list_user_pool_clients", {"UserPoolClients": [{"ClientId": CLIENT_ID}]}),
+        ("list_user_pool_clients", {"UserPoolClients": ([{"ClientId": "PersistentIdentityClient"}, {"ClientId": CLIENT_ID}] if shared else [{"ClientId": CLIENT_ID}])}),
         ("describe_user_pool_client", {"UserPoolClient": described}),
         ("describe_resource_server", {"ResourceServer": {
             "UserPoolId": POOL_ID,
@@ -112,21 +118,32 @@ def _valid_clients():
             "Scopes": [{"ScopeName": "use", "ScopeDescription": "Call the protected MCP endpoint."}],
         }}),
         ("describe_user_pool_domain", {"DomainDescription": {
-            "Domain": "hm-dev-honda-mapit-mcp-dev",
+            "Domain": "hm-honda-mapit-mcp-identity" if shared else "hm-dev-honda-mapit-mcp-dev",
             "UserPoolId": POOL_ID,
             "AWSAccountId": ACCOUNT,
             "Status": "ACTIVE",
             "ManagedLoginVersion": 2,
         }}),
+        *([("describe_managed_login_branding_by_client", {"ManagedLoginBranding": {
+            "ManagedLoginBrandingId": BRANDING_UUID,
+            "UserPoolId": POOL_ID,
+            "UseCognitoProvidedValues": True,
+        }})] if shared else []),
     ]
+    if shared:
+        rows.pop(0)  # The retained identity pool is not required to be user-empty.
+    return rows
 
 
-def _clients(*, mutate=None):
-    cognito_responses = _valid_clients()
+def _clients(*, mutate=None, shared=False, expected_template=None):
+    cognito_responses = _valid_clients(shared=shared)
     if mutate:
         mutate(cognito_responses)
     return (
-        FakeClient([("describe_stacks", _stack_response()), ("describe_stack_resources", _resource_response())]),
+        FakeClient(
+            [("describe_stacks", _stack_response()), ("describe_stack_resources", _resource_response(shared=shared))]
+            + ([ ("get_template", {"TemplateBody": json.dumps(expected_template)}) ] if shared else [])
+        ),
         FakeClient([("get_api", {"ApiId": API_ID, "Name": "honda-mapit-mcp-dev-api", "DisableExecuteApiEndpoint": True}),
                     ("get_routes", {"Items": []})]),
         FakeClient([("get_function_concurrency", {"ReservedConcurrentExecutions": 0})]),
@@ -134,7 +151,7 @@ def _clients(*, mutate=None):
     )
 
 
-def _check(clients):
+def _check(clients, *, shared=False, expected_template=None, **kwargs):
     cf, api, lam, cognito = clients
     return check_oauth_setup_readback(
         cf, api, lam, cognito,
@@ -144,6 +161,10 @@ def _check(clients):
         api_id=API_ID,
         user_pool_id=POOL_ID,
         callback_url=CALLBACK,
+        resource_contract="shared_identity8" if shared else "standalone10",
+        persistent_identity_verified=kwargs.get("persistent_identity_verified", shared),
+        owner_mfa_binding_verified=kwargs.get("owner_mfa_binding_verified", shared),
+        expected_template=expected_template,
     )
 
 
@@ -161,6 +182,59 @@ def test_complete_readback_is_bounded_and_hides_client_id_from_safe_projection()
     assert clients[0].calls[1] == ("describe_stack_resources", {"StackName": STACK_ARN})
     assert clients[3].calls[-1] == ("describe_user_pool_domain", {"Domain": "hm-dev-honda-mapit-mcp-dev"})
     assert clients[3].calls[1] == ("list_user_pool_clients", {"UserPoolId": POOL_ID, "MaxResults": 1})
+
+
+def test_shared_identity_eight_resource_readback_skips_pool_empty_gate_and_checks_branding():
+    expected = build_shared_identity_oauth_setup_retained_template(API_ID, POOL_ID, callback_url=CALLBACK)
+    clients = _clients(shared=True, expected_template=expected)
+    result = _check(clients, shared=True, expected_template=expected)
+    assert result.verified is True
+    assert result.calls == 11
+    assert result.users_empty is None
+    assert result.persistent_identity_verified is True
+    assert result.owner_mfa_binding_verified is True
+    assert result.branding_verified is True
+    assert clients[0].calls[-1][0] == "get_template"
+    assert clients[3].calls[0][0] == "list_user_pool_clients"
+    assert clients[3].calls[-1] == (
+        "describe_managed_login_branding_by_client", {"UserPoolId": POOL_ID, "ClientId": CLIENT_ID},
+    )
+
+
+def test_shared_identity_requires_explicit_identity_and_owner_mfa_attestations():
+    expected = build_shared_identity_oauth_setup_retained_template(API_ID, POOL_ID, callback_url=CALLBACK)
+    for kwargs in ({"persistent_identity_verified": False}, {"owner_mfa_binding_verified": 1}):
+        clients = _clients(shared=True, expected_template=expected)
+        result = _check(clients, shared=True, expected_template=expected, **kwargs)
+        assert result.verified is False
+        assert result.category == "readback_inputs_invalid"
+        assert result.calls == 0
+
+
+def test_shared_identity_branding_binding_must_match_owned_child():
+    expected = build_shared_identity_oauth_setup_retained_template(API_ID, POOL_ID, callback_url=CALLBACK)
+    clients = _clients(shared=True, expected_template=expected)
+    clients[3].responses[-1][1]["ManagedLoginBranding"]["ManagedLoginBrandingId"] = "22345678-1234-4234-8234-123456789abc"
+    result = _check(clients, shared=True, expected_template=expected)
+    assert result.verified is False
+    assert result.category == "branding_mismatch"
+    assert result.client_id is None
+
+
+@pytest.mark.parametrize("physical_id", [
+    f"eu-west-1_OtherPool|{BRANDING_UUID}",
+    f"{POOL_ID}|extra|{BRANDING_UUID}",
+    "branding-canary",
+])
+def test_shared_branding_physical_id_requires_exact_pool_and_uuid_form(physical_id):
+    expected = build_shared_identity_oauth_setup_retained_template(API_ID, POOL_ID, callback_url=CALLBACK)
+    clients = _clients(shared=True, expected_template=expected)
+    for record in clients[0].responses[1][1]["StackResources"]:
+        if record["LogicalResourceId"] == "McpManagedLoginBranding":
+            record["PhysicalResourceId"] = physical_id
+    result = _check(clients, shared=True, expected_template=expected)
+    assert result.verified is False
+    assert result.category == "branding_mismatch"
 
 
 @pytest.mark.parametrize("field,value", [

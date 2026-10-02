@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import uuid
+import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 
@@ -23,6 +24,7 @@ _FUNCTION_NAME = "honda-mapit-mcp-dev-handler"
 _HANDLER_ROLE = "honda-mapit-mcp-dev-handler-role"
 _LOG_GROUP = "/aws/lambda/honda-mapit-mcp-dev-handler"
 _DOMAIN_PREFIX = "hm-dev-honda-mapit-mcp-dev"
+_SHARED_DOMAIN_PREFIX = "hm-honda-mapit-mcp-identity"
 _API_ID = re.compile(r"^[a-z0-9]{10}$")
 _POOL_ID = re.compile(r"^eu-west-1_[A-Za-z0-9]{9,45}$")
 _CLIENT_ID = re.compile(r"^[A-Za-z0-9]{1,128}$")
@@ -31,6 +33,7 @@ _RESOURCE_NAMES = frozenset({
     "McpApi", "McpApiStage", "McpUserPool", "McpHandlerRole", "McpHandlerLogGroup", "McpHandler",
     "McpUserPoolDomain", "McpResourceServer", "McpUserPoolClient", "McpManagedLoginBranding",
 })
+_SHARED_RESOURCE_NAMES = frozenset(_RESOURCE_NAMES - {"McpUserPool", "McpUserPoolDomain"})
 _RESOURCE_TYPES = {
     "McpApi": "AWS::ApiGatewayV2::Api",
     "McpApiStage": "AWS::ApiGatewayV2::Stage",
@@ -49,6 +52,8 @@ class CloudFormationClient(Protocol):
     def describe_stacks(self, *, StackName: str) -> Mapping[str, Any]: ...
 
     def describe_stack_resources(self, *, StackName: str) -> Mapping[str, Any]: ...
+
+    def get_template(self, *, StackName: str, TemplateStage: str) -> Mapping[str, Any]: ...
 
 
 class ApiGatewayClient(Protocol):
@@ -72,6 +77,10 @@ class CognitoClient(Protocol):
 
     def describe_user_pool_domain(self, *, Domain: str) -> Mapping[str, Any]: ...
 
+    def describe_managed_login_branding_by_client(
+        self, *, UserPoolId: str, ClientId: str,
+    ) -> Mapping[str, Any]: ...
+
 
 @dataclass(frozen=True)
 class OAuthSetupReadback:
@@ -85,10 +94,13 @@ class OAuthSetupReadback:
     api_closed: bool = False
     routes_empty: bool = False
     function_reserved_zero: bool = False
-    users_empty: bool = False
+    users_empty: bool | None = None
     client_verified: bool = False
     resource_server_verified: bool = False
     domain_verified: bool = False
+    branding_verified: bool = False
+    persistent_identity_verified: bool = False
+    owner_mfa_binding_verified: bool = False
     client_id: str | None = field(default=None, repr=False)
 
     def safe_projection(self) -> dict[str, Any]:
@@ -106,6 +118,9 @@ class OAuthSetupReadback:
             "client_verified": self.client_verified,
             "resource_server_verified": self.resource_server_verified,
             "domain_verified": self.domain_verified,
+            "branding_verified": self.branding_verified,
+            "persistent_identity_verified": self.persistent_identity_verified,
+            "owner_mfa_binding_verified": self.owner_mfa_binding_verified,
         }
 
 
@@ -150,6 +165,34 @@ def _result(category: str, calls: int, **facts: Any) -> OAuthSetupReadback:
     )
 
 
+def _canonical_json(value: Any) -> bytes | None:
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
+    except (TypeError, ValueError, RecursionError):
+        return None
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+
+def _branding_id_matches(physical_id: Any, user_pool_id: str, returned_id: Any) -> bool:
+    if type(returned_id) is not str:
+        return False
+    try:
+        parsed = uuid.UUID(returned_id)
+    except (ValueError, AttributeError):
+        return False
+    if parsed.int == 0 or str(parsed) != returned_id:
+        return False
+    return physical_id == returned_id or physical_id == f"{user_pool_id}|{returned_id}"
+
+
 def check_oauth_setup_readback(
     cloudformation_client: CloudFormationClient,
     api_client: ApiGatewayClient,
@@ -162,6 +205,10 @@ def check_oauth_setup_readback(
     api_id: str,
     user_pool_id: str,
     callback_url: str,
+    resource_contract: str = "standalone10",
+    persistent_identity_verified: bool = False,
+    owner_mfa_binding_verified: bool = False,
+    expected_template: Mapping[str, Any] | None = None,
 ) -> OAuthSetupReadback:
     """Verify the exact closed OAuth setup, with at most ten injected reads.
 
@@ -169,10 +216,38 @@ def check_oauth_setup_readback(
     It verifies configuration only; it does not establish OAuth interoperability,
     owner authorization, callback listener availability, or runtime readiness.
     """
+    shared = resource_contract == "shared_identity8"
+    if resource_contract not in {"standalone10", "shared_identity8"}:
+        return _result("readback_inputs_invalid", 0)
+    if shared and (
+        persistent_identity_verified is not True
+        or owner_mfa_binding_verified is not True
+        or not isinstance(expected_template, Mapping)
+    ):
+        return _result("readback_inputs_invalid", 0)
     if not _input_valid(account_id, stack_arn, run_id, api_id, user_pool_id, callback_url):
         return _result("readback_inputs_invalid", 0)
 
+    resource_names = _SHARED_RESOURCE_NAMES if shared else _RESOURCE_NAMES
+    if shared:
+        if (
+            not isinstance(expected_template, Mapping)
+        ):
+            return _result("readback_inputs_invalid", 0)
+        try:
+            from scripts.build_aws_shared_identity_dev import build_shared_identity_oauth_setup_retained_template
+            fixed_expected = build_shared_identity_oauth_setup_retained_template(
+                api_id, user_pool_id, callback_url=callback_url,
+            )
+        except Exception:
+            return _result("readback_inputs_invalid", 0)
+        if _canonical_json(fixed_expected) is None or _canonical_json(fixed_expected) != _canonical_json(expected_template):
+            return _result("readback_inputs_invalid", 0)
+
     facts: dict[str, Any] = {}
+    if shared:
+        facts["persistent_identity_verified"] = True
+        facts["owner_mfa_binding_verified"] = True
     calls = 0
 
     def call(client: Any, method: str, **kwargs: Any) -> Mapping[str, Any] | None:
@@ -230,17 +305,17 @@ def check_oauth_setup_readback(
         return _result("stack_outputs_mismatch", calls)
     facts.update(stack_verified=True)
 
-    # 2. All ten expected logical resources, no duplicates or unknowns.
+    # 2. Exact contract resources, no duplicates or unknowns.
     response = call(cloudformation_client, "describe_stack_resources", StackName=stack_arn)
     records = response.get("StackResources") if response is not None else None
-    if type(records) is not list or len(records) != len(_RESOURCE_NAMES):
+    if type(records) is not list or len(records) != len(resource_names):
         return _result("stack_resources_invalid", calls, **facts)
     resource_map: dict[str, Mapping[str, Any]] = {}
     for record in records:
         if not isinstance(record, Mapping) or type(record.get("LogicalResourceId")) is not str:
             return _result("stack_resources_invalid", calls, **facts)
         logical_id = record["LogicalResourceId"]
-        if logical_id in resource_map or logical_id not in _RESOURCE_NAMES:
+        if logical_id in resource_map or logical_id not in resource_names:
             return _result("stack_resources_invalid", calls, **facts)
         physical_id = record.get("PhysicalResourceId")
         if type(physical_id) is not str or not physical_id or len(physical_id) > 1024:
@@ -252,20 +327,38 @@ def check_oauth_setup_readback(
         if record.get("ResourceType") != _RESOURCE_TYPES[logical_id]:
             return _result("stack_resources_invalid", calls, **facts)
         resource_map[logical_id] = record
-    if set(resource_map) != _RESOURCE_NAMES:
+    if set(resource_map) != resource_names:
         return _result("stack_resources_invalid", calls, **facts)
     fixed_physical = {
         "McpApi": api_id,
-        "McpUserPool": user_pool_id,
         "McpHandler": _FUNCTION_NAME,
         "McpHandlerRole": _HANDLER_ROLE,
         "McpHandlerLogGroup": _LOG_GROUP,
     }
+    if not shared:
+        fixed_physical["McpUserPool"] = user_pool_id
     if any(resource_map[key].get("PhysicalResourceId") != value for key, value in fixed_physical.items()):
         return _result("stack_resource_identity_mismatch", calls, **facts)
     if resource_map["McpUserPoolClient"].get("PhysicalResourceId") != client_id:
         return _result("stack_client_identity_mismatch", calls, **facts)
     facts["resources_verified"] = True
+    if shared:
+        response = call(cloudformation_client, "get_template", StackName=stack_arn, TemplateStage="Original")
+        body = response.get("TemplateBody") if response is not None else None
+        if isinstance(body, Mapping):
+            deployed_template = body
+        elif type(body) is str and len(body) <= 512 * 1024:
+            try:
+                deployed_template = json.loads(body, object_pairs_hook=_reject_duplicate_json_keys)
+            except (ValueError, RecursionError):
+                deployed_template = None
+        else:
+            deployed_template = None
+        deployed_bytes = _canonical_json(deployed_template)
+        expected_bytes = _canonical_json(expected_template)
+        if deployed_bytes is None or expected_bytes is None or deployed_bytes != expected_bytes:
+            return _result("stack_template_mismatch", calls, **facts)
+        facts["resources_verified"] = True
 
     # 3. API still closed and has no routes.
     response = call(api_client, "get_api", ApiId=api_id)
@@ -289,19 +382,26 @@ def check_oauth_setup_readback(
     if reserved != 0:
         return _result("function_not_reserved_zero", calls, **facts)
     facts["function_reserved_zero"] = True
-    response = call(cognito_client, "list_users", UserPoolId=user_pool_id, Limit=1)
-    if response is None or type(response.get("Users")) is not list:
-        return _result("users_readback_invalid", calls, **facts)
-    if response["Users"] or response.get("PaginationToken") not in (None, ""):
-        return _result("users_unexpected", calls, **facts)
-    facts["users_empty"] = True
+    if not shared:
+        response = call(cognito_client, "list_users", UserPoolId=user_pool_id, Limit=1)
+        if response is None or type(response.get("Users")) is not list:
+            return _result("users_readback_invalid", calls, **facts)
+        if response["Users"] or response.get("PaginationToken") not in (None, ""):
+            return _result("users_unexpected", calls, **facts)
+        facts["users_empty"] = True
 
     # 5. One public app client and its effective OAuth configuration.
-    response = call(cognito_client, "list_user_pool_clients", UserPoolId=user_pool_id, MaxResults=1)
+    response = call(cognito_client, "list_user_pool_clients", UserPoolId=user_pool_id, MaxResults=60 if shared else 1)
     client_list = response.get("UserPoolClients") if response is not None else None
     if type(client_list) is not list or response.get("NextToken") not in (None, ""):
         return _result("clients_readback_invalid", calls, **facts)
-    if len(client_list) != 1 or not isinstance(client_list[0], Mapping) or client_list[0].get("ClientId") != client_id:
+    if (
+        (not shared and (len(client_list) != 1 or not isinstance(client_list[0], Mapping) or client_list[0].get("ClientId") != client_id))
+        or (shared and (
+            len(client_list) > 60 or any(not isinstance(item, Mapping) or type(item.get("ClientId")) is not str for item in client_list)
+            or sum(item.get("ClientId") == client_id for item in client_list if isinstance(item, Mapping)) != 1
+        ))
+    ):
         return _result("clients_unexpected", calls, **facts)
     response = call(cognito_client, "describe_user_pool_client", UserPoolId=user_pool_id, ClientId=client_id)
     described = response.get("UserPoolClient") if response is not None else None
@@ -347,10 +447,11 @@ def check_oauth_setup_readback(
     ):
         return _result("resource_server_mismatch", calls, **facts)
     facts["resource_server_verified"] = True
-    response = call(cognito_client, "describe_user_pool_domain", Domain=_DOMAIN_PREFIX)
+    domain_prefix = _SHARED_DOMAIN_PREFIX if shared else _DOMAIN_PREFIX
+    response = call(cognito_client, "describe_user_pool_domain", Domain=domain_prefix)
     domain = response.get("DomainDescription") if response is not None else None
     if not isinstance(domain, Mapping) or (
-        domain.get("Domain") != _DOMAIN_PREFIX
+        domain.get("Domain") != domain_prefix
         or domain.get("UserPoolId") != user_pool_id
         or domain.get("AWSAccountId") != account_id
         or domain.get("Status") != "ACTIVE"
@@ -360,6 +461,23 @@ def check_oauth_setup_readback(
     ):
         return _result("domain_mismatch", calls, **facts)
     facts["domain_verified"] = True
+    if shared:
+        response = call(
+            cognito_client, "describe_managed_login_branding_by_client",
+            UserPoolId=user_pool_id, ClientId=client_id,
+        )
+        branding = response.get("ManagedLoginBranding") if response is not None else None
+        if not isinstance(branding, Mapping) or (
+            branding.get("UserPoolId") != user_pool_id
+            or not _branding_id_matches(
+                resource_map["McpManagedLoginBranding"].get("PhysicalResourceId"),
+                user_pool_id,
+                branding.get("ManagedLoginBrandingId"),
+            )
+            or branding.get("UseCognitoProvidedValues") is not True
+        ):
+            return _result("branding_mismatch", calls, **facts)
+        facts["branding_verified"] = True
     return _result("oauth_setup_verified", calls, client_id=client_id, **facts)
 
 

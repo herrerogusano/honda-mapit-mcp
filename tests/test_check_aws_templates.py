@@ -16,12 +16,14 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "application_draft", "shutdown_lambda_draft",
         "shutdown_control_draft", "cleanup_schedule_draft", "combined_control_draft",
         "closed_bootstrap_draft",
+        "permanent_identity_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
         "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",
         "closed_oauth_setup_draft",
         "closed_oauth_runtime_draft",
         "closed_oauth_cleanup_draft", "closed_oauth_setup_cleanup_draft",
         "closed_oauth_setup_control_draft",
+        "shared_identity_dev_runtime_draft", "shared_identity_dev_cleanup_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
@@ -48,6 +50,20 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
     statements = setup_cleanup["Resources"]["BootstrapDeletionRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
     assert "cognito-idp:DeleteUserPoolClient" in statements[1]["Action"]
     assert statements[2]["Action"] == "cognito-idp:DescribeUserPoolDomain"
+    identity = json.loads(documents["permanent_identity_draft"])
+    assert set(identity["Resources"]) == {"McpUserPool", "McpUserPoolDomain", "McpUserPoolClient", "McpManagedLoginBranding"}
+    assert identity["Resources"]["McpUserPool"]["DeletionPolicy"] == "Retain"
+    assert identity["Resources"]["McpUserPoolClient"]["Properties"]["AllowedOAuthScopes"] == ["openid"]
+    shared = json.loads(documents["shared_identity_dev_runtime_draft"])
+    assert "McpUserPool" not in shared["Resources"] and "McpUserPoolDomain" not in shared["Resources"]
+    assert shared["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
+    assert shared["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
+    shared_cleanup = json.loads(documents["shared_identity_dev_cleanup_draft"])
+    shared_statements = shared_cleanup["Resources"]["BootstrapDeletionRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+    shared_actions = [action for statement in shared_statements for action in (
+        statement["Action"] if isinstance(statement.get("Action"), list) else [statement.get("Action")]
+    )]
+    assert not {"cognito-idp:DeleteUserPool", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:DescribeUserPoolDomain"} & set(shared_actions)
 
 
 def test_socket_and_dns_guard_restores_after_success_and_exception():

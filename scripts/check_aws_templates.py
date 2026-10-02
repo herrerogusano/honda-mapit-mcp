@@ -51,9 +51,12 @@ def fixed_documents() -> dict[str, str]:
     from mapit.aws_dev_bootstrap_control_bundle import build_dev_bootstrap_control_bundle
     from mapit.aws_dev_control_bundle import build_dev_control_bundle
     from mapit.aws_dev_shutdown import AwsDevShutdownPolicy
+    from mapit.aws_shared_identity_dev_cleanup import build_shared_identity_dev_cleanup
     from mapit.aws_dev_shutdown_control import build_dev_shutdown_control
     from mapit.aws_dev_runtime import cognito_dev_policy
     from scripts.build_aws_dev_bootstrap import fixed_bootstrap_template
+    from scripts.build_aws_identity_template import fixed_identity_template
+    from scripts.build_aws_shared_identity_dev import build_shared_identity_dev_template
     from scripts.build_aws_dev_oauth_template import build_dev_oauth_setup_template, build_dev_oauth_template
     from scripts.build_aws_dev_runtime_template import (
         fixed_runtime_bucket_template, fixed_runtime_candidate_template,
@@ -83,6 +86,7 @@ def fixed_documents() -> dict[str, str]:
         activation_start_epoch=1893456240,
     ))
     documents["closed_bootstrap_draft"] = json.dumps(fixed_bootstrap_template())
+    documents["permanent_identity_draft"] = json.dumps(fixed_identity_template())
     documents["bootstrap_cleanup_draft"] = json.dumps(build_dev_bootstrap_cleanup(
         AwsDevShutdownPolicy("a1b2c3d4e5"),
         user_pool_id="eu-west-1_A1b2C3d4E",
@@ -114,7 +118,26 @@ def fixed_documents() -> dict[str, str]:
         jwks_sha256="b" * 64, callback_url="http://localhost:39031/callback/synthetic",
         execution_start=1893456000, execution_end=1893456300,
     ))
+    shared_policy = cognito_dev_policy(
+        user_pool_id="eu-west-1_A1b2C3d4E", api_id="a1b2c3d4e5",
+        client_id="syntheticclient123",
+        owner_subject="12345678-1234-4234-8234-123456789abc",
+    )
+    documents["shared_identity_dev_runtime_draft"] = json.dumps(build_shared_identity_dev_template(
+        shared_policy,
+        bucket="honda-mapit-mcp-dev-synthetic-artifact", zip_sha256="a" * 64,
+        jwks_sha256="b" * 64, callback_url="http://localhost:39031/callback/synthetic",
+        execution_start=1893456000, execution_end=1893456300,
+    ))
     documents["closed_oauth_cleanup_draft"] = json.dumps(build_dev_oauth_cleanup(
+        AwsDevShutdownPolicy("a1b2c3d4e5"),
+        user_pool_id="eu-west-1_A1b2C3d4E",
+        stack_uuid="11111111-2222-3333-4444-555555555555",
+        schedule_at_utc="2030-01-01T00:45:00",
+        authorizer_id="auth123", integration_id="int123",
+        post_route_id="post123", metadata_route_id="meta123",
+    ))
+    documents["shared_identity_dev_cleanup_draft"] = json.dumps(build_shared_identity_dev_cleanup(
         AwsDevShutdownPolicy("a1b2c3d4e5"),
         user_pool_id="eu-west-1_A1b2C3d4E",
         stack_uuid="11111111-2222-3333-4444-555555555555",
