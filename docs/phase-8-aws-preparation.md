@@ -79,6 +79,67 @@ this composition. No new live session or login is part of this block.
 Primary references: [Lambda reserved environment variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html),
 [Cognito callback contract](https://docs.aws.amazon.com/botocore/latest/reference/services/cognito-idp/client/create_user_pool_client.html).
 
+The corresponding cleanup review used cfn-lint 1.57.1's pinned eu-west-1
+resource-provider schemas, not just API names. A separate disabled cleanup
+candidate can extend the accepted bootstrap role only with:
+
+- `DeleteUserPoolDomain`, `DeleteResourceServer`, `DeleteUserPoolClient` and
+  `DeleteManagedLoginBranding` under `cognito-idp`, on the exact pool ARN;
+- `DescribeUserPoolDomain` on `*`, constrained to eu-west-1 because this action
+  has no resource-level authorization;
+- API Gateway GET/DELETE on the exact observed authorizer, integration and two
+  route ARNs, in addition to the existing API/stage targets;
+- `lambda:RemovePermission` on the exact handler function for both invoke grants.
+
+Keep the exact stack UUID and deletion RoleARN, disabled schedule and original
+bounded timing contract. Do not add S3, KMS or broad IAM writes. The domain
+schema also lists KMS operations and the app-client schema lists IAM policy
+writes; these appear related to optional custom-domain/analytics features that
+are absent here, but the provider schema alone does not prove execution branches.
+This is an explicit acceptance uncertainty for a later closed deletion rehearsal,
+not permission to grant all listed actions preemptively. Static validation does
+not prove cloud deletion. Separate object/bucket cleanup is still required.
+
+Sources: [Cognito IAM action scopes](https://docs.aws.amazon.com/de_de/service-authorization/latest/reference/list_amazoncognitouserpools.html),
+[API Gateway exact ARNs](https://docs.aws.amazon.com/apigateway/latest/developerguide/arn-format-reference.html).
+
+The closed composition and cleanup factories are now independently accepted
+offline: **41 composition tests** and **59 cleanup/base-control tests** passed.
+All **twelve fixed synthetic templates** passed the pinned regional schema
+checker with zero findings and Python networking disabled. Independent review
+found that copying extra domain/analytics properties could expand cleanup scope;
+the composition now requires exact resource/property/dependency allowlists.
+These results do not close the live provider-branch, owner/callback or artifact
+retirement requirements and do not modify the completed rehearsal's resources.
+
+### Exact artifact retirement contract — 2026-10-02
+
+The next local-only operator core must require `app_deleted is True`, supplied
+by fresh verified ownership/deletion readback, before any request. This flag is
+an internal orchestration precondition, not evidence obtainable from an MCP
+argument. The caller also confirms the fresh owned/private bucket and injects
+a bounded single-attempt client. The core must verify bucket versioning is
+unconfigured; no enabled/suspended versioning or MFA-delete handling is allowed.
+For the sole derived `runtime/<ZIP SHA-256>.zip` key, validate HEAD size/checksum,
+AES256 and a non-wildcard ETag before one conditional `DeleteObject`. Verify
+absence afterwards; a 403, timeout or ambiguous write is not absence and must
+not trigger retries or bulk deletion. If the exact object is already confirmed
+absent, skip the write.
+
+Only after confirmed object absence, bounded listings of one object and one
+multipart upload must be empty and untruncated before reporting the bucket as
+empty. Do not follow pagination or delete unknown contents. The core cannot
+delete a bucket/stack or create an SDK session. A later operator must separately
+delete the owned artifact stack after fresh ownership/empty checks; this is
+not an atomic bucket lock or an automated cleanup guarantee. Tests are synthetic
+and offline; no S3 object exists from this turn's completed rehearsal.
+The operator must exclude concurrent writers and versioning changes during this
+bounded retirement; an object listing alone cannot detect historical versions.
+
+Primary contracts: [conditional object deletion](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/delete_object.html),
+[bucket versioning](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/get_bucket_versioning.html),
+[multipart listing](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/list_multipart_uploads.html).
+
 The sections below retain the chronological evidence and decisions. Later dated
 decisions supersede earlier alternatives; old test counts are historical.
 The user authorized design, public price research and offline infrastructure as

@@ -45,11 +45,14 @@ def fixed_documents() -> dict[str, str]:
         sys.path.insert(0, str(root))
     from mapit.aws_dev_cleanup_schedule import build_dev_cleanup_schedule
     from mapit.aws_dev_bootstrap_cleanup import build_dev_bootstrap_cleanup
+    from mapit.aws_dev_oauth_cleanup import build_dev_oauth_cleanup
     from mapit.aws_dev_bootstrap_control_bundle import build_dev_bootstrap_control_bundle
     from mapit.aws_dev_control_bundle import build_dev_control_bundle
     from mapit.aws_dev_shutdown import AwsDevShutdownPolicy
     from mapit.aws_dev_shutdown_control import build_dev_shutdown_control
+    from mapit.aws_dev_runtime import cognito_dev_policy
     from scripts.build_aws_dev_bootstrap import fixed_bootstrap_template
+    from scripts.build_aws_dev_oauth_template import build_dev_oauth_template
     from scripts.build_aws_dev_runtime_template import (
         fixed_runtime_bucket_template, fixed_runtime_candidate_template,
     )
@@ -95,6 +98,24 @@ def fixed_documents() -> dict[str, str]:
     documents["runtime_artifact_bucket_draft"] = json.dumps(fixed_runtime_bucket_template())
     documents["runtime_artifact_candidate_draft"] = json.dumps(fixed_runtime_candidate_template(
         "honda-mapit-mcp-dev-synthetic-artifact", "a" * 64,
+    ))
+    documents["closed_oauth_runtime_draft"] = json.dumps(build_dev_oauth_template(
+        cognito_dev_policy(
+            user_pool_id="eu-west-1_A1b2C3d4E", api_id="a1b2c3d4e5",
+            client_id="syntheticclient123",
+            owner_subject="12345678-1234-4234-8234-123456789abc",
+        ),
+        bucket="honda-mapit-mcp-dev-synthetic-artifact", zip_sha256="a" * 64,
+        jwks_sha256="b" * 64, callback_url="http://localhost:39031/callback/synthetic",
+        execution_start=1893456000, execution_end=1893456300,
+    ))
+    documents["closed_oauth_cleanup_draft"] = json.dumps(build_dev_oauth_cleanup(
+        AwsDevShutdownPolicy("a1b2c3d4e5"),
+        user_pool_id="eu-west-1_A1b2C3d4E",
+        stack_uuid="11111111-2222-3333-4444-555555555555",
+        schedule_at_utc="2030-01-01T00:45:00",
+        authorizer_id="auth123", integration_id="int123",
+        post_route_id="post123", metadata_route_id="meta123",
     ))
     return documents
 

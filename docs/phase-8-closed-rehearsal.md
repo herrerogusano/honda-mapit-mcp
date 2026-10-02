@@ -1,10 +1,12 @@
 # Phase 8 — closed infrastructure rehearsal
 
-This is the next concrete AWS acceptance step after local preparation. It needs
-renewed account authority because the previous two-hour window expired. The
-existing account confirmation, region `eu-west-1`, quota 10, synthetic-only scope
-and USD 1 gross allowance remain the intended boundaries. The application stays
-closed throughout this rehearsal. No OAuth login or model call is involved.
+**Completed and cleaned up on 2026-10-02 by approximately 14:27 UTC.** Scheduled
+shutdown and scoped scheduled app deletion passed; all six app and twelve
+control resources were operationally removed. The detailed evidence is below.
+The accepted boundaries were the confirmed account, `eu-west-1`, quota 10,
+synthetic-only scope and USD 1 gross allowance. The application stayed closed;
+no OAuth login, handler invocation or model call was involved. The retained
+procedure is not permission to repeat the rehearsal automatically.
 
 ## Renewed execution authority — 2026-10-02
 
