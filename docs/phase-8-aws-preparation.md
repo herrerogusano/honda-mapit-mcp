@@ -214,6 +214,48 @@ No SDK session, account read, resource change or real OAuth login occurred.
 The existing six-resource runner remains unchanged; orchestration and expanded
 cleanup acceptance still precede a future closed cloud update.
 
+### Closed setup update and cleanup integration — local continuation
+
+The next integration connects the owned six-resource bootstrap to the ten-resource
+OAuth setup. Prepare the exact Cognito cleanup permissions first, preserving the
+same stack UUID, deletion RoleARN, schedules and twelve control resources. This
+stage needs no authorizer/integration/route IDs and must not add their permissions.
+The coordinator is separate from the accepted six-resource rehearsal runner.
+It records intent before each single CloudFormation update, stops on ambiguity,
+arms cleanup through that control-stack update, verifies the expanded deletion
+role and actual enabled cleanup schedule, then
+requests the closed setup update and runs the accepted ten-read checker.
+
+The cleanup schedule must target the exact stack/deletion role and the original
+first-resource epoch +45 minutes. The old rehearsal's accelerated +120-second
+cleanup cannot be reused for this flow. Never reset the resource clock while
+preparing OAuth. Require sufficient remaining time and current external authority
+before any update. Local tests use injected clients/journals only; no cloud
+execution, login, activation or deletion-permission acceptance is implied.
+The generated static factories stay disabled. Only the coordinator's working
+control template changes the cleanup schedule to ENABLED, together with the
+reviewed Cognito deletion policy. It must verify CloudFormation completion plus
+actual IAM and Scheduler readbacks before updating the app. Shutdown schedules,
+request tripwire and endpoint remain unchanged throughout this closed setup.
+
+This block is independently accepted offline: setup-only cleanup, twelve-resource
+control composition and the five-step injected coordinator. The actual IAM policy
+is compared after resolving the fixed account/region pseudo-parameters; stack
+UUID, resource types, template digest, schedule target and immutable timing are
+bound before the app update. Update intent and a unique request token are saved
+before dispatch; an uncertain result is reconciled by reads, never blind replay.
+Both elapsed-time and external-authority checks run before success is persisted.
+The full offline checkpoint and final CI result are recorded in AGENTS.md.
+
+Fifteen synthetic schema fixtures pass with networking blocked; compilation and
+the model-free evaluator (12/12) pass. These checks do not prove real Cognito
+deletion permissions or real OAuth/PKCE/MFA interoperability. Expanded setup
+deletion/absence verification and the bounded operator execution path remain
+pending before a renewed cloud gate. No cloud call or human login occurred here.
+
+Primary contracts: [CloudFormation UpdateStack](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_UpdateStack.html)
+and [Scheduler schedule return values](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-scheduler-schedule.html#aws-resource-scheduler-schedule-return-values).
+
 ### Remaining execution order and callback evidence — 2026-10-02
 
 Official OpenAI documentation now explicitly describes a server-specific

@@ -20,7 +20,8 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",
         "closed_oauth_setup_draft",
         "closed_oauth_runtime_draft",
-        "closed_oauth_cleanup_draft",
+        "closed_oauth_cleanup_draft", "closed_oauth_setup_cleanup_draft",
+        "closed_oauth_setup_control_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
@@ -39,6 +40,14 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
     assert oauth_setup["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
     assert "McpPostRoute" not in oauth_setup["Resources"]
     assert "McpLambdaInvokePermission" not in oauth_setup["Resources"]
+    setup_control = json.loads(documents["closed_oauth_setup_control_draft"])
+    assert len(setup_control["Resources"]) == 12
+    assert setup_control["Metadata"]["NoActivation"] is True
+    assert setup_control["Resources"]["BootstrapCleanupSchedule"]["Properties"]["State"] == "DISABLED"
+    setup_cleanup = json.loads(documents["closed_oauth_setup_cleanup_draft"])
+    statements = setup_cleanup["Resources"]["BootstrapDeletionRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+    assert "cognito-idp:DeleteUserPoolClient" in statements[1]["Action"]
+    assert statements[2]["Action"] == "cognito-idp:DescribeUserPoolDomain"
 
 
 def test_socket_and_dns_guard_restores_after_success_and_exception():

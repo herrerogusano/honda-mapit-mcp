@@ -18,6 +18,45 @@ _REGION = "eu-west-1"
 _OBSERVED_RESOURCE_ID = re.compile(r"^[a-z0-9]{1,64}$")
 _POOL_ID = re.compile(r"^eu-west-1_[A-Za-z0-9]{9,45}$")
 _HANDLER_FUNCTION_NAME = "honda-mapit-mcp-dev-handler"
+_BASE_CLEANUP_RESOURCES = frozenset({"BootstrapDeletionRole", "BootstrapCleanupScheduleGroup", "BootstrapCleanupSchedulerRole", "BootstrapCleanupSchedule"})
+
+
+def _validated_bootstrap_cleanup(policy, user_pool_id: str, stack_uuid: str, schedule_at_utc: str):
+    """Build and verify the shared exact six-statement bootstrap cleanup role."""
+    try:
+        template = build_dev_bootstrap_cleanup(policy, user_pool_id, stack_uuid, schedule_at_utc)
+    except Exception:
+        raise ValueError("bootstrap cleanup contract invalid") from None
+    resources = template.get("Resources")
+    role = resources.get("BootstrapDeletionRole") if isinstance(resources, dict) else None
+    properties = role.get("Properties") if isinstance(role, dict) else None
+    policies = properties.get("Policies") if isinstance(properties, dict) else None
+    document = policies[0].get("PolicyDocument") if isinstance(policies, list) and len(policies) == 1 and isinstance(policies[0], dict) else None
+    statements = document.get("Statement") if isinstance(document, dict) else None
+    if not isinstance(resources, dict) or set(resources) != _BASE_CLEANUP_RESOURCES:
+        raise ValueError("bootstrap cleanup contract invalid")
+    if not isinstance(statements, list) or len(statements) != 6:
+        raise ValueError("bootstrap cleanup contract invalid")
+
+    api_root = {"Fn::Sub": f"arn:${{AWS::Partition}}:apigateway:${{AWS::Region}}::/apis/{policy.api_id}"}
+    api_stage = {"Fn::Sub": f"arn:${{AWS::Partition}}:apigateway:${{AWS::Region}}::/apis/{policy.api_id}/stages/$default"}
+    expected = [
+        {"Effect": "Allow", "Action": ["apigateway:GET", "apigateway:DELETE"], "Resource": [api_root, api_stage]},
+        {"Effect": "Allow", "Action": "cognito-idp:DeleteUserPool", "Resource": {"Fn::Sub": f"arn:${{AWS::Partition}}:cognito-idp:${{AWS::Region}}:${{AWS::AccountId}}:userpool/{user_pool_id}"}},
+        {"Effect": "Allow", "Action": ["lambda:DeleteFunction", "lambda:GetFunction"], "Resource": {"Fn::Sub": f"arn:${{AWS::Partition}}:lambda:${{AWS::Region}}:${{AWS::AccountId}}:function:{_HANDLER_FUNCTION_NAME}"}},
+        {"Effect": "Allow", "Action": [
+            "iam:DeleteRole", "iam:DetachRolePolicy", "iam:DeleteRolePolicy", "iam:GetRole",
+            "iam:ListAttachedRolePolicies", "iam:ListRolePolicies", "iam:TagRole", "iam:UntagRole",
+        ], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/honda-mapit-mcp-dev-handler-role"}},
+        {"Effect": "Allow", "Action": "logs:DescribeLogGroups", "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": _REGION}}},
+        {"Effect": "Allow", "Action": ["logs:DeleteLogGroup", "logs:DeleteDataProtectionPolicy"], "Resource": [
+            {"Fn::Sub": f"arn:${{AWS::Partition}}:logs:${{AWS::Region}}:${{AWS::AccountId}}:log-group:/aws/lambda/{_HANDLER_FUNCTION_NAME}"},
+            {"Fn::Sub": f"arn:${{AWS::Partition}}:logs:${{AWS::Region}}:${{AWS::AccountId}}:log-group:/aws/lambda/{_HANDLER_FUNCTION_NAME}:*"},
+        ]},
+    ]
+    if statements != expected:
+        raise ValueError("bootstrap cleanup contract invalid")
+    return template, statements
 
 
 def _validate_id(value: str) -> str:
@@ -57,62 +96,14 @@ def build_dev_oauth_cleanup(
     if post_route_id == metadata_route_id:
         raise ValueError("OAuth routes must have distinct observed identifiers")
 
-    try:
-        template = build_dev_bootstrap_cleanup(policy, user_pool_id, stack_uuid, schedule_at_utc)
-    except Exception:
-        raise ValueError("bootstrap cleanup contract invalid") from None
-    resources = template.get("Resources")
-    role = resources.get("BootstrapDeletionRole") if isinstance(resources, dict) else None
-    properties = role.get("Properties") if isinstance(role, dict) else None
-    policies = properties.get("Policies") if isinstance(properties, dict) else None
-    document = policies[0].get("PolicyDocument") if isinstance(policies, list) and len(policies) == 1 and isinstance(policies[0], dict) else None
-    statements = document.get("Statement") if isinstance(document, dict) else None
-    if not isinstance(statements, list) or len(statements) != 6:
-        raise ValueError("bootstrap cleanup contract invalid")
-
+    template, statements = _validated_bootstrap_cleanup(policy, user_pool_id, stack_uuid, schedule_at_utc)
+    resources = template["Resources"]
     api_root = {"Fn::Sub": f"arn:${{AWS::Partition}}:apigateway:${{AWS::Region}}::/apis/{policy.api_id}"}
     api_arn = lambda suffix: {
         "Fn::Sub": f"arn:${{AWS::Partition}}:apigateway:${{AWS::Region}}::/apis/{policy.api_id}/{suffix}"
     }
     api_statement = statements[0]
     expected_api_resources = [api_root, api_arn("stages/$default")]
-    expected_api_actions = ["apigateway:GET", "apigateway:DELETE"]
-    if (
-        api_statement != {"Effect": "Allow", "Action": expected_api_actions, "Resource": expected_api_resources}
-        or statements[1] != {
-            "Effect": "Allow",
-            "Action": "cognito-idp:DeleteUserPool",
-            "Resource": {"Fn::Sub": f"arn:${{AWS::Partition}}:cognito-idp:${{AWS::Region}}:${{AWS::AccountId}}:userpool/{user_pool_id}"},
-        }
-        or statements[2] != {
-            "Effect": "Allow",
-            "Action": ["lambda:DeleteFunction", "lambda:GetFunction"],
-            "Resource": {"Fn::Sub": f"arn:${{AWS::Partition}}:lambda:${{AWS::Region}}:${{AWS::AccountId}}:function:{_HANDLER_FUNCTION_NAME}"},
-        }
-        or statements[3] != {
-            "Effect": "Allow",
-            "Action": [
-                "iam:DeleteRole", "iam:DetachRolePolicy", "iam:DeleteRolePolicy", "iam:GetRole",
-                "iam:ListAttachedRolePolicies", "iam:ListRolePolicies", "iam:TagRole", "iam:UntagRole",
-            ],
-            "Resource": {"Fn::Sub": f"arn:${{AWS::Partition}}:iam::${{AWS::AccountId}}:role/honda-mapit-mcp-dev-handler-role"},
-        }
-        or statements[4] != {
-            "Effect": "Allow",
-            "Action": "logs:DescribeLogGroups",
-            "Resource": "*",
-            "Condition": {"StringEquals": {"aws:RequestedRegion": _REGION}},
-        }
-        or statements[5] != {
-            "Effect": "Allow",
-            "Action": ["logs:DeleteLogGroup", "logs:DeleteDataProtectionPolicy"],
-            "Resource": [
-                {"Fn::Sub": f"arn:${{AWS::Partition}}:logs:${{AWS::Region}}:${{AWS::AccountId}}:log-group:/aws/lambda/{_HANDLER_FUNCTION_NAME}"},
-                {"Fn::Sub": f"arn:${{AWS::Partition}}:logs:${{AWS::Region}}:${{AWS::AccountId}}:log-group:/aws/lambda/{_HANDLER_FUNCTION_NAME}:*"},
-            ],
-        }
-    ):
-        raise ValueError("bootstrap cleanup contract invalid")
 
     expected_api_resources.extend([
         api_arn(f"authorizers/{authorizer_id}"),
@@ -163,4 +154,61 @@ def build_dev_oauth_cleanup(
     return template
 
 
-__all__ = ["build_dev_oauth_cleanup"]
+def build_dev_oauth_setup_cleanup(
+    policy: AwsDevShutdownPolicy,
+    user_pool_id: str,
+    stack_uuid: str,
+    schedule_at_utc: str,
+) -> dict[str, Any]:
+    """Build exact cleanup for the closed Cognito setup stage only.
+
+    The setup stage adds no API child routes. Permissions remain scoped to the
+    known pool and fixed bootstrap resources; schedules stay disabled.
+    """
+    if type(policy) is not AwsDevShutdownPolicy:
+        raise ValueError("a validated development shutdown policy is required")
+    policy = AwsDevShutdownPolicy(policy.api_id, region=policy.region)
+    if policy.region != _REGION or type(user_pool_id) is not str or not _POOL_ID.fullmatch(user_pool_id):
+        raise ValueError("bootstrap cleanup contract invalid")
+    template, statements = _validated_bootstrap_cleanup(policy, user_pool_id, stack_uuid, schedule_at_utc)
+    pool_statement = statements[1]
+    if pool_statement["Resource"] != {
+        "Fn::Sub": f"arn:${{AWS::Partition}}:cognito-idp:${{AWS::Region}}:${{AWS::AccountId}}:userpool/{user_pool_id}"
+    }:
+        raise ValueError("bootstrap cleanup contract invalid")
+    pool_statement["Action"] = [
+        "cognito-idp:DeleteUserPool",
+        "cognito-idp:DeleteUserPoolDomain",
+        "cognito-idp:DeleteResourceServer",
+        "cognito-idp:DeleteUserPoolClient",
+        "cognito-idp:DeleteManagedLoginBranding",
+    ]
+    statements.insert(2, {
+        "Effect": "Allow",
+        "Action": "cognito-idp:DescribeUserPoolDomain",
+        "Resource": "*",
+        "Condition": {"StringEquals": {"aws:RequestedRegion": _REGION}},
+    })
+    metadata = template.get("Metadata")
+    if not isinstance(metadata, dict):
+        raise ValueError("bootstrap cleanup contract invalid")
+    metadata.update({
+        "Readiness": "OAUTH_SETUP_CLEANUP_NOT_DEPLOY_READY",
+        "FixedTargetCognitoSetupOnly": True,
+        "ObservedBootstrapOwnershipRequired": True,
+        "FullSetupDeletionRehearsalRequired": True,
+        "NoApiChildPermissions": True,
+        "NoRuntimeArtifactPermissions": True,
+        "OptionalProviderPermissionBranchesPending": True,
+        "KmsPermissionsIncluded": False,
+        "MissingPrerequisites": [
+            "exact bootstrap stack ownership and pool/API bindings independently read back",
+            "cleanup role policy and enabled one-time 45-minute app deletion schedule read back before app update",
+            "full Cognito setup stack deletion and resource absence rehearsed",
+            "runtime OAuth, owner binding, and enrollment remain separate gates",
+        ],
+    })
+    return template
+
+
+__all__ = ["build_dev_oauth_cleanup", "build_dev_oauth_setup_cleanup"]

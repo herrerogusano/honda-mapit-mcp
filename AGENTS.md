@@ -298,6 +298,19 @@ ID only after full success, excluded from safe diagnostics and repr. Full local
 checkpoint: 1473 passed, five Windows skips, evaluator 12/12; prior setup CI had
 seven green jobs. The original rehearsal runner remains six-resource-only.
 No cloud call was made; expanded update/cleanup orchestration remains pending.
+The subsequent local setup integration is independently accepted: setup-only
+Cognito cleanup policy, twelve-resource control bundle and a separate five-step
+injected coordinator. It saves update intent/token before a single write, rejects
+blind replay after ambiguity, verifies exact owned templates/resources and actual
+IAM/Scheduler readbacks, and preserves the original shutdown/resource clocks.
+Only its transient control template arms cleanup at first-resource epoch +2700;
+static factories remain disabled. Final readbacks recheck external authority
+before committing verified state/private client ID. Full offline checkpoint:
+1489 passed, five Windows skips; fifteen schema fixtures, compilation and
+model-free evaluator 12/12 pass. No cloud call/login or renewed external authority.
+The six-resource rehearsal runner is unchanged. Actual expanded setup deletion,
+absence verification and the bounded operator execution path still precede a new
+cloud gate; this result does not accept real deletion permissions or OAuth/MFA.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.
