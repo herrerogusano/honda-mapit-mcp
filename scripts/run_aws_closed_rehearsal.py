@@ -887,6 +887,9 @@ class AwsClosedRehearsal:
             raise RehearsalError("controls_template_unverified")
         expected_names = set(expected_template["Resources"])
         by_name = self._resource_map(stack_id, expected_names)
+        machine_arn = by_name["ShutdownStateMachine"].get("PhysicalResourceId")
+        if type(machine_arn) is not str or machine_arn != f"arn:aws:states:{REGION}:{self.expected_account_id}:stateMachine:{STATE_MACHINE_NAME}":
+            raise RehearsalError("shutdown_machine_unverified")
         self._verify_app_closed(state)
         shutdown_group = by_name["SchedulerGroup"].get("PhysicalResourceId")
         cleanup_group = by_name["BootstrapCleanupScheduleGroup"].get("PhysicalResourceId")
@@ -945,16 +948,13 @@ class AwsClosedRehearsal:
         targets = targets_response.get("Targets") if isinstance(targets_response, Mapping) else None
         expected_event_target = {
             "Id": "StartFixedDevShutdownWorkflow",
-            "Arn": state["state_machine_arn"],
+            "Arn": machine_arn,
             "RoleArn": f"arn:aws:iam::{self.expected_account_id}:role/honda-mapit-mcp-dev-request-tripwire",
             "Input": "{}",
             "RetryPolicy": {"MaximumRetryAttempts": 0, "MaximumEventAgeInSeconds": 60},
         }
         if type(targets) is not list or len(targets) != 1 or not isinstance(targets[0], Mapping) or dict(targets[0]) != expected_event_target:
             raise RehearsalError("tripwire_target_unverified")
-        machine_arn = by_name["ShutdownStateMachine"].get("PhysicalResourceId")
-        if type(machine_arn) is not str or machine_arn != f"arn:aws:states:{REGION}:{self.expected_account_id}:stateMachine:{STATE_MACHINE_NAME}":
-            raise RehearsalError("shutdown_machine_unverified")
         machine = self._call("stepfunctions", "describe_state_machine", stateMachineArn=machine_arn)
         if not isinstance(machine, Mapping) or machine.get("status") != "ACTIVE":
             raise RehearsalError("shutdown_machine_unverified")

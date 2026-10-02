@@ -16,6 +16,7 @@ from scripts.run_aws_closed_rehearsal import (
     MemoryJournal,
     RehearsalError,
     _is_reparse_or_symlink,
+    _json_bytes,
 )
 
 ACCOUNT = "123456789012"
@@ -453,3 +454,77 @@ def test_delete_controls_can_remove_an_owned_partial_control_stack_after_app_gon
     assert [c for c in clients["cloudformation"].calls if c[0] == "delete_stack"] == [
         ("delete_stack", {"StackName": CONTROL_ARN})
     ]
+
+
+def test_check_controls_derives_machine_arn_before_journal_has_it():
+    from mapit.aws_dev_shutdown import AwsDevShutdownPolicy
+    from mapit.aws_dev_bootstrap_control_bundle import build_dev_bootstrap_control_bundle
+
+    now = 1_900_000_000
+    state = control_state(now)
+    state.update({"controls_create_attempted": True, "control_stack_id": CONTROL_ARN})
+    # This matches the state immediately after create-controls: the generated
+    # machine ARN has not yet been copied into the journal by check-controls.
+    state.pop("state_machine_arn")
+    template = build_dev_bootstrap_control_bundle(
+        AwsDevShutdownPolicy(state["api_id"]),
+        user_pool_id=state["user_pool_id"], stack_uuid=state["stack_uuid"],
+        resource_started_epoch=state["resource_started_epoch"],
+        activation_start_epoch=state["activation_start_epoch"],
+        now_epoch=state["controls_created_at_epoch"],
+    )
+    machine_arn = f"arn:aws:states:eu-west-1:{ACCOUNT}:stateMachine:{STATE_MACHINE_NAME}"
+    resources = []
+    for logical_id in template["Resources"]:
+        physical_id = {
+            "SchedulerGroup": SCHEDULE_GROUP_NAMES[0],
+            "BootstrapCleanupScheduleGroup": SCHEDULE_GROUP_NAMES[1],
+            "ShutdownStateMachine": machine_arn,
+        }.get(logical_id, logical_id)
+        resources.append({"LogicalResourceId": logical_id, "PhysicalResourceId": physical_id, "ResourceStatus": "CREATE_COMPLETE"})
+
+    clients = make_clients()
+    clients["cloudformation"].methods.update({
+        "describe_stacks": {"Stacks": [{
+            "StackId": CONTROL_ARN, "StackName": "honda-mapit-mcp-dev-control", "StackStatus": "CREATE_COMPLETE",
+            "Tags": [{"Key": "ClosedRehearsalRunId", "Value": state["run_id"]}],
+        }]},
+        "get_template": {"TemplateBody": _json_bytes(template).decode("utf-8")},
+        "describe_stack_resources": {"StackResources": resources},
+    })
+    clients["apigatewayv2"].methods["get_api"] = {"DisableExecuteApiEndpoint": True}
+    clients["lambda"].methods["get_function_concurrency"] = {"ReservedConcurrentExecutions": 0}
+    clients["scheduler"].methods["get_schedule"] = lambda Name, GroupName: schedule_response(
+        "shutdown" if Name == SCHEDULE_NAMES[0] else "cleanup",
+        expression=state["shutdown_schedule_expression"] if Name == SCHEDULE_NAMES[0] else state["cleanup_schedule_expression"],
+    )
+    alarm_arn = f"arn:aws:cloudwatch:eu-west-1:{ACCOUNT}:alarm:honda-mapit-mcp-dev-request-tripwire"
+    clients["cloudwatch"].methods["describe_alarms"] = {"MetricAlarms": [{
+        "AlarmName": "honda-mapit-mcp-dev-request-tripwire", "AlarmArn": alarm_arn,
+        "Namespace": "AWS/ApiGateway", "MetricName": "Count",
+        "Dimensions": [{"Name": "ApiId", "Value": state["api_id"]}, {"Name": "Stage", "Value": "$default"}],
+        "Period": 60, "Statistic": "SampleCount", "Threshold": 100.0,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold", "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1, "TreatMissingData": "notBreaching", "ActionsEnabled": False,
+        "AlarmActions": [],
+    }]}
+    pattern = {
+        "source": ["aws.cloudwatch"], "detail-type": ["CloudWatch Alarm State Change"],
+        "account": [ACCOUNT], "region": ["eu-west-1"], "resources": [alarm_arn],
+        "detail": {"alarmName": ["honda-mapit-mcp-dev-request-tripwire"], "state": {"value": ["ALARM"]}},
+    }
+    clients["events"].methods.update({
+        "describe_rule": {"Name": "honda-mapit-mcp-dev-request-tripwire-alarm-rule", "State": "DISABLED", "EventPattern": __import__("json").dumps(pattern)},
+        "list_targets_by_rule": {"Targets": [{
+            "Id": "StartFixedDevShutdownWorkflow", "Arn": machine_arn,
+            "RoleArn": f"arn:aws:iam::{ACCOUNT}:role/honda-mapit-mcp-dev-request-tripwire",
+            "Input": "{}", "RetryPolicy": {"MaximumRetryAttempts": 0, "MaximumEventAgeInSeconds": 60},
+        }]},
+    })
+    clients["stepfunctions"].methods["describe_state_machine"] = {"status": "ACTIVE"}
+    journal = MemoryJournal()
+    journal.save(state)
+
+    result = runner(clients, journal, now=now).run_step("check-controls")
+    assert result["category"] == "controls_verified_disabled"
+    assert journal.load()["state_machine_arn"] == machine_arn
