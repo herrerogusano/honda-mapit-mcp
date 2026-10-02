@@ -250,6 +250,18 @@ the 12/12 model-free evaluator and eight fixed synthetic schema checks. See
 `docs/phase-8-closed-rehearsal.md` for the next concrete renewed-authority gate.
 Actual scheduled shutdown, deletion permissions and final cleanup still require
 closed AWS acceptance; no OAuth login or endpoint activation is part of it.
+On 2026-10-02 the user renewed two hours of bounded dev authority, conservatively
+13:29–15:29 UTC (15:29–17:29 Europe/Madrid), with temporary display/system wakefulness.
+Proceed through the closed rehearsal and in-scope gates without waiting for the
+absent user. Preserve eu-west-1, quota 10, synthetic-only, USD 1 gross allowance
+and one-hour resource target; no production, private MAPIT/Telegram operation,
+paid model inference or bypass of human OAuth/MFA. Cleanup remains mandatory.
+The one-step closed-rehearsal runner is independently accepted (35 focused,
+1232 full-suite tests, five Windows symlink skips). Live preflight passed with
+two stacks and 17 named targets absent. At about 14:03 UTC the supervisor
+requested the six-resource closed app stack. Do not treat it as cleaned up or
+repeat creation: consult the private journal and the final live result section
+in `docs/phase-8-closed-rehearsal.md` before any further operation.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

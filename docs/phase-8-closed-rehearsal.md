@@ -6,6 +6,34 @@ existing account confirmation, region `eu-west-1`, quota 10, synthetic-only scop
 and USD 1 gross allowance remain the intended boundaries. The application stays
 closed throughout this rehearsal. No OAuth login or model call is involved.
 
+## Renewed execution authority — 2026-10-02
+
+The user approved continuing autonomously for two hours, conservatively
+13:29–15:29 UTC (15:29–17:29 Europe/Madrid), including temporary display/system
+wakefulness. Keep the boundaries above and do not treat absence as permission
+to bypass first human login/MFA. The initial STS/Lambda preflight confirmed the
+previously accepted account, non-root identity and regional/unreserved capacity
+10/10. No resources were created by that preflight. The selected control stack
+name is `honda-mapit-mcp-dev-control`; it must be absent before creation.
+
+The one-step runner is `scripts/run_aws_closed_rehearsal.py`. Its state directory
+must be outside Git/OneDrive with operator/SYSTEM-only ACLs verified separately.
+The supervisor verified those ACLs before use. Set the expected account and
+authorized-until epoch only in the command environment; no credentials enter
+the journal. Each write records intent durably before dispatch, uses one SDK
+attempt and requires readback after an ambiguous result. Provisioning/arming
+cannot extend the saved authorization deadline. Owned-resource cleanup remains
+permitted after it expires; partial-stack recovery does not require a successful
+creation or a previously armed cleanup schedule.
+
+Independent review accepted 35 runner tests, including actual SDK shape stubs,
+incorrect targets/roles/retries, false shutdown flags and partial cleanup.
+The full checkpoint passed 1,232 tests with five Windows symlink skips.
+The live preflight then passed with 21 single-attempt reads: two stacks and
+17 checked names absent. A separate AWS template syntax validation passed.
+The initial closed app creation was requested at approximately 14:03 UTC;
+actual creation/shutdown/deletion results must be recorded separately below.
+
 ## Resources and purpose
 
 `scripts/build_aws_dev_bootstrap.py` derives six resources from the existing
