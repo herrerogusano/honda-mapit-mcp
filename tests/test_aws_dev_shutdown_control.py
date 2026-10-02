@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import json
 
 from mapit.aws_dev_shutdown import AwsDevShutdownPolicy
 from mapit.aws_dev_shutdown_control import build_dev_shutdown_control
@@ -36,11 +37,14 @@ def test_step_functions_resource_uses_generated_workflow_and_no_observability() 
     props = _template()["Resources"]["ShutdownStateMachine"]["Properties"]
     assert props["StateMachineName"] == "honda-mapit-mcp-dev-shutdown"
     assert props["StateMachineType"] == "STANDARD"
-    assert props["Definition"]["TimeoutSeconds"] == 45
+    assert "Definition" not in props
+    definition = json.loads(props["DefinitionString"])
+    assert definition["TimeoutSeconds"] == 45
+    assert definition["States"]["DisableApiEndpoint"]["ResultPath"] is None
     assert props["LoggingConfiguration"] == {"Level": "OFF"}
     assert props["TracingConfiguration"] == {"Enabled": False}
     assert props["RoleArn"] == {"Fn::GetAtt": ["ShutdownWorkflowRole", "Arn"]}
-    assert "honda-mapit-mcp-dev-handler" in repr(props["Definition"])
+    assert "honda-mapit-mcp-dev-handler" in repr(definition)
 
 
 def test_workflow_role_is_trusted_only_for_exact_named_state_machine_and_has_exact_actions() -> None:

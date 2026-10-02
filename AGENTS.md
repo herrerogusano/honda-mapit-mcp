@@ -183,6 +183,28 @@ The original application scaffold remains unchanged/disabled. The user can do
 first login/MFA, but the available AWS session's match to the intended credit
 account remains unconfirmed. Do not create resources until that binding and
 complete reviewed cleanup/timing/owner/callback prerequisites are satisfied.
+The user subsequently confirmed the available AWS session is the intended
+account. Keep that confirmation categorical; no account number/balance in Git.
+Owner/callback, first login and complete reviewed cleanup/timing wiring remain
+open before creation. No quota increase or other-project change is authorized.
+The user also approved a temporary Codex OAuth connection only for this dev MCP,
+with its own callback/listener/client and removal after the test. Preserve other
+servers and global defaults. One synthetic loopback CLI URL-preparation probe
+made no login/code exchange/model call or persistent config edit; actual callback
+binding remains open. Do not infer undocumented callback suffixes or persist
+authorization URLs/state/verifiers/tokens in Git. First-login readiness alone
+does not authorize resource creation before the remaining reviewed prerequisites.
+The offline runtime ZIP builder and fixed-app disabled cleanup component are
+independently accepted, with 1062 full-suite tests passed and 4 Windows symlink
+skips, compilation and model-free evaluator 12/12. The builder pins 28 ARM wheels
+and fourteen source modules, includes public JWKS/manifest beside the entrypoint,
+and rejects repository/OneDrive/business-OneDrive external inputs/output. Two
+concrete packaging defects were fixed and independently regression-tested; no
+real Cognito snapshot or login is implied. Control DefinitionString preserves
+ASL ResultPath null and passed one bounded CloudFormation syntax check; cleanup
+also passed syntax only. Runtime IAM, tripwire alarm/EventBridge, reviewed timing,
+owner/callback, real ARM artifact acceptance and cleanup orchestration remain
+separate before deployment. No resources have been created, activated or invoked.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

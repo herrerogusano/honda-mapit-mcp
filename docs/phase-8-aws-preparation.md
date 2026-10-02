@@ -482,6 +482,75 @@ not proof of account binding or completed OAuth interoperability. No resources
 have been created, activated or invoked. Keep quota 10 and stop before creation
 until account/owner/callback and complete reviewed timing/cleanup wiring exist.
 
+The user subsequently confirmed that the available AWS session belongs to the
+intended account. Retain only this categorical confirmation in Git, not the
+account number or financial balances. This resolves the account-match question,
+not owner subject/callback, completed first login, IAM execution or cleanup.
+
+### Vault reuse audit and additional local preparation — 2026-10-02
+
+The canonical vault MCP deployment guide and the existing AWS Remote MCP auth
+and shutdown runbooks were consulted, not duplicated or executed. The Honda
+scaffold already includes Managed Login v2, default managed branding, Essentials
+and exact resource/scope/audience binding. Reuse those contracts, not the other
+project's current WorkOS provider, PLUS tier, Retain or deletion protection:
+those differ from this disposable synthetic dev window. For user-driven TOTP
+enrollment, reuse the transient administrative scope with finally/readback
+closure; the actual enrollment method and interactive acceptance remain open.
+
+The independent-capacity pattern also requires a request tripwire (CloudWatch
+alarm to an exact EventBridge/Step Functions target) in the surviving control
+stack. That trigger and its bounded threshold/period contract are still missing;
+the scheduled close alone is not acceptance of the complete activation workflow.
+Do not delete the control anchor on a second fixed timer while application-stack
+deletion is asynchronous. Verify app absence or handle DELETE_FAILED first.
+
+One account-side CloudFormation syntax check rejected object-valued ASL
+`Definition` because of required `ResultPath: null`. The independently reviewed
+fix serializes `DefinitionString`, preserving the nulls; one subsequent bounded
+ValidateTemplate call accepted the control component. A separate syntax check
+accepted the disabled fixed-app cleanup schedule. Neither created resources nor
+proved runtime IAM, alarm delivery, deletion completion or OAuth interoperability.
+
+The pure cleanup component schedules only the fixed dev application stack for
+DeleteStack through a dedicated scoped Scheduler role. It remains DISABLED and
+requires a reviewed preassociated CloudFormation service role. UTC dates are
+calendar/syntax validated, not lifetime-guarded. Control-stack cleanup and final
+verification remain operator responsibilities, not guaranteed automatic deletion.
+
+The offline runtime builder consumes exactly 28 locally supplied hash-locked
+ARM wheels, fourteen allowlisted project modules and an empty package initializer.
+It neither invokes pip nor constructs a credential/network provider. The required
+public-only JWKS snapshot is parsed and paired with a hash/issuer manifest beside
+the entrypoint under `mapit/`, not at the ZIP root. Wheels, snapshot and output
+must be outside the repository and OneDrive (including business folder names);
+the builder rejects extra wheels, hashes/metadata mismatches, links, path escapes,
+collisions, `.pth` and unsupported `.data` installation paths. Dependency test
+files are omitted. Inputs, entry counts and archive sizes have explicit bounds.
+Hashes bind the selected download bytes, not independently authenticated wheel
+publisher provenance. A synthetic artifact is not a real Cognito key snapshot.
+The separate advisory-only audit of all 28 pins found no known vulnerabilities.
+Independent review accepted the builder and control serialization fix after
+reproducing and correcting both business-OneDrive and misplaced sibling-artifact
+defects. The independent test reads the extracted snapshot/manifest through the
+actual fixed-sibling loader. Focused builder/control checks: **53 passed**.
+Full final-source suite: **1062 passed, 4 skipped**, compilation and model-free
+evaluator **12/12**. Exact extracted-ZIP ARM acceptance is recorded separately
+once complete; an earlier handwritten fixture ZIP does not substitute for it.
+
+The user additionally approved preparing a temporary Codex connection for this
+development MCP only, and removing it after the test. Do not change other MCPs
+or global defaults. An installed-CLI loopback-only OAuth-URL preparation probe
+used command-local overrides and a predefined synthetic client; it performed
+no successful login, code exchange, model call or persistent config edit. With
+issuer identification unsupported, two distinct synthetic resource paths
+produced distinct callback suffixes. No authentication URL/state/verifier/token
+belongs in Git. A callback placeholder is not adequate registration evidence.
+The effective callback for the actual AWS connection remains to be established;
+do not infer its suffix algorithm from this small diagnostic.
+Official settings: [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference),
+[OpenAI MCP authentication](https://developers.openai.com/plugins/build/auth).
+
 ### Resumed offline preparation — 2026-10-01
 
 The user asked to resume work after the premature stop. The two-hour AWS gate

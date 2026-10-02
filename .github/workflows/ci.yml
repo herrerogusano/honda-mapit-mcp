@@ -113,3 +113,5 @@ jobs:
         run: python scripts/export_audit_requirements.py --output audit-requirements.txt
       - name: Audit known advisories (networked, separate from offline tests)
         run: python -m pip_audit --strict --no-deps --disable-pip -r audit-requirements.txt --progress-spinner off --timeout 20 --desc off
+      - name: Audit pinned ARM runtime versions (advisories only, no ARM installation)
+        run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/runtime-requirements.txt --progress-spinner off --timeout 20 --desc off

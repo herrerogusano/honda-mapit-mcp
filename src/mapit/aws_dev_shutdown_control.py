@@ -8,6 +8,7 @@ AWS. Deployment-time guards and cleanup remain separate prerequisites.
 from __future__ import annotations
 
 import re
+import json
 from datetime import datetime
 from typing import Any
 
@@ -124,7 +125,9 @@ def build_dev_shutdown_control(
                 "StateMachineName": _STATE_MACHINE_NAME,
                 "StateMachineType": "STANDARD",
                 "RoleArn": {"Fn::GetAtt": ["ShutdownWorkflowRole", "Arn"]},
-                "Definition": build_dev_shutdown_workflow(policy),
+                # CFN rejects literal null values in its object-valued Definition.
+                # ASL needs ResultPath:null; preserve it in the JSON string instead.
+                "DefinitionString": json.dumps(build_dev_shutdown_workflow(policy), separators=(",", ":")),
                 "LoggingConfiguration": {"Level": "OFF"},
                 "TracingConfiguration": {"Enabled": False},
                 "Tags": tags,
