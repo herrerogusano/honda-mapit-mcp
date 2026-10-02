@@ -191,3 +191,28 @@ acknowledgements only, keeping strict HTTP-200 exact-ID enabled-state GET
 readback. AWS also documents ApiId as optional in the acknowledgement; a present
 incorrect ID still fails closed. The precise original enable acknowledgement
 was not captured and must not be described as conclusively reconstructed.
+
+### Successful synthetic Codex-to-cloud OAuth E2E
+
+The fresh second activation completed the human OAuth/PKCE login with the retained
+owner/MFA and the actual temporary Codex client. All six allowlisted URL-binding
+checks passed without retaining any authorization URL/state/challenge. The real
+enable acknowledgement was HTTP 201 with the exact API ID; the strict subsequent
+GET readback passed. The installed Codex app-server created an explicitly ephemeral
+thread, discovered the synthetic dev tools and successfully made the two fixed
+calls (`get_vehicle_status` and `get_distance`), with six JSON-RPC requests total.
+No `turn/start`, paid model invocation, MAPIT session/data, or Telegram operation
+was used. This is actual synthetic cloud MCP interoperability, not production
+or real upstream/data acceptance.
+
+The activation core reported `activation_and_shutdown_verified`, with twenty
+SDK operations and both endpoint-disabled/reserved-concurrency-zero readbacks
+passing. Owned resource deletion completed: compute, all three dev-only Cognito
+children, the exact package object, its empty bucket and control resources were
+retired. All twenty-one final absence checks passed with zero remaining rehearsal
+stacks. A fresh owner read confirmed the same subject and preferred/active TOTP.
+The temporary Codex connection was logged out/removed with other configuration
+preserved. The protected persistent identity remains; no claim of a zero measured
+bill is made. The source patch
+passed 1,559 offline tests (five skipped), forty-five focused review tests, and
+all seven CI jobs on commit `dc44ae3`.

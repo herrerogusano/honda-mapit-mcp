@@ -1,5 +1,18 @@
 # Phase 8 — AWS preparation and next gate
 
+Current status — 2026-10-03 Europe/Madrid: real bounded synthetic dev
+interoperability now passed, using the retained owner/MFA, actual Codex OAuth/PKCE,
+tool discovery and two successful synthetic tool calls without paid inference.
+Endpoint/Lambda closure was verified. See
+[persistent identity and E2E evidence](phase-8-persistent-identity.md) for final
+owned-resource cleanup status and the observed UpdateApi HTTP-201 contract fix.
+The permanent owner/MFA remains reusable for future clients. No production,
+live MAPIT session migration, private-data cloud acceptance, always-on service
+or multiuser isolation follows from this test. Those are separate remaining gates;
+Phase 8 as a whole is not yet complete.
+
+The following dated sections retain their historical scope and evidence.
+
 Current status — 2026-10-02: local synthetic runtime and exact ARM package are
 accepted. The user chose the regional shared pool of 10, with independent
 control-plane shutdown. There is no pending quota-increase decision. A renewed

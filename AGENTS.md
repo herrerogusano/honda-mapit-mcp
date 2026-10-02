@@ -350,6 +350,19 @@ readback and unconditional closure. No successful cloud MCP E2E is implied.
 Each new rehearsal keeps its own immutable first-resource and execution times;
 never reuse consumed write intents or widen a prior window.
 
+The next fresh activation succeeded: actual owner OAuth/PKCE/MFA, Codex synthetic
+tool discovery and two successful fixed calls, six app-server requests, no model
+turn or live MAPIT/Telegram. Real UpdateApi enable acknowledgement was HTTP 201
+with matching ID and exact GET readback. Core reported activation and shutdown
+verified (endpoint off, reserve zero), then owned compute, three dev-only Cognito
+children, package/bucket and controls were removed; all 21 final absence checks
+passed, with owner subject/TOTP and unrelated Codex configuration preserved.
+The permanent identity remains protected. Source passed 1559 offline tests (5
+skipped), 45 focused independent tests and seven green CI jobs on dc44ae3.
+This accepts synthetic dev cloud interoperability only: production, real MAPIT
+session migration/live-data acceptance, always-on operations and hosted multiuser
+isolation remain separate gates. See docs/phase-8-persistent-identity.md.
+
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.
