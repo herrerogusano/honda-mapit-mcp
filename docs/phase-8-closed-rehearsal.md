@@ -136,6 +136,52 @@ the OAuth client/callback, owner's enrollment, public JWKS and real runtime
 artifact using the generated identifiers in a separate deployment session.
 The five-minute public endpoint window belongs to that later session.
 
+## Live rehearsal progress — 2026-10-02
+
+- The six-resource app reached `CREATE_COMPLETE`; independent API/Lambda
+  readbacks confirmed disabled endpoint and reserved concurrency zero. Routes,
+  users and OAuth clients were all empty.
+- The observed-ID control template passed AWS syntax validation and all twelve
+  resources reached `CREATE_COMPLETE`. Original template, event/alarm targets
+  and disabled schedules passed the runner's readbacks.
+- The first `check-controls` exposed a local initialization-order defect: its
+  EventBridge target comparison read a journal ARN before the first successful
+  verification could store it. No schedule was armed by that failed read step.
+  The fix derives and validates the ARN from the observed stack resources first;
+  36 focused tests, including a first-verification regression, passed independent
+  review before the successful readback.
+- At approximately 14:12 UTC, one update armed the shutdown schedule. Immediate
+  readback confirmed its safe target/settings and closed app; execution remained
+  pending at that point.
+- At approximately 14:19 UTC, one real scheduled workflow execution was verified:
+  both control-plane writes returned successfully, both workflow readbacks were
+  true, and independent API/Lambda reads confirmed the closed state.
+- One update armed exact-stack cleanup for approximately 14:21:58 UTC. By
+  14:23 UTC the application was `DELETE_COMPLETE`; all six resource deletion
+  records and named-resource absence checks passed. The archived stack record
+  confirmed the exact dedicated deletion role was used. No operator fallback
+  app deletion or IAM expansion was needed.
+- The operator then deleted the owned control stack. By 14:27 UTC, its twelve
+  resource records were `DELETE_COMPLETE` and the final 21-read check confirmed
+  absence of all named app/control resources, roles, schedules, groups, alarm,
+  rule and state machine. First resource request was 14:03:16 UTC: operational
+  cleanup was verified within approximately 24 minutes, below the one-hour target.
+
+**Closed rehearsal accepted.** Endpoint activation, Lambda handler invocation,
+OAuth login, real MAPIT data, Telegram and model inference were not exercised.
+The request-tripwire event delivery remains untested because its rule stayed
+disabled. Final Lambda capacity remained 10 total / 10 unreserved. No additional
+resource deployment is implied by this result. Actual billed cost was not
+queried or measured; the gross USD 1 allowance was not an enforced billing cap.
+AWS can retain CloudFormation/execution audit records and an inactive deleted
+Cognito pool after operational deletion; absence checks do not erase service
+audit history or claim instantaneous physical data destruction.
+
+The initial runner CI found an optional-SDK test import outside its dedicated
+environment. Its SDK-only case now uses a per-test dependency guard and is also
+explicitly run in the pinned SDK job. The corrected checkpoint `5017363` passed
+all seven CI jobs. This test correction did not modify the deployed resources.
+
 Primary references: [DeleteStack RoleARN](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_DeleteStack.html),
 [Lambda package properties](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-lambda-function-code.html),
 [API import configuration](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-api.html),

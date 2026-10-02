@@ -1,12 +1,15 @@
 # Phase 8 — AWS preparation and next gate
 
 Current status — 2026-10-02: local synthetic runtime and exact ARM package are
-accepted; commit `fda78fb` has seven green CI jobs. The user chose the regional
-shared pool of 10, with independent control-plane shutdown. There is no pending
-quota-increase decision. No resources have been created or activated. The last
-time-limited AWS authority expired; continue local preparation before seeking a
-renewed, concrete deployment approval. Remaining work is integration of closure,
-cleanup, runtime/bootstrap configuration and the actual OAuth owner/callback flow.
+accepted. The user chose the regional shared pool of 10, with independent
+control-plane shutdown. There is no pending quota-increase decision. A renewed
+two-hour dev gate allowed the [closed infrastructure rehearsal](phase-8-closed-rehearsal.md):
+six app and twelve control resources were created, scheduled shutdown and scoped
+scheduled app deletion passed, and all operational resources were verified
+removed by approximately 14:27 UTC. API activation, handler invocation, human
+OAuth and private-data/model operations were not part of that rehearsal.
+Remaining work is the real runtime artifact/configuration and OAuth owner/callback
+flow, followed by bounded synthetic interoperability. Phase 8 is not complete.
 
 The sections below retain the chronological evidence and decisions. Later dated
 decisions supersede earlier alternatives; old test counts are historical.
@@ -712,6 +715,25 @@ and scheduling acceptance, followed later by OAuth/runtime interoperability,
 remain unproven.
 
 #### Bootstrap identity ordering
+
+The offline `scripts/build_aws_dev_runtime_template.py` now prepares a separate
+temporary artifact-bucket stack and a closed runtime candidate. The bucket has
+no fixed name or versioning, blocks public access, enforces bucket-owner
+ownership and TLS, and uses SSE-S3. The candidate changes only the bootstrap
+handler/code reference and readiness metadata, retaining API disabled/reserve
+zero and the original execution role without S3 permissions. The object key is
+`runtime/<ZIP SHA-256>.zip`; this digest is distinct from the manifest's JWKS hash.
+Independent synthetic review passed; all ten fixed templates passed the pinned
+offline schema checker. No bucket was created and no package was uploaded.
+
+This is not a publisher or automatic cleanup implementation. A future uploader
+must bind the observed owned bucket/key/hash, avoid overwriting conflicting
+content, verify the stored object and remove that exact object after app deletion.
+Verify the bucket is empty before deleting its stack; never empty an unrelated
+bucket or reuse the other project's retained SAM bucket. Real runtime environment,
+owner/client/JWKS binding and actual package acceptance remain separate.
+Primary references: [Lambda S3 code](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-lambda-function-code.html),
+[S3 bucket deletion](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-s3-bucket.html).
 
 An API ID, Cognito pool/client IDs and owner subject are generated during closed
 bootstrap. Requiring those generated values before any resource creation would

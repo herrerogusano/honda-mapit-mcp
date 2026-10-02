@@ -50,6 +50,9 @@ def fixed_documents() -> dict[str, str]:
     from mapit.aws_dev_shutdown import AwsDevShutdownPolicy
     from mapit.aws_dev_shutdown_control import build_dev_shutdown_control
     from scripts.build_aws_dev_bootstrap import fixed_bootstrap_template
+    from scripts.build_aws_dev_runtime_template import (
+        fixed_runtime_bucket_template, fixed_runtime_candidate_template,
+    )
 
     documents = {}
     for label, filename in (
@@ -88,6 +91,10 @@ def fixed_documents() -> dict[str, str]:
         resource_started_epoch=1893456000,
         now_epoch=1893456060,
         activation_start_epoch=1893456240,
+    ))
+    documents["runtime_artifact_bucket_draft"] = json.dumps(fixed_runtime_bucket_template())
+    documents["runtime_artifact_candidate_draft"] = json.dumps(fixed_runtime_candidate_template(
+        "honda-mapit-mcp-dev-synthetic-artifact", "a" * 64,
     ))
     return documents
 

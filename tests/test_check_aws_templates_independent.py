@@ -21,6 +21,7 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "application_draft", "shutdown_lambda_draft", "shutdown_control_draft",
         "cleanup_schedule_draft", "combined_control_draft", "closed_bootstrap_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
+        "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",
     }
     rendered = "\n".join(docs.values())
     assert "synthetic-access-canary" not in rendered

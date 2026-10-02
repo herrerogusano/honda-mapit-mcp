@@ -262,6 +262,13 @@ two stacks and 17 named targets absent. At about 14:03 UTC the supervisor
 requested the six-resource closed app stack. Do not treat it as cleaned up or
 repeat creation: consult the private journal and the final live result section
 in `docs/phase-8-closed-rehearsal.md` before any further operation.
+That rehearsal is now COMPLETE: scheduled control-plane closure passed with one
+execution, scheduled exact-role application deletion passed, and final removal
+of all six app plus twelve control resources was verified at about 14:27 UTC.
+Capacity stayed 10/10. No endpoint activation, handler invocation, human OAuth,
+MAPIT/Telegram/private-data or model operation occurred. No app-deletion fallback
+or IAM expansion was needed. AWS audit/deleted-pool retention is distinct from
+operational resource removal. Do not recreate those stacks implicitly.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.
