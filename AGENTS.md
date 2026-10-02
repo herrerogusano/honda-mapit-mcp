@@ -272,7 +272,9 @@ operational resource removal. Do not recreate those stacks implicitly.
 Subsequent work in that window remained offline. Private runtime binding-file
 input, conditional exact-key S3 publication, a closed 16-resource OAuth/runtime
 composition, exact observed-child cleanup policy and guarded artifact retirement
-are independently accepted. The checkpoint has 1434 passing tests, five Windows
+are independently accepted. The final synthetic artifact lifecycle test also
+passed independent review; its app-deleted flag is simulated, not a cloud receipt.
+The checkpoint has 1436 passing tests, five Windows
 skips, twelve valid synthetic schema fixtures and model-free evaluation 12/12.
 No bucket/object was created or deleted; these operator helpers are not MCP tools.
 Keep the original rehearsal runner restricted to its six-resource bootstrap.

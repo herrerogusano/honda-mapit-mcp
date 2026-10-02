@@ -143,6 +143,17 @@ skips**, successful compilation and model-free evaluator **12/12**. No object
 or bucket was actually deleted by these tests. The separate bucket-stack
 deletion/integration procedure and cloud interoperability remain pending.
 
+Final offline integration checkpoint: **1,436 passed, five Windows skips**,
+successful compilation and model-free evaluator **12/12**. Two independently
+accepted stateful synthetic lifecycle tests connect publication, the closed
+OAuth template's exact ZIP key (distinct from the JWKS hash), and retirement.
+They verify that a false application-deletion precondition makes no request and
+retains the object, and that checksum drift prevents deletion. The true
+precondition is explicitly simulated: neither these tests nor template schema
+acceptance proves expanded CloudFormation deletion or real OAuth interoperability.
+All twelve synthetic schema fixtures had passed the pinned checker; no template
+changed in this final test-only block. No additional cloud operation occurred.
+
 Primary contracts: [conditional object deletion](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/delete_object.html),
 [bucket versioning](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/get_bucket_versioning.html),
 [multipart listing](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/list_multipart_uploads.html).
