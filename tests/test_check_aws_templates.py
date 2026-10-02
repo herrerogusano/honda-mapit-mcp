@@ -14,7 +14,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
     documents = checker.fixed_documents()
     assert set(documents) == {
         "application_draft", "shutdown_lambda_draft",
-        "shutdown_control_draft", "cleanup_schedule_draft",
+        "shutdown_control_draft", "cleanup_schedule_draft", "combined_control_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
@@ -24,6 +24,9 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
     cleanup = json.loads(documents["cleanup_schedule_draft"])
     assert cleanup["Resources"]["CleanupSchedule"]["Properties"]["State"] == "DISABLED"
     assert "a1b2c3d4e5" in documents["shutdown_control_draft"]
+    combined = json.loads(documents["combined_control_draft"])
+    assert combined["Resources"]["CleanupSchedule"]["Properties"]["State"] == "DISABLED"
+    assert combined["Resources"]["RequestTripwireAlarmRule"]["Properties"]["State"] == "DISABLED"
 
 
 def test_socket_and_dns_guard_restores_after_success_and_exception():

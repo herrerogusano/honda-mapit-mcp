@@ -13,6 +13,8 @@ _API_ID = "a1b2c3d4e5"
 _FUNCTION = "honda-mapit-mcp-dev-handler"
 _STATE_MACHINE = "honda-mapit-mcp-dev-shutdown"
 _GROUP = "honda-mapit-mcp-dev-safety"
+_TRIPWIRE_ALARM = "honda-mapit-mcp-dev-request-tripwire"
+_TRIPWIRE_RULE = "honda-mapit-mcp-dev-request-tripwire-alarm-rule"
 
 
 def _control(timestamp: str = "2026-10-02T18:00:00") -> dict[str, Any]:
@@ -29,17 +31,19 @@ def _all_values(value: Any):
             yield from _all_values(child)
 
 
-def test_template_is_only_the_five_gated_resources_with_no_lambda_function_or_trigger():
+def test_template_is_only_the_eight_region_gated_resources_with_no_lambda_function():
     template = _control()
     resources = template["Resources"]
     assert set(resources) == {
         "ShutdownWorkflowRole", "ShutdownStateMachine", "SchedulerGroup",
-        "SchedulerInvokeRole", "ShutdownSchedule",
+        "SchedulerInvokeRole", "ShutdownSchedule", "RequestTripwireAlarm",
+        "RequestTripwireEventRole", "RequestTripwireAlarmRule",
     }
     assert all(resource.get("Condition") == "SupportedRegion" for resource in resources.values())
     assert {resource["Type"] for resource in resources.values()} == {
         "AWS::IAM::Role", "AWS::StepFunctions::StateMachine",
         "AWS::Scheduler::ScheduleGroup", "AWS::Scheduler::Schedule",
+        "AWS::CloudWatch::Alarm", "AWS::Events::Rule",
     }
     assert not any("AWS::Lambda::Function" == value for value in _all_values(template))
     assert not any(str(value).startswith("AWS::Lambda::") for value in _all_values(template))
@@ -52,6 +56,7 @@ def test_iam_resources_and_actions_are_scoped_without_wildcards():
     resources = template["Resources"]
     workflow_statements = resources["ShutdownWorkflowRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
     scheduler_statements = resources["SchedulerInvokeRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+    event_statements = resources["RequestTripwireEventRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
 
     assert workflow_statements == [
         {
@@ -84,7 +89,7 @@ def test_iam_resources_and_actions_are_scoped_without_wildcards():
         "Action": "states:StartExecution",
         "Resource": {"Fn::GetAtt": ["ShutdownStateMachine", "Arn"]},
     }]
-    assert not any(value == "*" for value in _all_values(workflow_statements + scheduler_statements))
+    assert not any(value == "*" for value in _all_values(workflow_statements + scheduler_statements + event_statements))
     assert not any("lambda:*" == value or "apigateway:*" == value or "states:*" == value for value in _all_values(template))
 
 
@@ -164,6 +169,80 @@ def test_metadata_disclaims_deploy_readiness_and_requires_runtime_future_guard()
     assert "deployment-time future guard" in metadata["ScheduleTimestampPolicy"]
     assert "cleanup procedure" in " ".join(metadata["MissingPrerequisites"])
     assert "future" in " ".join(metadata["MissingPrerequisites"])
+
+
+def test_tripwire_metric_is_counted_per_exact_api_stage_with_inert_one_minute_threshold():
+    alarm = _control()["Resources"]["RequestTripwireAlarm"]["Properties"]
+    assert alarm["AlarmName"] == _TRIPWIRE_ALARM
+    assert alarm["Namespace"] == "AWS/ApiGateway"
+    assert alarm["MetricName"] == "Count"
+    assert alarm["Dimensions"] == [
+        {"Name": "ApiId", "Value": _API_ID},
+        {"Name": "Stage", "Value": "$default"},
+    ]
+    assert alarm["Statistic"] == "SampleCount"
+    assert alarm["Period"] == 60
+    assert alarm["Threshold"] == 100
+    assert alarm["ComparisonOperator"] == "GreaterThanOrEqualToThreshold"
+    assert alarm["EvaluationPeriods"] == alarm["DatapointsToAlarm"] == 1
+    assert alarm["TreatMissingData"] == "notBreaching"
+    assert alarm["ActionsEnabled"] is False
+    assert "AlarmActions" not in alarm and "Unit" not in alarm
+
+
+def test_only_exact_owned_alarm_alarm_event_can_target_disabled_rule():
+    resources = _control()["Resources"]
+    rule = resources["RequestTripwireAlarmRule"]["Properties"]
+    pattern = rule["EventPattern"]
+    assert rule["State"] == "DISABLED"
+    assert rule["Name"] == _TRIPWIRE_RULE
+    assert pattern["source"] == ["aws.cloudwatch"]
+    assert pattern["detail-type"] == ["CloudWatch Alarm State Change"]
+    assert pattern["account"] == [{"Ref": "AWS::AccountId"}]
+    assert pattern["region"] == ["eu-west-1"]
+    assert pattern["resources"] == [{
+        "Fn::Sub": (
+            f"arn:${{AWS::Partition}}:cloudwatch:${{AWS::Region}}:${{AWS::AccountId}}:alarm:{_TRIPWIRE_ALARM}"
+        )
+    }]
+    assert pattern["detail"] == {
+        "alarmName": [_TRIPWIRE_ALARM],
+        "state": {"value": ["ALARM"]},
+    }
+    assert rule["Targets"] == [{
+        "Id": "StartFixedDevShutdownWorkflow",
+        "Arn": {"Fn::GetAtt": ["ShutdownStateMachine", "Arn"]},
+        "RoleArn": {"Fn::GetAtt": ["RequestTripwireEventRole", "Arn"]},
+        "Input": "{}",
+        "RetryPolicy": {"MaximumRetryAttempts": 0, "MaximumEventAgeInSeconds": 60},
+    }]
+    assert resources["RequestTripwireAlarm"]["Properties"]["ActionsEnabled"] is False
+
+
+def test_tripwire_role_has_exact_rule_and_account_trust_start_only_policy_without_cycle():
+    resources = _control()["Resources"]
+    role = resources["RequestTripwireEventRole"]["Properties"]
+    trust = role["AssumeRolePolicyDocument"]["Statement"]
+    assert trust == [{
+        "Effect": "Allow",
+        "Principal": {"Service": "events.amazonaws.com"},
+        "Action": "sts:AssumeRole",
+        "Condition": {
+            "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}},
+            "ArnEquals": {"aws:SourceArn": {
+                "Fn::Sub": (
+                    f"arn:${{AWS::Partition}}:events:${{AWS::Region}}:${{AWS::AccountId}}:rule/{_TRIPWIRE_RULE}"
+                )
+            }},
+        },
+    }]
+    assert role["Policies"][0]["PolicyDocument"]["Statement"] == [{
+        "Effect": "Allow",
+        "Action": "states:StartExecution",
+        "Resource": {"Fn::GetAtt": ["ShutdownStateMachine", "Arn"]},
+    }]
+    # Trust is built from the fixed rule name, not a resource reference.
+    assert "RequestTripwireAlarmRule" not in repr(trust)
 
 
 def test_forged_frozen_policy_with_invalid_api_id_is_rejected():

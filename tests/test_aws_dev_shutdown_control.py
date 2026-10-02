@@ -21,7 +21,8 @@ def test_control_is_disabled_fixed_dev_only_review_artifact() -> None:
     assert "deployment-time future guard" in template["Metadata"]["ScheduleTimestampPolicy"]
     assert set(template["Resources"]) == {
         "ShutdownWorkflowRole", "ShutdownStateMachine", "SchedulerGroup",
-        "SchedulerInvokeRole", "ShutdownSchedule",
+        "SchedulerInvokeRole", "ShutdownSchedule", "RequestTripwireAlarm",
+        "RequestTripwireEventRole", "RequestTripwireAlarmRule",
     }
     assert all(item.get("Condition") == "SupportedRegion" for item in template["Resources"].values())
     assert template["Conditions"]["SupportedRegion"] == {
@@ -101,6 +102,89 @@ def test_schedule_is_disabled_utc_one_shot_with_no_retry_and_empty_input() -> No
     assert target["Input"] == "{}"
     assert target["RetryPolicy"] == {"MaximumRetryAttempts": 0, "MaximumEventAgeInSeconds": 60}
     assert "ActionAfterCompletion" not in schedule
+
+
+def test_request_tripwire_alarm_is_scoped_sample_count_and_inert() -> None:
+    alarm = _template()["Resources"]["RequestTripwireAlarm"]["Properties"]
+    assert alarm["AlarmName"] == "honda-mapit-mcp-dev-request-tripwire"
+    assert alarm["Namespace"] == "AWS/ApiGateway"
+    assert alarm["MetricName"] == "Count"
+    assert alarm["Dimensions"] == [
+        {"Name": "ApiId", "Value": "a1b2c3d4e5"},
+        {"Name": "Stage", "Value": "$default"},
+    ]
+    assert alarm["Period"] == 60
+    assert alarm["Statistic"] == "SampleCount"
+    assert alarm["Threshold"] == 100
+    assert alarm["ComparisonOperator"] == "GreaterThanOrEqualToThreshold"
+    assert alarm["EvaluationPeriods"] == alarm["DatapointsToAlarm"] == 1
+    assert alarm["TreatMissingData"] == "notBreaching"
+    assert alarm["ActionsEnabled"] is False
+    assert {tag["Key"]: tag["Value"] for tag in alarm["Tags"]} == {
+        "Project": "honda-mapit-mcp",
+        "Environment": "dev",
+        "Purpose": "request-tripwire",
+    }
+
+
+def test_tripwire_rule_is_disabled_and_matches_only_its_alarm_in_this_account_region() -> None:
+    rule = _template()["Resources"]["RequestTripwireAlarmRule"]["Properties"]
+    assert rule["Name"] == "honda-mapit-mcp-dev-request-tripwire-alarm-rule"
+    assert rule["State"] == "DISABLED"
+    pattern = rule["EventPattern"]
+    assert pattern["source"] == ["aws.cloudwatch"]
+    assert pattern["detail-type"] == ["CloudWatch Alarm State Change"]
+    assert pattern["account"] == [{"Ref": "AWS::AccountId"}]
+    assert pattern["region"] == ["eu-west-1"]
+    assert pattern["resources"] == [{
+        "Fn::Sub": "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:honda-mapit-mcp-dev-request-tripwire"
+    }]
+    assert pattern["detail"] == {
+        "alarmName": ["honda-mapit-mcp-dev-request-tripwire"],
+        "state": {"value": ["ALARM"]},
+    }
+    assert rule["Targets"] == [{
+        "Id": "StartFixedDevShutdownWorkflow",
+        "Arn": {"Fn::GetAtt": ["ShutdownStateMachine", "Arn"]},
+        "RoleArn": {"Fn::GetAtt": ["RequestTripwireEventRole", "Arn"]},
+        "Input": "{}",
+        "RetryPolicy": {"MaximumRetryAttempts": 0, "MaximumEventAgeInSeconds": 60},
+    }]
+
+
+def test_tripwire_role_is_trusted_by_exact_rule_and_can_only_start_fixed_workflow() -> None:
+    props = _template()["Resources"]["RequestTripwireEventRole"]["Properties"]
+    trust = props["AssumeRolePolicyDocument"]["Statement"]
+    assert trust == [{
+        "Effect": "Allow",
+        "Principal": {"Service": "events.amazonaws.com"},
+        "Action": "sts:AssumeRole",
+        "Condition": {
+            "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}},
+            "ArnEquals": {"aws:SourceArn": {
+                "Fn::Sub": "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/honda-mapit-mcp-dev-request-tripwire-alarm-rule"
+            }},
+        },
+    }]
+    statements = props["Policies"][0]["PolicyDocument"]["Statement"]
+    assert statements == [{
+        "Effect": "Allow",
+        "Action": "states:StartExecution",
+        "Resource": {"Fn::GetAtt": ["ShutdownStateMachine", "Arn"]},
+    }]
+
+
+def test_tripwire_has_no_resource_dependency_cycle_or_activation_path() -> None:
+    resources = _template()["Resources"]
+    rule_role_trust = resources["RequestTripwireEventRole"]["Properties"][
+        "AssumeRolePolicyDocument"
+    ]["Statement"][0]["Condition"]["ArnEquals"]["aws:SourceArn"]
+    assert rule_role_trust == {
+        "Fn::Sub": "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/honda-mapit-mcp-dev-request-tripwire-alarm-rule"
+    }
+    assert resources["RequestTripwireAlarmRule"]["Properties"]["State"] == "DISABLED"
+    assert resources["RequestTripwireAlarm"]["Properties"]["ActionsEnabled"] is False
+    assert "RequestTripwireAlarmRule" not in repr(rule_role_trust)
 
 
 def test_each_resource_and_call_definition_are_fresh_values() -> None:

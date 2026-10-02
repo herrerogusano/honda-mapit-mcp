@@ -40,6 +40,7 @@ def deny_python_network():
 
 def fixed_documents() -> dict[str, str]:
     from mapit.aws_dev_cleanup_schedule import build_dev_cleanup_schedule
+    from mapit.aws_dev_control_bundle import build_dev_control_bundle
     from mapit.aws_dev_shutdown import AwsDevShutdownPolicy
     from mapit.aws_dev_shutdown_control import build_dev_shutdown_control
 
@@ -61,6 +62,12 @@ def fixed_documents() -> dict[str, str]:
         AwsDevShutdownPolicy("a1b2c3d4e5"), "2030-01-01T00:00:00",
     ))
     documents["cleanup_schedule_draft"] = json.dumps(build_dev_cleanup_schedule("2030-01-01T00:00:00"))
+    documents["combined_control_draft"] = json.dumps(build_dev_control_bundle(
+        AwsDevShutdownPolicy("a1b2c3d4e5"),
+        resource_started_epoch=1893456000,
+        now_epoch=1893456060,
+        activation_start_epoch=1893456240,
+    ))
     return documents
 
 

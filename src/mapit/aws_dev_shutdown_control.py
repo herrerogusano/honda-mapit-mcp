@@ -20,6 +20,8 @@ _FUNCTION_NAME = "honda-mapit-mcp-dev-handler"
 _STATE_MACHINE_NAME = "honda-mapit-mcp-dev-shutdown"
 _SCHEDULE_GROUP = "honda-mapit-mcp-dev-safety"
 _SCHEDULE_NAME = "honda-mapit-mcp-dev-close-once"
+_TRIPWIRE_ALARM_NAME = "honda-mapit-mcp-dev-request-tripwire"
+_TRIPWIRE_RULE_NAME = "honda-mapit-mcp-dev-request-tripwire-alarm-rule"
 _UTC_SECOND = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$")
 
 
@@ -60,6 +62,14 @@ def build_dev_shutdown_control(
     state_machine_arn = {"Fn::GetAtt": ["ShutdownStateMachine", "Arn"]}
     group_arn = {
         "Fn::Sub": f"arn:${{AWS::Partition}}:scheduler:${{AWS::Region}}:${{AWS::AccountId}}:schedule-group/{_SCHEDULE_GROUP}"
+    }
+    tripwire_alarm_arn = {
+        "Fn::Sub": f"arn:${{AWS::Partition}}:cloudwatch:${{AWS::Region}}:${{AWS::AccountId}}:alarm:{_TRIPWIRE_ALARM_NAME}"
+    }
+    # Construct from fixed name rather than Ref/GetAtt of the rule so the
+    # EventBridge role trust policy does not create a resource dependency cycle.
+    tripwire_rule_arn = {
+        "Fn::Sub": f"arn:${{AWS::Partition}}:events:${{AWS::Region}}:${{AWS::AccountId}}:rule/{_TRIPWIRE_RULE_NAME}"
     }
     tags = [
         {"Key": "Project", "Value": "honda-mapit-mcp"},
@@ -188,6 +198,101 @@ def build_dev_shutdown_control(
                         "MaximumEventAgeInSeconds": 60,
                     },
                 },
+            },
+        },
+        "RequestTripwireAlarm": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Condition": "SupportedRegion",
+            "Properties": {
+                "AlarmName": _TRIPWIRE_ALARM_NAME,
+                "Namespace": "AWS/ApiGateway",
+                "MetricName": "Count",
+                "Dimensions": [
+                    {"Name": "ApiId", "Value": policy.api_id},
+                    {"Name": "Stage", "Value": "$default"},
+                ],
+                "Period": 60,
+                "Statistic": "SampleCount",
+                "Threshold": 100,
+                "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+                "EvaluationPeriods": 1,
+                "DatapointsToAlarm": 1,
+                "TreatMissingData": "notBreaching",
+                "ActionsEnabled": False,
+                "Tags": [
+                    {"Key": "Project", "Value": "honda-mapit-mcp"},
+                    {"Key": "Environment", "Value": "dev"},
+                    {"Key": "Purpose", "Value": "request-tripwire"},
+                ],
+            },
+        },
+        "RequestTripwireEventRole": {
+            "Type": "AWS::IAM::Role",
+            "Condition": "SupportedRegion",
+            "Properties": {
+                "RoleName": "honda-mapit-mcp-dev-request-tripwire",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {"Service": "events.amazonaws.com"},
+                        "Action": "sts:AssumeRole",
+                        "Condition": {
+                            "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}},
+                            "ArnEquals": {"aws:SourceArn": tripwire_rule_arn},
+                        },
+                    }],
+                },
+                "Policies": [{
+                    "PolicyName": "start-only-fixed-shutdown-workflow",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "Action": "states:StartExecution",
+                            "Resource": state_machine_arn,
+                        }],
+                    },
+                }],
+                "Tags": [
+                    {"Key": "Project", "Value": "honda-mapit-mcp"},
+                    {"Key": "Environment", "Value": "dev"},
+                    {"Key": "Purpose", "Value": "request-tripwire"},
+                ],
+            },
+        },
+        "RequestTripwireAlarmRule": {
+            "Type": "AWS::Events::Rule",
+            "Condition": "SupportedRegion",
+            "Properties": {
+                "Name": _TRIPWIRE_RULE_NAME,
+                "State": "DISABLED",
+                "EventPattern": {
+                    "source": ["aws.cloudwatch"],
+                    "detail-type": ["CloudWatch Alarm State Change"],
+                    "account": [{"Ref": "AWS::AccountId"}],
+                    "region": [_REGION],
+                    "resources": [tripwire_alarm_arn],
+                    "detail": {
+                        "alarmName": [_TRIPWIRE_ALARM_NAME],
+                        "state": {"value": ["ALARM"]},
+                    },
+                },
+                "Targets": [{
+                    "Id": "StartFixedDevShutdownWorkflow",
+                    "Arn": state_machine_arn,
+                    "RoleArn": {"Fn::GetAtt": ["RequestTripwireEventRole", "Arn"]},
+                    "Input": "{}",
+                    "RetryPolicy": {
+                        "MaximumRetryAttempts": 0,
+                        "MaximumEventAgeInSeconds": 60,
+                    },
+                }],
+                "Tags": [
+                    {"Key": "Project", "Value": "honda-mapit-mcp"},
+                    {"Key": "Environment", "Value": "dev"},
+                    {"Key": "Purpose", "Value": "request-tripwire"},
+                ],
             },
         },
     }

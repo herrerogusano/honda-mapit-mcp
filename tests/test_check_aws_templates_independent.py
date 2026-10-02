@@ -18,13 +18,22 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
     monkeypatch.setenv("MAPIT_EMAIL", "synthetic-user-canary@example.invalid")
     docs = checker.fixed_documents()
     assert set(docs) == {
-        "application_draft", "shutdown_lambda_draft", "shutdown_control_draft", "cleanup_schedule_draft"
+        "application_draft", "shutdown_lambda_draft", "shutdown_control_draft",
+        "cleanup_schedule_draft", "combined_control_draft",
     }
     rendered = "\n".join(docs.values())
     assert "synthetic-access-canary" not in rendered
     assert "synthetic-secret-canary" not in rendered
     assert "synthetic-user-canary" not in rendered
     assert "a1b2c3d4e5" in docs["shutdown_control_draft"]
+    bundle = json.loads(docs["combined_control_draft"])
+    assert bundle["Metadata"]["NoActivation"] is True
+    assert bundle["Metadata"]["NoHardBillingCap"] is True
+    assert all(resource["Condition"] == "SupportedRegion" for resource in bundle["Resources"].values())
+    assert bundle["Resources"]["ShutdownSchedule"]["Properties"]["State"] == "DISABLED"
+    assert bundle["Resources"]["CleanupSchedule"]["Properties"]["State"] == "DISABLED"
+    assert bundle["Resources"]["RequestTripwireAlarmRule"]["Properties"]["State"] == "DISABLED"
+    assert bundle["Resources"]["RequestTripwireAlarm"]["Properties"]["ActionsEnabled"] is False
     assert not inspect.signature(checker.fixed_documents).parameters
     assert not inspect.signature(checker.main).parameters
 

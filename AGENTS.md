@@ -225,6 +225,21 @@ IAM, throttle or disabled-default change. All four drafts passed the isolated
 pinned cfn-lint checker with Python socket/DNS denied. A reusable ARM probe and
 the request-tripwire contract remain separate local preparation; no renewed
 account authority or deploy-ready claim follows.
+The reusable ARM probe is accepted and saved in `fda78fb` with seven green CI
+jobs. Subsequent local work adds the disabled request alarm/EventBridge trigger
+to the independent shutdown workflow and composes its eight resources with the
+three cleanup resources. Independent review passed 100 focused tests; the full
+local checkpoint passed 1136 tests, four Windows symlink skips, compilation and
+the 12/12 evaluator. Five fixed synthetic templates passed schema checks.
+Timing uses explicit positive UTC epochs, a 120–300 second arming lead, runtime
+expiry at activation +300 seconds and scheduled close 120 seconds before expiry.
+App deletion is requested at first resource +45 minutes, leaving a nominal
+15-minute cleanup tail; no SLA or automatic control-stack deletion is claimed.
+Bootstrap-generated API/pool/client/subject values are verified after closed
+creation and before activation; requiring generated IDs before creation is
+circular. Callback is resolved before configuring the client. A closed bootstrap
+and exact deletion-role/artifact procedure remain preparation work, with AWS
+authority still expired. No resources have been created or activated.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

@@ -1,7 +1,15 @@
 # Phase 8 — AWS preparation and next gate
 
-Status: LOCAL SYNTHETIC HTTP/AUTH AND LAMBDA COMPOSITION ACCEPTED;
-bounded dev gate approved, provisioning suspended at concurrency decision.
+Current status — 2026-10-02: local synthetic runtime and exact ARM package are
+accepted; commit `fda78fb` has seven green CI jobs. The user chose the regional
+shared pool of 10, with independent control-plane shutdown. There is no pending
+quota-increase decision. No resources have been created or activated. The last
+time-limited AWS authority expired; continue local preparation before seeking a
+renewed, concrete deployment approval. Remaining work is integration of closure,
+cleanup, runtime/bootstrap configuration and the actual OAuth owner/callback flow.
+
+The sections below retain the chronological evidence and decisions. Later dated
+decisions supersede earlier alternatives; old test counts are historical.
 The user authorized design, public price research and offline infrastructure as
 code on 2026-09-30, then the bounded local HTTP/auth tests on 2026-10-01; see
 [local HTTP contract](phase-8-local-http-contract.md). Phase 7 is complete. A later
@@ -627,7 +635,7 @@ skips**, compilation and the 12/12 model-free evaluator. The four-template stati
 schema check also passed again. Hosted CI for this new checkpoint must be checked
 separately; the seven-job result above belongs to `24411b7`.
 
-#### Prepared request-tripwire contract (not implemented or activated)
+#### Implemented offline request tripwire (not activated)
 
 Reuse the official AWS CDK **HTTP Stage** request metric, not a guessed statistic:
 `AWS/ApiGateway`, `Count`, dimensions fixed `ApiId` and `Stage=$default`,
@@ -642,7 +650,7 @@ events emitted while the rule is disabled are not replayed.
 Use static `{}` target input, an exact existing Standard shutdown machine ARN,
 a dedicated StartExecution-only role and exact rule SourceArn/SourceAccount
 trust. A static ARN derived from the fixed rule name avoids a role/rule CFN
-dependency cycle. Proposed delivery retry count is zero and maximum age 60
+dependency cycle. Delivery retry count is zero and maximum age 60
 seconds; failures need the separately armed time-based shutdown fallback.
 No Lambda execution capacity is used by this control path.
 
@@ -650,12 +658,52 @@ Collection/evaluation is delayed; missing datapoints cannot trip the alarm, and
 excessive throttled requests may lack metrics. This is best-effort early closure,
 not a request, availability or billing hard cap. Actual metric publication,
 IAM/event delivery, closure readbacks and activation sequencing still require
-accepted cloud tests under renewed authority. No resource or trigger is created
-by this documented contract. Primary reuse basis:
+accepted cloud tests under renewed authority. Generating this component creates
+no resource or trigger. The extension adds an alarm, EventBridge rule and role to
+the existing five resources; independent component/workflow/checker review passed
+84 focused tests. The actual pinned static schema check also passed. Primary reuse basis:
 [pinned CDK HttpStage metric](https://github.com/aws/aws-cdk/blob/818574f2026c4a31f51e7bc03c0079fb9fd76478/packages/aws-cdk-lib/aws-apigatewayv2/lib/http/stage.ts#L130-L132),
 [pinned stage dimensions](https://github.com/aws/aws-cdk/blob/818574f2026c4a31f51e7bc03c0079fb9fd76478/packages/aws-cdk-lib/aws-apigatewayv2/lib/common/base.ts#L88-L91),
 [HTTP API metrics](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-metrics.html),
 [alarm state events](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch-and-eventbridge.html).
+
+#### Combined control timing
+
+`build_dev_control_bundle` composes the eight shutdown/tripwire resources and
+three app-cleanup resources in one disabled review template. It requires explicit
+positive integer UTC epochs. The first-resource timestamp cannot be in the future;
+planned activation must be 120–300 seconds after the supplied current-time
+snapshot. Runtime expiry is activation +300 seconds; shutdown is scheduled 120
+seconds before expiry. The planning allowance is 60 seconds Scheduler precision,
+45 seconds workflow timeout and 15 seconds additional margin. These are planning
+budgets, not guarantees against delivery failures or propagation delays.
+
+Application deletion is requested at first resource +45 minutes, leaving a nominal
+15 minutes for readback and control/artifact cleanup within the one-hour target.
+The runtime window must end before that deletion request. A new clock snapshot
+and the original first-resource timestamp are required when preparing the actual
+activation; delaying login cannot reset the resource-lifetime clock. The factory
+does not read a live clock, arm schedules, open the endpoint or verify deletion.
+All schedules and the EventBridge rule remain disabled. The combined template is
+now included as a fifth fixed synthetic document in the schema-checking CI job.
+Source: [Scheduler precision](https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html).
+
+Independent review accepted the composition with 100 focused tests. The local
+checkpoint passed 1,136 tests (four Windows symlink skips), compilation and the
+12/12 model-free evaluator; all five fixed templates passed the pinned schema
+check. This result does not validate actual event delivery or deletion permissions.
+
+#### Bootstrap identity ordering
+
+An API ID, Cognito pool/client IDs and owner subject are generated during closed
+bootstrap. Requiring those generated values before any resource creation would
+be circular. Before bootstrap, review the exact resource/configuration procedure,
+intended owner, cleanup and artifact plan. Before creating the OAuth client,
+obtain its actual callback for the real MCP resource URI. Before activation,
+require observed IDs, exact URI/issuer/client/subject binding, owner enrollment,
+public JWKS snapshot, accepted runtime ZIP, fresh quota and armed control readbacks.
+This clarifies ordering; it does not renew AWS authority or make the current
+placeholder application template deploy-ready.
 
 The user additionally approved preparing a temporary Codex connection for this
 development MCP only, and removing it after the test. Do not change other MCPs
