@@ -241,6 +241,127 @@ def test_success_checks_all_gates_removes_reservation_enables_once_smokes_then_c
     assert lambda_writes == ["delete_function_concurrency", "put_function_concurrency"]
 
 
+def test_update_api_ack_may_omit_api_id_but_readback_remains_required():
+    clients = _clients()
+    api_client = clients["apigatewayv2"]
+    original = api_client.methods["update_api"]
+
+    def update_without_id(**kwargs):
+        response = original(**kwargs)
+        if kwargs.get("DisableExecuteApiEndpoint") is False:
+            response.pop("ApiId", None)
+        return response
+
+    api_client.methods["update_api"] = update_without_id
+    result, _clients_used, _intents, _clock = _run(clients)
+    assert result.category == "activation_and_shutdown_verified"
+    assert result.api_enabled is True and result.endpoint_closed is True
+
+
+def test_update_api_http_201_ack_is_accepted_only_with_strict_get_readback():
+    clients = _clients()
+    api_client = clients["apigatewayv2"]
+    original = api_client.methods["update_api"]
+
+    def update_201(**kwargs):
+        response = original(**kwargs)
+        if kwargs.get("DisableExecuteApiEndpoint") is False:
+            response["ResponseMetadata"] = {**response["ResponseMetadata"], "HTTPStatusCode": 201}
+        return response
+
+    api_client.methods["update_api"] = update_201
+    result, _clients_used, _intents, _clock = _run(clients)
+    assert result.category == "activation_and_shutdown_verified"
+
+    clients = _clients()
+    api_client = clients["apigatewayv2"]
+    original_update = api_client.methods["update_api"]
+    original_get = api_client.methods["get_api"]
+    read_count = 0
+
+    def update_201_again(**kwargs):
+        response = original_update(**kwargs)
+        if kwargs.get("DisableExecuteApiEndpoint") is False:
+            response["ResponseMetadata"] = {**response["ResponseMetadata"], "HTTPStatusCode": 201}
+        return response
+
+    def wrong_get_after_enable(**kwargs):
+        nonlocal read_count
+        response = original_get(**kwargs)
+        read_count += 1
+        if read_count == 2:
+            response["DisableExecuteApiEndpoint"] = True
+        return response
+
+    api_client.methods["update_api"] = update_201_again
+    api_client.methods["get_api"] = wrong_get_after_enable
+    result, _clients_used, _intents, _clock = _run(clients)
+    assert result.category == "api_enable_unverified"
+    assert result.endpoint_closed is True and result.function_reserved_zero is True
+
+
+@pytest.mark.parametrize("status", [202, 204, 400, 500])
+def test_update_api_unexpected_http_status_fails_closed(status):
+    clients = _clients()
+    api_client = clients["apigatewayv2"]
+    original = api_client.methods["update_api"]
+
+    def update_unexpected_status(**kwargs):
+        response = original(**kwargs)
+        if kwargs.get("DisableExecuteApiEndpoint") is False:
+            response["ResponseMetadata"] = {**response["ResponseMetadata"], "HTTPStatusCode": status}
+        return response
+
+    api_client.methods["update_api"] = update_unexpected_status
+    result, _clients_used, _intents, _clock = _run(clients)
+    assert result.category == "api_enable_failed"
+    assert result.endpoint_closed is True and result.function_reserved_zero is True
+
+
+@pytest.mark.parametrize("wrong_id", [None, "wrong-api"])
+def test_update_api_ack_with_wrong_present_api_id_fails_closed(wrong_id):
+    clients = _clients()
+    api_client = clients["apigatewayv2"]
+    original = api_client.methods["update_api"]
+
+    def update_with_wrong_id(**kwargs):
+        response = original(**kwargs)
+        if kwargs.get("DisableExecuteApiEndpoint") is False:
+            response["ApiId"] = wrong_id
+        return response
+
+    api_client.methods["update_api"] = update_with_wrong_id
+    result, _clients_used, _intents, _clock = _run(clients)
+    assert result.category == "api_enable_failed"
+    assert result.endpoint_closed is True and result.function_reserved_zero is True
+
+
+@pytest.mark.parametrize("bad_id", [None, "wrong-api"])
+def test_update_api_get_readback_requires_exact_api_id(bad_id):
+    clients = _clients()
+    api_client = clients["apigatewayv2"]
+    original = api_client.methods["get_api"]
+    responses = 0
+
+    def get_with_bad_post_enable_id(**kwargs):
+        nonlocal responses
+        response = original(**kwargs)
+        responses += 1
+        # First read is the closed preflight; second is post-enable readback.
+        if responses == 2:
+            if bad_id is None:
+                response.pop("ApiId", None)
+            else:
+                response["ApiId"] = bad_id
+        return response
+
+    api_client.methods["get_api"] = get_with_bad_post_enable_id
+    result, _clients_used, _intents, _clock = _run(clients)
+    assert result.category == "api_enable_unverified"
+    assert result.api_enabled is True
+    assert result.endpoint_closed is True and result.function_reserved_zero is True
+
+
 @pytest.mark.parametrize("change,category", [
     ({"capacity": 9}, "capacity_not_10"),
     ({"stage_rate": 2}, "stage_throttle_mismatch"),

@@ -337,6 +337,19 @@ remaining in that renewed authority. Never reset an existing resource's start ti
 or execution window to extend the test. No credential, token or real binding
 belongs in Git/vault; private journals remain ACL-protected outside OneDrive.
 
+On 2026-10-03 Europe/Madrid the user renewed the same bounded authority again:
+23:01:29 UTC on October 2 through 01:01:29 UTC on October 3. No scope or spending
+limit changed. A fresh activation failed before login at `api_enable_failed`;
+finally verified endpoint off and concurrency zero. Its owned resources were
+removed with 21 absence checks, and owner/MFA preserved. A subsequent close-only
+owned API probe observed UpdateApi HTTP 201 with exact ID, unlike the modelled
+HTTP 200. The independently accepted core now accepts 200/201 only for that
+write acknowledgement, permits an omitted acknowledgement ApiId but rejects a
+present incorrect value, and retains strict HTTP-200 exact-ID enabled-state GET
+readback and unconditional closure. No successful cloud MCP E2E is implied.
+Each new rehearsal keeps its own immutable first-resource and execution times;
+never reuse consumed write intents or widen a prior window.
+
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

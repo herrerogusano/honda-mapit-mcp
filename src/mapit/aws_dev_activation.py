@@ -461,7 +461,11 @@ def activate_synthetic_dev_window(
         record_intent("enable_api_endpoint")
         guard()
         enabled = call("apigatewayv2", "update_api", ApiId=api_id, DisableExecuteApiEndpoint=False)
-        if not _http_ok(enabled) or not isinstance(enabled, Mapping) or enabled.get("ApiId") != api_id:
+        if (
+            not _http_ok(enabled, (200, 201))
+            or not isinstance(enabled, Mapping)
+            or ("ApiId" in enabled and enabled.get("ApiId") != api_id)
+        ):
             raise ActivationError("api_enable_failed")
         api_enabled = True
         api_after = call("apigatewayv2", "get_api", ApiId=api_id)

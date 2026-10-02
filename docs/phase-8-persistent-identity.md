@@ -149,3 +149,45 @@ The frozen source passed 1,549 offline tests (five skipped) and compilation.
 This acceptance does not replace the pending human OAuth login and synthetic
 Codex-to-cloud tool-call test. No second rehearsal was provisioned while human
 availability remained unconfirmed.
+
+### Renewed shared-identity E2E attempt (2026-10-03, Europe/Madrid)
+
+After confirming availability, the user renewed the same bounded dev authority
+for two hours. A fresh rehearsal passed the 21-check absence preflight before
+creation. Its first-resource lifetime was recorded once and was not reset.
+Five closed bootstrap resources, twelve control resources, eight shared OAuth
+setup resources and the fourteen-resource closed runtime passed their respective
+readbacks. The newly built exact ZIP imported successfully in the pinned ARM
+image with networking disabled, and its conditional S3 upload passed checksum
+and size verification. The persistent identity was not recreated.
+
+The fresh, immutable runtime interval is 300 seconds, staged ten minutes ahead
+to leave room for control-plane propagation. Independent review accepted its
+unchanged 120–300-second shutdown-arming lead and a portal deadline at start
+plus 170 seconds, before the shutdown schedule at start plus 180 seconds.
+The preparation remains closed; the human OAuth and cloud MCP smoke results
+must be recorded separately, and are not implied by the deployment readbacks.
+
+The user asked about reuse by other MAPIT account holders. The reusable client
+and MCP can be deployed independently with each owner's own authentication;
+the current remote dev policy deliberately binds one owner. A single hosted
+multiuser service is not established by this test: it needs per-user MAPIT
+session/ledger isolation, account linking and a separately accepted lifecycle.
+The MCP's Cognito login does not authenticate that user's MAPIT account.
+
+The first activation stopped at `api_enable_failed` before any human login or
+tool call. Its finally path verified endpoint disabled and reserved concurrency
+zero. One bounded management-event read found the owned enable event without
+an AWS error; it does not recover the original SDK acknowledgement status.
+All temporary compute, three dev Cognito children, artifact and controls were
+retired, and twenty-one absence checks passed. The persistent owner/MFA was
+verified unchanged; the temporary Codex connection was removed.
+
+During a fresh closed rehearsal, one explicitly close-only `UpdateApi` probe
+returned HTTP 201 with the exact API ID; before/after GETs confirmed that the
+endpoint remained disabled and Lambda remained reserved at zero. This differs
+from the documented/modelled HTTP 200 acknowledgement. Treat 200/201 as write
+acknowledgements only, keeping strict HTTP-200 exact-ID enabled-state GET
+readback. AWS also documents ApiId as optional in the acknowledgement; a present
+incorrect ID still fails closed. The precise original enable acknowledgement
+was not captured and must not be described as conclusively reconstructed.
