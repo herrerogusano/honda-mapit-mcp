@@ -290,6 +290,14 @@ bootstrap update needed before the final sixteen-resource runtime composition.
 Thirteen synthetic templates pass schema checks. The original runner remains
 six-resource-only; exact setup readbacks, expanded cleanup/update orchestration
 and actual human OAuth/MFA are still pending. No external authority was renewed.
+The injected setup readback core is now independently accepted offline: at most
+ten fixed reads, exact stack/run ownership and ten resource types, closed API,
+empty routes/users, reserve zero, and exact generated client/scope/callback/domain
+configuration. It creates no clients or sessions and exposes the private client
+ID only after full success, excluded from safe diagnostics and repr. Full local
+checkpoint: 1473 passed, five Windows skips, evaluator 12/12; prior setup CI had
+seven green jobs. The original rehearsal runner remains six-resource-only.
+No cloud call was made; expanded update/cleanup orchestration remains pending.
 Do not expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

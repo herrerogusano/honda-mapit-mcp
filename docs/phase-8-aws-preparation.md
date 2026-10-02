@@ -189,6 +189,31 @@ the model-free evaluator (**12/12**) also passed.
 Next: integrate exact owned-stack and generated-client readbacks before preparing
 the bounded closed-update/cleanup workflow; do not deploy this candidate directly.
 
+The next local readback core accepts injected clients and an already owned exact
+stack identity. Its ten bounded reads verify the stack/run tag, ten logical
+resources, unchanged API/pool, generated client output and singleton client
+listing, exact callback/scope/short token lifetimes, resource server and managed
+domain. It also requires no users/routes and endpoint disabled/concurrency zero.
+The operator supplies single-attempt clients with bounded timeouts; the core
+does not construct an SDK session, follow pagination, update resources or extend
+the original runner. Client IDs remain private results, excluded from diagnostics.
+This confirms observed configuration only, not effective OAuth/PKCE, owner
+enrollment, branding rendering, handler permissions or expanded cleanup.
+The client output uses CloudFormation's documented
+[UserPoolClient Ref contract](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-userpoolclient.html#aws-resource-cognito-userpoolclient-return-values),
+which returns the generated client ID. No compound physical-ID format is inferred
+for the domain, resource server or branding resources.
+
+Readback core independently accepted: **23 focused tests** including real pinned
+botocore Stubber shapes and pagination/error/privacy regressions. The full local
+checkpoint passed **1,473 tests with five Windows skips**, compilation and the
+model-free evaluator **12/12**. Every service response requires integer HTTP 200;
+exceptions and malformed values stop without retry. The private client ID is
+returned only after all ten checks succeed. The SDK CI job includes this core.
+No SDK session, account read, resource change or real OAuth login occurred.
+The existing six-resource runner remains unchanged; orchestration and expanded
+cleanup acceptance still precede a future closed cloud update.
+
 ### Remaining execution order and callback evidence — 2026-10-02
 
 Official OpenAI documentation now explicitly describes a server-specific
