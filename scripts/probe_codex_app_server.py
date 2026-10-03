@@ -49,6 +49,12 @@ _CALLS = (
     ("get_vehicle_status", {}),
     ("get_distance", {"from_time": "2026-01-01", "to_time": "2026-02-01"}),
 )
+_GEOGRAPHIC_DISCOVERY_TOOLS = frozenset({
+    "get_vehicle_status", "get_vehicle_details", "list_routes", "get_route_detail",
+    "get_distance", "compare_distance_periods", "get_route_statistics",
+    "get_distance_breakdown", "get_route_extremes", "compare_route_periods",
+    "geographic_summary", "summer_geographic_summary",
+})
 
 
 class SmokeError(RuntimeError):
@@ -176,11 +182,14 @@ def run_protocol(
     receive: Callable[[float], bytes | None],
     *,
     deadline: float | None = None,
+    discovery_only: bool = False,
 ) -> SmokeResult:
     """Run exactly initialize, ephemeral start, filtered status, and two fixed calls."""
     deadline = time.monotonic() + MAX_SECONDS if deadline is None else deadline
     count = 0
     successful_calls = 0
+    if type(discovery_only) is not bool:
+        return SmokeResult(False, "protocol_failed", 0, 0)
 
     def exchange(method: str, params: Mapping[str, Any] | None = None) -> Mapping[str, Any]:
         nonlocal count
@@ -262,9 +271,12 @@ def run_protocol(
             or server.get("runtimeStatus") != "connected"
             or not isinstance(tools, dict)
             or any(name not in tools for name, _args in _CALLS)
+            or (discovery_only and set(tools) != _GEOGRAPHIC_DISCOVERY_TOOLS)
         ):
             raise SmokeError("tools_unavailable")
 
+        if discovery_only:
+            return SmokeResult(True, "success", count, 0)
         for name, arguments in _CALLS:
             result = exchange("mcpServer/tool/call", {
                 "server": SERVER_NAME,
@@ -337,7 +349,7 @@ class _ProcessChannel:
         return value
 
 
-def _launch(executable: str, server_url: str, config_names: tuple[str, ...]) -> SmokeResult:
+def _launch(executable: str, server_url: str, config_names: tuple[str, ...], *, discovery_only: bool = False) -> SmokeResult:
     command = build_command(executable, server_url, config_names)
     env = scrub_child_environment()
     deadline = time.monotonic() + MAX_SECONDS
@@ -352,7 +364,7 @@ def _launch(executable: str, server_url: str, config_names: tuple[str, ...]) -> 
             env=env,
         )
         channel = _ProcessChannel(process, deadline)
-        return run_protocol(channel.send, channel.receive, deadline=deadline)
+        return run_protocol(channel.send, channel.receive, deadline=deadline, discovery_only=discovery_only)
     except FileNotFoundError:
         return SmokeResult(False, "codex_missing", 0, 0)
     except Exception:
@@ -378,6 +390,22 @@ def run_smoke(server_url: str, *, executable: str | None = None) -> SmokeResult:
         if not codex:
             return SmokeResult(False, "codex_missing", 0, 0)
         return _launch(codex, server_url, names)
+    except SmokeError as exc:
+        category = str(exc) if str(exc) in _SAFE_CATEGORIES else "configuration_unavailable"
+        return SmokeResult(False, category, 0, 0)
+    except Exception:
+        return SmokeResult(False, "app_server_failed", 0, 0)
+
+
+def run_geographic_discovery(server_url: str, *, executable: str | None = None) -> SmokeResult:
+    """Verify exactly twelve advertised tools without invoking any tool/model."""
+    try:
+        validate_server_url(server_url)
+        names = read_configured_server_names(server_url)
+        codex = executable or shutil.which("codex")
+        if not codex:
+            return SmokeResult(False, "codex_missing", 0, 0)
+        return _launch(codex, server_url, names, discovery_only=True)
     except SmokeError as exc:
         category = str(exc) if str(exc) in _SAFE_CATEGORIES else "configuration_unavailable"
         return SmokeResult(False, category, 0, 0)

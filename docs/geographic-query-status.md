@@ -33,7 +33,16 @@
   was saved to this repository. Its live allowance is consumed, not repeatable.
 - Known-advisory audit found no known vulnerabilities in the two optional
   runtime dependency versions. Separate geography CI coverage and lock audit
-  are configured; remote CI acceptance is not asserted before the run completes.
+  are configured; all eight remote CI jobs passed on commit `5b41bd5`.
+- The injected code-only production upgrade coordinator passed independent
+  review and focused tests. It uses a fresh private journal, immutable session
+  cutoff, exact old/new templates and code digests, independently verified
+  control-plane shutdown, and one-shot update/reopen intents. The only template
+  differences permitted are the content-addressed ZIP key and manifest hash.
+- A separate discovery-only app-server probe passed independent review and
+  23 focused tests: it requires exactly twelve tools without calling any tool
+  or model. Full offline checkpoint including the coordinator: 1,904 passed,
+  five Windows fixture skips. These are not cloud upgrade receipts.
 
 ## Remaining
 
