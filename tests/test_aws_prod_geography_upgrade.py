@@ -1,6 +1,7 @@
 import contextlib
 import copy
 import uuid
+import pytest
 
 from mapit.aws_prod_geography_upgrade import (
     AUTHORIZATION_CUTOFF_EPOCH,
@@ -204,6 +205,17 @@ def test_open_reconciles_ambiguous_reserve_and_api_ack_without_replaying_writes(
     assert [entry[1] for entry in calls] == ["get_api"]
     assert journal.value["concurrency_restore_acknowledged"] is True
     assert journal.value["production_open_verified"] is True
+
+
+@pytest.mark.parametrize("field", ["function_name", "authorization_cutoff_epoch", "old_template_sha256", "new_template_sha256"])
+def test_state_rejects_altered_constructor_bindings(field):
+    core, journal = make_core()
+    core._step_started = core.monotonic()
+    state = core._save_new_state()
+    state[field] = "altered"
+    journal.save(state)
+    with pytest.raises(ProdGeographyUpgradeError, match="journal_invalid"):
+        core._state()
 
 
 def test_open_persists_intent_before_each_enable_write(monkeypatch):

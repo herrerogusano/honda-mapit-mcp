@@ -241,6 +241,11 @@ class ProdGeographyUpgrade:
             or value.get("old_zip_sha256") != self.old_zip or value.get("old_manifest_sha256") != self.old_manifest
             or value.get("new_zip_sha256") != self.new_zip or value.get("new_manifest_sha256") != self.new_manifest
             or value.get("bucket") != self.bucket
+            or value.get("function_name") != self.function_name
+            or type(value.get("authorization_cutoff_epoch")) is not int
+            or value.get("authorization_cutoff_epoch") != self.authorized_until
+            or value.get("old_template_sha256") != hashlib.sha256(_canonical(self.old_template)).hexdigest()
+            or value.get("new_template_sha256") != hashlib.sha256(_canonical(self.new_template)).hexdigest()
         ):
             raise ProdGeographyUpgradeError("journal_invalid")
         return value
