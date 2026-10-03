@@ -21,6 +21,37 @@ independent review. Existing production and Telegram entrypoints are unchanged.
 This library does not establish account linking, real secret-reader isolation,
 multiuser deployment or durable Telegram delivery.
 
+## Deterministic Telegram command increment
+
+The separate offline dispatcher is independently accepted for `/ayuda`,
+`/verano <zona> [año]` and `/kms <zona> | <desde ISO> | <hasta ISO>`.
+It takes an already-verified tenant grant, not identity claims from text or a
+Telegram username. It calls only bounded geographic service methods and returns
+typed, reconciled counts/km with canonical timestamps and source-geometry caveats.
+It does not send messages, poll Telegram, invoke models or modify the existing
+adapter. Nineteen focused tests include two-tenant output separation and exact
+result area/period binding. A new invitation-link challenge core and a bounded,
+injected local delivery adapter are independently accepted offline; the
+old bot-token onboarding challenge is not an OAuth/MAPIT account-link proof.
+
+The delivery increment is limited to one process and at most 64 distinct
+updates: no eviction, background worker, webhook or durable delivery claim.
+It requires fresh verified OAuth authorization plus the exact linked private
+pair before dispatch and rechecks both immediately before one sender attempt.
+Unknown/unlinked/swapped identities never touch a MAPIT provider; ambiguous
+sends retain the local receipt and are not automatically retried. No real
+Telegram method or MAPIT call has been made for this increment.
+
+The link registry caps pending links/bindings at sixteen, expires challenges
+after five monotonic minutes and retains bounded digest/expiry tombstones to
+reject consumed-code reissue during that lifetime. It never stores plaintext
+challenges; pair identifiers are held only in RAM with redacted repr. Binding,
+lookup and unlink require a fresh authority-validated grant; lookup returns an
+opaque key, never new authorization. Independent tests cover replay, revocation
+after business output but before send, concurrent duplicates and cancellation.
+Durable storage, human OAuth/MAPIT linking, application-session renewal and a
+hosted Telegram transport remain separate work, not implied by this acceptance.
+
 ## What exists today
 
 - `src/mapit/telegram_bot.py` is a synchronous, one-update long-polling client.

@@ -105,7 +105,8 @@ not a newly activated geographic tool call on production Lambda. A production
 tool-discovery check alone would not establish live geographic Lambda output.
 Any additional historical read/detail requires a new bounded allowance.
 
-This increment does not add arbitrary place lookup, other named boundaries,
+The current registry includes Menorca and the exact named AMB selections; it
+does not add arbitrary place lookup, nationwide boundaries,
 street coverage, missing-track reconstruction, persistent geography, hosted
 multiuser or a Telegram worker. MAPIT coordinate semantics, route-history
 completeness and physical distance accuracy remain unverified; km presentation

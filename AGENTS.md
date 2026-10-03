@@ -34,6 +34,19 @@ The invitation-only tenant router is independently accepted offline (28 tests),
 not connected to production, Telegram identity linking or real credential storage.
 No new live history probe or production multiuser capability follows.
 
+The deterministic geographic Telegram dispatcher and bounded local linking/
+delivery libraries are independently accepted offline. Dispatcher output must
+match the exact requested area and normalized period; it supports `/ayuda`,
+`/verano` and `/kms` without a model. Invitation links are five-minute, hash-only,
+one-use, bounded and exact-private-pair; consumed digests remain tombstoned for
+their lifetime. Every delivery requires fresh verified authorization and the
+exact linked pair before business access and again before its one sender attempt.
+The 64-update in-memory receipt batch does not promise durable delivery; no
+daemon, webhook, hosted signup, new IAM/session store or live Telegram operation
+was created. Keep production single-owner until real account linking, tenant
+secret isolation, persistent update receipts and hosted identity/cost controls
+are independently accepted.
+
 On 2026-10-03 the user approved the geographic-query increment and two hours
 of temporary display/system wakefulness, 13:42–15:42 UTC. Reused Luna/high
 researcher, implementer and tester roles; canonical MCP/delegation guides were
