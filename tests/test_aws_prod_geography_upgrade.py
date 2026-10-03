@@ -5,6 +5,8 @@ import pytest
 
 from mapit.aws_prod_geography_upgrade import (
     AUTHORIZATION_CUTOFF_EPOCH,
+    AUTHORIZATION_NEW_CUTOFF_EPOCH,
+    AUTHORIZATION_START_EPOCH,
     ProdGeographyUpgrade,
     ProdGeographyUpgradeError,
     _only_two_template_changes,
@@ -43,7 +45,8 @@ class Stub:
     pass
 
 
-def make_core():
+def make_core(*, authorized_from_epoch=None, authorized_until_epoch=AUTHORIZATION_CUTOFF_EPOCH,
+              wall_clock=None, monotonic=None):
     policy = CognitoProdPolicy(user_pool_id=POOL, api_id=API,
                                client_id="SyntheticProdClient012345", owner_subject=OWNER)
     journal = Journal()
@@ -51,6 +54,10 @@ def make_core():
         "sts", "cloudformation", "apigatewayv2", "lambda", "stepfunctions",
         "cloudwatch", "events",
     )}
+    if wall_clock is None:
+        wall_clock = lambda: AUTHORIZATION_CUTOFF_EPOCH - 60
+    if monotonic is None:
+        monotonic = lambda: 10.0
     core = ProdGeographyUpgrade(
         clients, journal, policy=policy, account_id=ACCOUNT,
         stack_arn=f"arn:aws:cloudformation:eu-west-1:{ACCOUNT}:stack/honda-mapit-mcp-prod/{STACK_UUID}",
@@ -58,7 +65,10 @@ def make_core():
         shutdown_state_machine_arn=MACHINE, bucket=BUCKET,
         old_zip_sha256="1" * 64, old_manifest_sha256="2" * 64,
         new_zip_sha256="3" * 64, new_manifest_sha256="4" * 64,
-        authorized_until_epoch=AUTHORIZATION_CUTOFF_EPOCH,
+        authorized_until_epoch=authorized_until_epoch,
+        authorized_from_epoch=authorized_from_epoch,
+        wall_clock=wall_clock,
+        monotonic=monotonic,
     )
     return core, journal
 
@@ -75,6 +85,48 @@ def test_constructor_binds_fixed_account_stack_function_machine_and_cutoff():
     core, _ = make_core()
     assert core.STEPS == ("preflight", "close", "check-close", "request-update", "check-update", "open")
     assert core.shutdown_arn == MACHINE
+
+
+def test_new_immutable_authorization_window_enforces_start_and_cutoff():
+    clock = [AUTHORIZATION_START_EPOCH - 1]
+    core, _ = make_core(
+        authorized_from_epoch=AUTHORIZATION_START_EPOCH,
+        authorized_until_epoch=AUTHORIZATION_NEW_CUTOFF_EPOCH,
+        wall_clock=lambda: clock[0], monotonic=lambda: 1.0,
+    )
+    core._step_started = 0.0
+    with pytest.raises(ProdGeographyUpgradeError, match="authorization_not_started"):
+        core._guard()
+
+    clock[0] = AUTHORIZATION_START_EPOCH
+    core._last_wall = None
+    assert core._guard() == AUTHORIZATION_START_EPOCH
+    clock[0] = AUTHORIZATION_NEW_CUTOFF_EPOCH
+    with pytest.raises(ProdGeographyUpgradeError, match="authorization_expired"):
+        core._guard()
+
+
+def test_historical_window_stays_closed_and_new_window_pair_cannot_be_mutated():
+    core, _ = make_core(wall_clock=lambda: AUTHORIZATION_CUTOFF_EPOCH + 1, monotonic=lambda: 1.0)
+    core._step_started = 0.0
+    with pytest.raises(ProdGeographyUpgradeError, match="authorization_expired"):
+        core._guard()
+    policy = CognitoProdPolicy(user_pool_id=POOL, api_id=API,
+                               client_id="SyntheticProdClient012345", owner_subject=OWNER)
+    kwargs = dict(
+        policy=policy, account_id=ACCOUNT,
+        stack_arn=f"arn:aws:cloudformation:eu-west-1:{ACCOUNT}:stack/honda-mapit-mcp-prod/{STACK_UUID}",
+        prod_run_id=RUN_ID, api_id=API, function_name=FUNCTION,
+        shutdown_state_machine_arn=MACHINE, bucket=BUCKET,
+        old_zip_sha256="1" * 64, old_manifest_sha256="2" * 64,
+        new_zip_sha256="3" * 64, new_manifest_sha256="4" * 64,
+        authorized_until_epoch=AUTHORIZATION_NEW_CUTOFF_EPOCH,
+        authorized_from_epoch=AUTHORIZATION_START_EPOCH + 1,
+    )
+    with pytest.raises(ProdGeographyUpgradeError, match="inputs_invalid"):
+        ProdGeographyUpgrade({name: Stub() for name in (
+            "sts", "cloudformation", "apigatewayv2", "lambda", "stepfunctions", "cloudwatch", "events",
+        )}, Journal(), **kwargs)
 
 
 def test_constructor_rejects_wrong_machine_arn_without_client_calls():

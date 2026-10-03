@@ -2,6 +2,22 @@
 
 ## Scope
 
+On 2026-10-03 the user renewed a two-hour work window, 15:51:57–17:51:57 UTC,
+with temporary display/system wakefulness and restoration before final handoff.
+Scope: extend geographic queries across Spain if practical, otherwise Barcelona
+and surrounding municipalities, then develop Telegram and multiuser support.
+Reuse the persistent researcher/implementer/tester roles and canonical guides.
+The pending single-owner production geographic code upgrade may proceed with
+fresh reviewed journal/intents and a new immutable window; never mutate the old
+window/journal or replay its writes. Keep region eu-west-1, quota 10, owner/MFA,
+independent stop and USD 1/month target; no paid models or MAPIT history probes.
+Geographic public-source research is allowed; no private geometry persistence.
+Telegram/multiuser work starts with bounded offline isolation and invitation-only
+design. Do not infer public signup, migrating subscription credentials to AWS,
+new paid inference, third-party MAPIT credentials, unbounded polling, or an
+expanded hosted identity/IAM/storage scope from this request. Preserve the
+working single-owner service until those prerequisites are reviewed.
+
 On 2026-10-03 the user approved the geographic-query increment and two hours
 of temporary display/system wakefulness, 13:42–15:42 UTC. Reused Luna/high
 researcher, implementer and tester roles; canonical MCP/delegation guides were

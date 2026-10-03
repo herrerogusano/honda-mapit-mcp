@@ -26,6 +26,8 @@ FUNCTION_NAME = "honda-mapit-mcp-prod-handler"
 SHUTDOWN_NAME = "honda-mapit-mcp-prod-shutdown"
 RUN_TAG = "ProductionRunId"
 AUTHORIZATION_CUTOFF_EPOCH = 1_791_042_120  # 2026-10-03 15:42 UTC
+AUTHORIZATION_START_EPOCH = 1_791_042_717  # 2026-10-03 15:51:57 UTC
+AUTHORIZATION_NEW_CUTOFF_EPOCH = 1_791_049_917  # 2026-10-03 17:51:57 UTC
 _MAX_STEP_SECONDS = 30.0
 _API_ID = re.compile(r"^[a-z0-9]{10}$")
 _ACCOUNT = re.compile(r"^[0-9]{12}$")
@@ -43,7 +45,7 @@ _REQUIRED_CLIENTS = frozenset(
 )
 _CATEGORIES = frozenset(
     {
-        "inputs_invalid", "journal_invalid", "journal_not_fresh", "authorization_expired",
+        "inputs_invalid", "journal_invalid", "journal_not_fresh", "authorization_not_started", "authorization_expired",
         "clock_invalid", "clock_rollback", "step_budget_exhausted", "client_unavailable",
         "aws_call_failed", "aws_response_invalid", "identity_mismatch", "stack_unverified",
         "stack_not_owned", "stack_not_terminated", "template_mismatch", "resources_mismatch",
@@ -142,6 +144,7 @@ class ProdGeographyUpgrade:
         new_zip_sha256: str,
         new_manifest_sha256: str,
         authorized_until_epoch: int,
+        authorized_from_epoch: int | None = None,
         wall_clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -157,7 +160,14 @@ class ProdGeographyUpgrade:
             or not (sm_match := _STEP_ARN.fullmatch(shutdown_state_machine_arn))
             or sm_match.group("account") != account_id
             or type(authorized_until_epoch) is not int
-            or authorized_until_epoch != AUTHORIZATION_CUTOFF_EPOCH
+            or not (
+                (authorized_until_epoch == AUTHORIZATION_CUTOFF_EPOCH and authorized_from_epoch is None)
+                or (
+                    authorized_until_epoch == AUTHORIZATION_NEW_CUTOFF_EPOCH
+                    and type(authorized_from_epoch) is int
+                    and authorized_from_epoch == AUTHORIZATION_START_EPOCH
+                )
+            )
             or not callable(wall_clock) or not callable(monotonic)
         ):
             raise ProdGeographyUpgradeError("inputs_invalid")
@@ -192,6 +202,7 @@ class ProdGeographyUpgrade:
         self.new_zip = new_zip_sha256
         self.new_manifest = new_manifest_sha256
         self.authorized_until = authorized_until_epoch
+        self.authorized_from = authorized_from_epoch
         self.wall_clock = wall_clock
         self.monotonic = monotonic
         self._step_started = 0.0
@@ -244,6 +255,7 @@ class ProdGeographyUpgrade:
             or value.get("function_name") != self.function_name
             or type(value.get("authorization_cutoff_epoch")) is not int
             or value.get("authorization_cutoff_epoch") != self.authorized_until
+            or value.get("authorization_start_epoch") != self.authorized_from
             or value.get("old_template_sha256") != hashlib.sha256(_canonical(self.old_template)).hexdigest()
             or value.get("new_template_sha256") != hashlib.sha256(_canonical(self.new_template)).hexdigest()
         ):
@@ -269,6 +281,8 @@ class ProdGeographyUpgrade:
         self._last_wall = float(wall)
         if mono - self._step_started >= _MAX_STEP_SECONDS:
             raise ProdGeographyUpgradeError("step_budget_exhausted")
+        if self.authorized_from is not None and wall < self.authorized_from:
+            raise ProdGeographyUpgradeError("authorization_not_started")
         if not allow_expired_close and wall >= self.authorized_until:
             raise ProdGeographyUpgradeError("authorization_expired")
         return float(wall)
@@ -305,6 +319,7 @@ class ProdGeographyUpgrade:
             "old_zip_sha256": self.old_zip, "old_manifest_sha256": self.old_manifest,
             "new_zip_sha256": self.new_zip, "new_manifest_sha256": self.new_manifest,
             "authorization_cutoff_epoch": self.authorized_until,
+            "authorization_start_epoch": self.authorized_from,
             "old_template_sha256": hashlib.sha256(_canonical(self.old_template)).hexdigest(),
             "new_template_sha256": hashlib.sha256(_canonical(self.new_template)).hexdigest(),
             "preflight_verified": False,
