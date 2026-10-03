@@ -376,6 +376,34 @@ Do not migrate the local ledger, store geometry, scan other months, make live
 Telegram calls or modify other projects. Retain the definitive owner/MFA.
 See docs/phase-8-aws-preparation.md for the accepted scope and remaining work.
 
+That permanent-production preparation has advanced: session-only Standard SSM
+publication/readback and ownership metadata passed; the retained prod compute
+bootstrap, five-resource independent stop controller, private artifact bucket
+and three-resource OAuth child stack exist and were read back. The real closed
+shutdown rehearsal succeeded. The production ZIP contains no session/password;
+its real bindings passed offline ARM metadata/negative guards and identical
+runtime source passed twelve independently reproduced synthetic ARM checks.
+Full offline suite: 1,777 passed, five skipped; evaluator 12/12. A closed runtime
+stack update is requested; activation/login/real MAPIT smoke remain unaccepted.
+Project cost-allocation tag is inactive; no project monthly Budget alert or hard
+cap is claimed. Keep private operator journals/identifiers outside Git/OneDrive.
+
+The retained production runtime update, exact package/configuration readbacks,
+five real-bound offline ARM guards and twelve independently reproduced synthetic
+ARM checks passed. Request-pressure shutdown controls were armed before opening
+the service. The definitive owner OAuth/PKCE login completed successfully with
+the existing MFA; the interrupted callback was superseded by a fresh bounded
+login, not reused. The single authorized model-free real smoke passed with six
+app-server requests and two successful calls: vehicle status and current UTC
+month distance. Keep the retained private single-owner service and its permanent
+Codex connection; preserve other MCP/global configuration and owner/MFA. No paid
+model turn, Telegram call, history scan or ledger migration occurred. Full local
+checkpoint is 1,777 passing tests, five skips and evaluator 12/12; seven CI jobs
+passed on 992d9a1. Monthly Budget notification and activation of the inactive
+Project cost-allocation tag remain unapproved; do not claim a billing hard cap,
+measured monthly cost or hosted multiuser acceptance. This smoke allowance is
+consumed: do not repeat live queries automatically.
+
 Do not otherwise expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.

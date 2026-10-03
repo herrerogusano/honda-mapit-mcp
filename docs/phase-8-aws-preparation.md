@@ -1,15 +1,23 @@
 # Phase 8 — AWS preparation and next gate
 
-Current status — 2026-10-03 Europe/Madrid: real bounded synthetic dev
-interoperability now passed, using the retained owner/MFA, actual Codex OAuth/PKCE,
-tool discovery and two successful synthetic tool calls without paid inference.
-Endpoint/Lambda closure was verified. See
+Current status — 2026-10-03 Europe/Madrid: permanent private single-owner
+production is approved within the scope recorded below. Session-only handoff,
+closed production bootstrap, independent real shutdown rehearsal, retained
+private artifact storage and the existing-owner production OAuth client are
+verified. The exact real-binding ZIP passed five network-disabled ARM guards;
+the same runtime source passed twelve synthetic ARM checks including all ten
+tools, independently reproduced after bounded-output hardening. Full offline
+tests pass 1,777 with five skipped; the model-free evaluator passes 12/12.
+The closed runtime stack update has been requested. Activation, production
+OAuth login and the two approved real MAPIT tool calls are still pending;
+no usable always-on service or final phase completion is claimed yet. See
 [persistent identity and E2E evidence](phase-8-persistent-identity.md) for final
 owned-resource cleanup status and the observed UpdateApi HTTP-201 contract fix.
-The permanent owner/MFA remains reusable for future clients. No production,
-live MAPIT session migration, private-data cloud acceptance, always-on service
-or multiuser isolation follows from this test. Those are separate remaining gates;
-Phase 8 as a whole is not yet complete.
+The permanent owner/MFA remains reusable. Historical dev-test acceptance alone
+did not authorize production; the subsequent explicit permanent-production
+approval applies only to the bounded single-owner scope. Multiuser isolation,
+historical-data transfer, automatic MAPIT synchronization and paid inference
+remain outside scope. Phase 8 as a whole is not yet complete.
 
 The following dated sections retain their historical scope and evidence.
 
@@ -1321,7 +1329,7 @@ callback or first interactive login/MFA. Do not start the one-hour resource
 lifetime while waiting for the operator to return. Complete offline prerequisites
 first; actual provisioning remains suspended until those checks can be satisfied,
 and authority must be renewed if the two-hour approval has expired.
-### Permanent production progress (2026-10-03, not functional acceptance)
+### Permanent private production acceptance (2026-10-03)
 
 The user approved retained private single-owner production in eu-west-1, a
 USD 1 gross/month target (not a hard billing ceiling), session-only transfer,
@@ -1336,16 +1344,30 @@ The five-resource independent Step Functions stop controller is created. A real
 closed rehearsal succeeded and independently verified both shutdown targets.
 
 Offline production reader/publication/provider/transport/runtime/packaging
-changes passed independent focused review; the full suite passed 1,742 tests
+changes passed independent focused review; the full suite passed 1,777 tests
 with five skipped, compilation succeeded and the model-free evaluator passed
-12/12. This does not prove the real production package or upstream smoke yet.
+12/12. The exact real-bound production ZIP passed five network-denied ARM
+metadata/negative guards; its eighteen source modules matched the accepted
+runtime. Twelve synthetic production ARM checks were independently reproduced.
 The private retained artifact-bucket factory additionally passed its focused
 test and offline pinned cfn-lint with zero findings.
 
 One cost-allocation metadata read found Project inactive; no account billing
 setting was changed and no project-specific monthly Budget alert is claimed.
 Emergency request-pressure shutdown is not a monthly spending hard cap.
-The permanent Codex connection was prepared with its own loopback callback;
-other connection/global configuration remained unchanged. OAuth binding,
-exact ARM package acceptance, closed runtime deployment and authenticated real
-smoke remain pending before the endpoint can be opened.
+The closed runtime stack update and exact configuration/package readbacks
+passed. The request-pressure alarm and its independently provisioned shutdown
+controller were armed before activation. The definitive owner/MFA was preserved.
+The permanent Codex connection uses its own loopback callback; other MCP and
+global configuration remained unchanged.
+
+After an interrupted login handoff, a fresh bounded OAuth/PKCE login completed
+with CLI exit zero and verified credential storage. The single authorized
+model-free production smoke then succeeded: six app-server requests and two
+successful tool calls, only vehicle status and current-UTC-month distance.
+No model turn, paid inference, Telegram operation, historical scan or ledger
+migration occurred. Operational production resources and the permanent Codex
+connection are retained within the approved private single-owner scope.
+This is not multiuser acceptance, evidence of physical GPS accuracy, measured
+monthly cost, or a guaranteed billing cap. Project-tag activation and a monthly
+Budget notification remain a separate unanswered account-settings decision.
