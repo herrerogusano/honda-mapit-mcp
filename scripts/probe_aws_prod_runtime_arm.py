@@ -55,6 +55,7 @@ _GEOGRAPHY_CHECKS = (
     "geographic_summary_counts_and_km", "summer_summary_local_boundaries",
     "invalid_area_before_ssm", "invalid_year_before_ssm", "geometry_asset_digest",
     "geometry_engine_bounded_memory", "geometry_engine_repeat_classification",
+    "amb_asset_digest", "amb_union_and_barcelona_summaries", "amb_registry_cache_bounded",
 )
 _SAFE_FAILURES = frozenset({
     "wheel_directory_invalid", "temporary_directory_invalid", "local_docker_context_unavailable",
@@ -150,15 +151,24 @@ if geo_enabled:
  out["summer_summary_local_boundaries"]=su.get("isError") is False and sd.get("from_time")=="2026-05-31T22:00:00.000Z" and sd.get("to_time")=="2026-08-31T22:00:00.000Z" and sd.get("fully_inside_distance_km")==5
  before=ssm.calls; invalid=geo_call("geographic_summary",{"area_name":"unknown","from_time":"2026-06-01","to_time":"2026-07-01"})
  out["invalid_area_before_ssm"]=invalid.get("isError") is True and ssm.calls==before
+ invalid=geo_call("geographic_summary",{"area_name":"alrededores","from_time":"2026-06-01","to_time":"2026-07-01"})
+ out["invalid_area_before_ssm"]=out["invalid_area_before_ssm"] and invalid.get("isError") is True and ssm.calls==before
  invalid=geo_call("summer_geographic_summary",{"area_name":"menorca","year":1900})
  out["invalid_year_before_ssm"]=invalid.get("isError") is True and ssm.calls==before
- from mapit.geography_engine import MENORCA_GEOJSON_SHA256,load_frozen_menorca_area,classify_public_area_route
+ amb=geo_call("geographic_summary",{"area_name":"Àrea Metropolitana de Barcelona","from_time":"2026-06-01","to_time":"2026-07-01"}); ad=amb.get("structuredContent",{})
+ city=geo_call("geographic_summary",{"area_name":"Barcelona","from_time":"2026-06-01","to_time":"2026-07-01"}); cd=city.get("structuredContent",{})
+ out["amb_union_and_barcelona_summaries"]=(amb.get("isError") is False and city.get("isError") is False and ad.get("area_source")=="ign_amb_36_municipalities_union_2026_10_03" and cd.get("area_source")=="ign_amb_municipality_34090808019_2026_10_03" and ad.get("fully_inside_routes")==1 and ad.get("outside_routes")==1 and cd.get("fully_inside_routes")==1 and cd.get("outside_routes")==1 and ad.get("fully_inside_distance_km")==5 and cd.get("fully_inside_distance_km")==5)
+ from mapit.geography_engine import MENORCA_GEOJSON_SHA256,AMB_GEOJSON_SHA256,AMB_FEATURE_CODES,load_frozen_menorca_area,load_frozen_amb_area,classify_public_area_route
  raw=(root/"mapit"/"data"/"menorca-ign-20261003.geojson").read_bytes()
+ amb_raw=(root/"mapit"/"data"/"amb-ign-20261003.geojson").read_bytes()
  out["geometry_asset_digest"]=hashlib.sha256(raw).hexdigest()==MENORCA_GEOJSON_SHA256
+ out["amb_asset_digest"]=hashlib.sha256(amb_raw).hexdigest()==AMB_GEOJSON_SHA256
  area=load_frozen_menorca_area(raw); line={"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[[4.12,39.96],[4.121,39.961]]}}]}
  started=__import__("time").monotonic(); matches=sum(classify_public_area_route(line,area)=="fully_inside" for _ in range(1000)); elapsed=__import__("time").monotonic()-started
  out["geometry_engine_repeat_classification"]=matches==1000 and elapsed<10
  out["geometry_engine_bounded_memory"]=__import__("resource").getrusage(__import__("resource").RUSAGE_SELF).ru_maxrss<230*1024
+ from mapit.geographic_tools import _load_selected_area
+ out["amb_registry_cache_bounded"]=_load_selected_area.cache_info().maxsize==2 and _load_selected_area.cache_info().currsize<=2 and len(AMB_FEATURE_CODES)==36
 missing=invoke(None,rpc("tools/list")).get("statusCode",0); unknown=invoke(p["tokens"]["unknown_kid"],rpc("tools/list")).get("statusCode",0); wrong_aud=invoke(p["tokens"]["wrong_audience"],rpc("tools/list")).get("statusCode",0); wrong_scope=invoke(p["tokens"]["wrong_scope"],rpc("tools/list")).get("statusCode",0)
 statuses.update({"missing_auth":missing,"unknown_kid":unknown,"wrong_audience":wrong_aud,"wrong_scope":wrong_scope})
 out["missing_auth_401"]=missing==401
@@ -169,7 +179,7 @@ def clear(): ep._CACHED_RUNTIME=None; ep._CACHED_MANIFEST_SHA256=None; ep._CACHE
 os.environ["MAPIT_MCP_ENV"]="dev"; clear(); dev_status=invoke(valid,rpc("tools/list")).get("statusCode",0); out["dev_isolation_503"]=dev_status==503
 os.environ["MAPIT_MCP_ENV"]="prod"; os.environ.pop("MAPIT_PROD_MANIFEST_SHA256",None); clear(); missing_config_status=invoke(valid,rpc("tools/list")).get("statusCode",0); out["missing_config_503"]=missing_config_status==503
 statuses.update({"dev_isolation":dev_status,"missing_config":missing_config_status})
-out["lazy_ssm_per_invocation"]=ssm.calls==(12 if geo_enabled else 10)
+out["lazy_ssm_per_invocation"]=ssm.calls==(14 if geo_enabled else 10)
 print(json.dumps({"checks":out,"statuses":statuses},sort_keys=True,separators=(",",":"))); sys.exit(0 if all(out.values()) else 2)
 '''
 

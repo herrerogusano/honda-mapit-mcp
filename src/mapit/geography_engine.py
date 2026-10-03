@@ -1,4 +1,4 @@
-"""Optional exact-topology engine for the frozen public Menorca boundary.
+"""Optional exact-topology engine for frozen Menorca and AMB public boundaries.
 
 Shapely is imported only when this module's preparation/classification APIs are
 called. The loader accepts bytes supplied by a separate explicit asset loader;
@@ -33,6 +33,28 @@ MENORCA_FEATURE_CODES = frozenset(
 )
 MENORCA_EXPECTED_VERTICES = 24_750
 MENORCA_EXPECTED_RINGS = 111
+AMB_AREA_VERSION = "ign-amb-2026-10-03-epsg4258-to-4326-v1"
+AMB_GEOJSON_SHA256 = "13a14638f0dbe45b4c34a2b5bdea9923da4bb2a174e79697d65ae157b7caed3a"
+AMB_GEOJSON_MAX_BYTES = 1024 * 1024
+AMB_FEATURE_CODES = frozenset({
+    "34090808015", "34090808904", "34090808252", "34090808019", "34090808020",
+    "34090808054", "34090808056", "34090808266", "34090808068", "34090808072",
+    "34090808073", "34090808077", "34090808089", "34090808101", "34090808123",
+    "34090808125", "34090808126", "34090808157", "34090808158", "34090808169",
+    "34090808180", "34090808194", "34090808196", "34090808200", "34090808204",
+    "34090808205", "34090808211", "34090808217", "34090808221", "34090808244",
+    "34090808245", "34090808263", "34090808282", "34090808289", "34090808301",
+    "34090808905",
+})
+AMB_EXPECTED_VERTICES = 32_299
+AMB_EXPECTED_RINGS = 38
+SUPPORTED_PREPARED_AREA_SOURCES = frozenset(
+    {
+        "ign_menorca_municipalities_union_2026_10_03",
+        "ign_amb_36_municipalities_union_2026_10_03",
+        *(f"ign_amb_municipality_{code}_2026_10_03" for code in AMB_FEATURE_CODES),
+    }
+)
 MAX_ENGINE_ROUTE_FEATURES = 4096
 MAX_ENGINE_ROUTE_COORDINATES = 4_096
 _PREPARED_AREA_TOKEN = object()
@@ -76,7 +98,12 @@ def _position(value: Any) -> tuple[float, float]:
     return longitude, latitude
 
 
-def _geometry_rings(geometry: Any) -> tuple[list[list[tuple[float, float]]], int]:
+def _geometry_rings(
+    geometry: Any,
+    *,
+    max_vertices: int = MENORCA_EXPECTED_VERTICES,
+    max_rings: int = MENORCA_EXPECTED_RINGS,
+) -> tuple[list[list[tuple[float, float]]], int]:
     if not isinstance(geometry, Mapping):
         raise GeographyEngineError("invalid_public_geometry")
     kind = geometry.get("type")
@@ -98,7 +125,7 @@ def _geometry_rings(geometry: Any) -> tuple[list[list[tuple[float, float]]], int
             if not isinstance(raw_ring, list) or len(raw_ring) < 4:
                 raise GeographyEngineError("invalid_public_geometry")
             vertex_count += len(raw_ring)
-            if vertex_count > MENORCA_EXPECTED_VERTICES:
+            if vertex_count > max_vertices:
                 raise GeographyEngineError("public_vertex_count_mismatch")
             ring = [_position(point) for point in raw_ring]
             if ring[0] != ring[-1]:
@@ -106,7 +133,7 @@ def _geometry_rings(geometry: Any) -> tuple[list[list[tuple[float, float]]], int
             if any(abs(right[0] - left[0]) > 180 for left, right in zip(ring, ring[1:])):
                 raise GeographyEngineError("unsupported_public_geometry")
             rings.append(ring)
-            if len(rings) > MENORCA_EXPECTED_RINGS:
+            if len(rings) > max_rings:
                 raise GeographyEngineError("public_ring_count_mismatch")
     return rings, vertex_count
 
@@ -126,7 +153,7 @@ def _load_shapely():
 
 @dataclass(frozen=True, repr=False, init=False)
 class PreparedPublicArea:
-    """Prepared public polygon union; the actual coordinates never enter repr."""
+    """Prepared selected public polygon union; coordinates never enter repr."""
 
     geometry: Any = field(repr=False, compare=False)
     source_version: str = MENORCA_AREA_VERSION
@@ -166,14 +193,46 @@ def is_valid_prepared_public_area(value: Any) -> bool:
     return isinstance(value, PreparedPublicArea) and value._validation_token is _PREPARED_AREA_TOKEN
 
 
-def _prepare_collection(data: Any) -> PreparedPublicArea:
+def prepared_area_matches_source(value: Any, source: Any) -> bool:
+    """Bind a prepared selection to its one fixed provenance label."""
+    if not is_valid_prepared_public_area(value) or type(source) is not str:
+        return False
+    if source == "ign_menorca_municipalities_union_2026_10_03":
+        return value.source_version == MENORCA_AREA_VERSION and value.feature_count == 8
+    if source == "ign_amb_36_municipalities_union_2026_10_03":
+        return value.source_version == AMB_AREA_VERSION and value.feature_count == 36
+    prefix = "ign_amb_municipality_"
+    suffix = "_2026_10_03"
+    if source in SUPPORTED_PREPARED_AREA_SOURCES and source.startswith(prefix) and source.endswith(suffix):
+        code = source[len(prefix):-len(suffix)]
+        return (
+            code in AMB_FEATURE_CODES
+            and value.source_version == f"{AMB_AREA_VERSION}:{code}"
+            and value.feature_count == 1
+        )
+    return False
+
+
+def _prepare_collection(
+    data: Any,
+    *,
+    feature_codes: frozenset[str] = MENORCA_FEATURE_CODES,
+    expected_vertices: int = MENORCA_EXPECTED_VERTICES,
+    expected_rings: int = MENORCA_EXPECTED_RINGS,
+    source_version: str = MENORCA_AREA_VERSION,
+    selected_codes: frozenset[str] | None = None,
+) -> PreparedPublicArea:
     if not isinstance(data, Mapping) or data.get("type") != "FeatureCollection":
         raise GeographyEngineError("public_feature_collection_invalid")
     features = data.get("features")
-    if not isinstance(features, list) or len(features) != len(MENORCA_FEATURE_CODES):
+    if not isinstance(features, list) or len(features) != len(feature_codes):
         raise GeographyEngineError("public_feature_count_mismatch")
+    selected_codes = feature_codes if selected_codes is None else selected_codes
+    if type(selected_codes) is not frozenset or not selected_codes or not selected_codes <= feature_codes:
+        raise GeographyEngineError("public_selection_invalid")
     seen_codes: set[str] = set()
-    geometries = []
+    geometries: dict[str, Any] = {}
+    counts_by_code: dict[str, tuple[int, int]] = {}
     vertices = rings = 0
     _, _, shape, _, _, is_empty, is_valid, union_all = _load_shapely()
     for feature in features:
@@ -181,12 +240,14 @@ def _prepare_collection(data: Any) -> PreparedPublicArea:
             raise GeographyEngineError("public_feature_invalid")
         properties = feature.get("properties")
         code = properties.get("nationalCode") if isinstance(properties, Mapping) else None
-        if not isinstance(code, str) or code not in MENORCA_FEATURE_CODES or code in seen_codes:
+        if not isinstance(code, str) or code not in feature_codes or code in seen_codes:
             raise GeographyEngineError("public_feature_code_mismatch")
         seen_codes.add(code)
         geometry_data = feature.get("geometry")
-        feature_rings, feature_vertices = _geometry_rings(geometry_data)
-        if vertices + feature_vertices > MENORCA_EXPECTED_VERTICES or rings + len(feature_rings) > MENORCA_EXPECTED_RINGS:
+        feature_rings, feature_vertices = _geometry_rings(
+            geometry_data, max_vertices=expected_vertices, max_rings=expected_rings
+        )
+        if vertices + feature_vertices > expected_vertices or rings + len(feature_rings) > expected_rings:
             raise GeographyEngineError("public_geometry_count_mismatch")
         try:
             geometry = shape(geometry_data)
@@ -197,15 +258,16 @@ def _prepare_collection(data: Any) -> PreparedPublicArea:
         vertices += feature_vertices
         # Count rings from the bounded parser rather than trusting library internals.
         rings += len(feature_rings)
-        if vertices > MENORCA_EXPECTED_VERTICES or rings > MENORCA_EXPECTED_RINGS:
+        if vertices > expected_vertices or rings > expected_rings:
             raise GeographyEngineError("public_geometry_count_mismatch")
-        geometries.append(geometry)
-    if seen_codes != MENORCA_FEATURE_CODES:
+        geometries[code] = geometry
+        counts_by_code[code] = (feature_vertices, len(feature_rings))
+    if seen_codes != feature_codes:
         raise GeographyEngineError("public_feature_code_mismatch")
-    if vertices != MENORCA_EXPECTED_VERTICES or rings != MENORCA_EXPECTED_RINGS:
+    if vertices != expected_vertices or rings != expected_rings:
         raise GeographyEngineError("public_geometry_count_mismatch")
-    union = union_all(geometries)
-    if bool(is_empty(union)) or not bool(is_valid(union)) or union.geom_type != "MultiPolygon":
+    union = union_all([geometries[code] for code in selected_codes])
+    if bool(is_empty(union)) or not bool(is_valid(union)) or union.geom_type not in {"Polygon", "MultiPolygon"}:
         raise GeographyEngineError("public_union_invalid")
     # Shapely 2.x prepare() modifies the geometry in place and returns None.
     shapely, *_ = _load_shapely()
@@ -213,7 +275,17 @@ def _prepare_collection(data: Any) -> PreparedPublicArea:
         shapely.prepare(union)
     except Exception:
         raise GeographyEngineError("public_geometry_prepare_failed") from None
-    return PreparedPublicArea(geometry=union, _validation_token=_PREPARED_AREA_TOKEN)
+    selected_vertices = sum(counts_by_code[code][0] for code in selected_codes)
+    selected_rings = sum(counts_by_code[code][1] for code in selected_codes)
+    selection_version = source_version if selected_codes == feature_codes else f"{source_version}:{','.join(sorted(selected_codes))}"
+    return PreparedPublicArea(
+        geometry=union,
+        source_version=selection_version,
+        feature_count=len(selected_codes),
+        vertex_count=selected_vertices,
+        ring_count=selected_rings,
+        _validation_token=_PREPARED_AREA_TOKEN,
+    )
 
 
 def load_frozen_menorca_area(raw_bytes: bytes) -> PreparedPublicArea:
@@ -233,6 +305,28 @@ def load_frozen_menorca_area(raw_bytes: bytes) -> PreparedPublicArea:
     except Exception:
         raise GeographyEngineError("public_asset_json_invalid") from None
     return _prepare_collection(data)
+
+
+def load_frozen_amb_area(raw_bytes: bytes, selected_codes: frozenset[str]) -> PreparedPublicArea:
+    """Validate the pinned 36-municipality AMB asset and prepare a fixed selection."""
+    if not isinstance(raw_bytes, bytes) or len(raw_bytes) > AMB_GEOJSON_MAX_BYTES:
+        raise GeographyEngineError("public_asset_size_invalid")
+    if hashlib.sha256(raw_bytes).hexdigest() != AMB_GEOJSON_SHA256:
+        raise GeographyEngineError("public_asset_digest_mismatch")
+    try:
+        data = json.loads(raw_bytes.decode("utf-8"), object_pairs_hook=_no_duplicate_object, parse_constant=_reject_constant)
+    except GeographyEngineError:
+        raise
+    except Exception:
+        raise GeographyEngineError("public_asset_json_invalid") from None
+    return _prepare_collection(
+        data,
+        feature_codes=AMB_FEATURE_CODES,
+        expected_vertices=AMB_EXPECTED_VERTICES,
+        expected_rings=AMB_EXPECTED_RINGS,
+        source_version=AMB_AREA_VERSION,
+        selected_codes=selected_codes,
+    )
 
 
 def _route_lines(geojson: Any):

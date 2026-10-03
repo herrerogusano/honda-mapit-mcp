@@ -1,12 +1,25 @@
 # Telegram multi-user expansion: offline design contract
 
-Status: **research/design only**. This document records existing seams and a
+Status: **offline library accepted; hosted linking/deployment pending**. This document records existing seams and a
 bounded direction for a later implementation. It does not authorize account
 creation, public signup, deployment, credential collection, new paid services,
 live MAPIT/Telegram calls, or model inference. The existing production endpoint
 remains single-owner. A separate geography scope for Barcelona/Spain must not
 be inferred from this multi-user design; the accepted geography bundle is
-currently Menorca-specific.
+deployed for Menorca; Barcelona/AMB has a separate bounded review.
+
+## Accepted offline invitation boundary
+
+`tenant_router.py` verifies fixed-policy RS256 access tokens against at most
+sixteen explicit invitations and issues tamper-evident, expiring request grants.
+Opaque HMAC-derived tenant keys select injected, request-local providers; no
+legacy-owner fallback or credential store is constructed. Each proxied service
+call rechecks authorization/context/deadline before and after execution.
+Concurrent tenant requests, revocation, provider reuse, escaped proxies/copied
+contexts, forged/expired claims and safe failures passed 28 tests including an
+independent review. Existing production and Telegram entrypoints are unchanged.
+This library does not establish account linking, real secret-reader isolation,
+multiuser deployment or durable Telegram delivery.
 
 ## What exists today
 

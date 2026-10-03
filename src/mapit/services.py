@@ -257,6 +257,43 @@ class GeographicRouteSummary(OutputModel):
     area_source: Literal[
         "caller_supplied_geojson",
         "ign_menorca_municipalities_union_2026_10_03",
+        "ign_amb_36_municipalities_union_2026_10_03",
+        "ign_amb_municipality_34090808015_2026_10_03",
+        "ign_amb_municipality_34090808904_2026_10_03",
+        "ign_amb_municipality_34090808252_2026_10_03",
+        "ign_amb_municipality_34090808019_2026_10_03",
+        "ign_amb_municipality_34090808020_2026_10_03",
+        "ign_amb_municipality_34090808054_2026_10_03",
+        "ign_amb_municipality_34090808056_2026_10_03",
+        "ign_amb_municipality_34090808266_2026_10_03",
+        "ign_amb_municipality_34090808068_2026_10_03",
+        "ign_amb_municipality_34090808072_2026_10_03",
+        "ign_amb_municipality_34090808073_2026_10_03",
+        "ign_amb_municipality_34090808077_2026_10_03",
+        "ign_amb_municipality_34090808089_2026_10_03",
+        "ign_amb_municipality_34090808101_2026_10_03",
+        "ign_amb_municipality_34090808123_2026_10_03",
+        "ign_amb_municipality_34090808125_2026_10_03",
+        "ign_amb_municipality_34090808126_2026_10_03",
+        "ign_amb_municipality_34090808157_2026_10_03",
+        "ign_amb_municipality_34090808158_2026_10_03",
+        "ign_amb_municipality_34090808169_2026_10_03",
+        "ign_amb_municipality_34090808180_2026_10_03",
+        "ign_amb_municipality_34090808194_2026_10_03",
+        "ign_amb_municipality_34090808196_2026_10_03",
+        "ign_amb_municipality_34090808200_2026_10_03",
+        "ign_amb_municipality_34090808204_2026_10_03",
+        "ign_amb_municipality_34090808205_2026_10_03",
+        "ign_amb_municipality_34090808211_2026_10_03",
+        "ign_amb_municipality_34090808217_2026_10_03",
+        "ign_amb_municipality_34090808221_2026_10_03",
+        "ign_amb_municipality_34090808244_2026_10_03",
+        "ign_amb_municipality_34090808245_2026_10_03",
+        "ign_amb_municipality_34090808263_2026_10_03",
+        "ign_amb_municipality_34090808282_2026_10_03",
+        "ign_amb_municipality_34090808289_2026_10_03",
+        "ign_amb_municipality_34090808301_2026_10_03",
+        "ign_amb_municipality_34090808905_2026_10_03",
     ] = "caller_supplied_geojson"
     area_type: Literal["Polygon", "MultiPolygon"]
     matched_routes: int
@@ -614,18 +651,26 @@ class MapitServices:
             from .geography_engine import (
                 GeographyEngineError,
                 PreparedPublicArea,
+                SUPPORTED_PREPARED_AREA_SOURCES,
                 classify_public_area_route,
                 is_valid_prepared_public_area,
+                prepared_area_matches_source,
             )
 
             if isinstance(area_geojson, PreparedPublicArea):
                 if not is_valid_prepared_public_area(area_geojson):
                     raise GeographyError("invalid_prepared_area")
-                if area_source != "ign_menorca_municipalities_union_2026_10_03":
+                if (
+                    type(area_source) is not str
+                    or area_source not in SUPPORTED_PREPARED_AREA_SOURCES
+                    or not prepared_area_matches_source(area_geojson, area_source)
+                ):
                     raise GeographyError("unsupported_area_source")
                 area = area_geojson
                 classify = classify_public_area_route
-                area_type = "MultiPolygon"
+                area_type = area_geojson.geometry.geom_type
+                if area_type not in {"Polygon", "MultiPolygon"}:
+                    raise GeographyError("invalid_prepared_area")
             else:
                 area = validate_area(area_geojson, source=area_source)
                 classify = classify_route_geojson_with_work

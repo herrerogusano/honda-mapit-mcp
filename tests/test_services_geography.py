@@ -151,14 +151,14 @@ def test_compiled_area_route_cap_stops_before_requesting_next_month():
     from shapely.geometry import box
     from shapely import prepare
 
-    from mapit.geography_engine import PreparedPublicArea, _PREPARED_AREA_TOKEN
+    from mapit.geography_engine import MENORCA_AREA_VERSION, PreparedPublicArea, _PREPARED_AREA_TOKEN
 
     geometry = box(0, 0, 4, 4)
     prepare(geometry)
     area = PreparedPublicArea(
         geometry=geometry,
-        source_version="synthetic-test",
-        feature_count=1,
+        source_version=MENORCA_AREA_VERSION,
+        feature_count=8,
         vertex_count=5,
         ring_count=1,
         _validation_token=_PREPARED_AREA_TOKEN,
@@ -185,3 +185,74 @@ def test_summer_convenience_uses_fixed_utc_bounds_and_fails_closed_on_area():
     calls = [call for call in client.calls if call[0] == "geo"]
     assert calls[0][2]["from"] == result.from_time
     assert calls[-1][2]["to"] == result.to_time
+
+
+def test_prepared_amb_union_and_polygon_municipality_use_fixed_sources_and_actual_geom_type():
+    pytest.importorskip("shapely")
+    from pathlib import Path
+
+    from mapit.geography_engine import AMB_FEATURE_CODES, load_frozen_amb_area
+
+    raw = (Path(__file__).parents[1] / "src" / "mapit" / "data" / "amb-ign-20261003.geojson").read_bytes()
+    route_inside_barcelona = route(
+        "synthetic-inside",
+        "2026-01-10T00:00:00Z",
+        5000,
+        fc(feature("LineString", [[2.16, 41.39], [2.17, 41.40]])),
+    )
+    route_outside_amb = route(
+        "synthetic-outside",
+        "2026-01-11T00:00:00Z",
+        6000,
+        fc(feature("LineString", [[4.12, 39.96], [4.121, 39.961]])),
+    )
+    cases = (
+        (
+            load_frozen_amb_area(raw, frozenset({"34090808019"})),
+            "ign_amb_municipality_34090808019_2026_10_03",
+            "MultiPolygon",
+        ),
+        (
+            load_frozen_amb_area(raw, frozenset({"34090808015"})),
+            "ign_amb_municipality_34090808015_2026_10_03",
+            "Polygon",
+        ),
+        (
+            load_frozen_amb_area(raw, AMB_FEATURE_CODES),
+            "ign_amb_36_municipalities_union_2026_10_03",
+            "MultiPolygon",
+        ),
+    )
+    for area, source, expected_type in cases:
+        if source == "ign_amb_municipality_34090808015_2026_10_03":
+            inside_point = area.geometry.representative_point()
+            inside = route(
+                "synthetic-inside-badalona",
+                "2026-01-10T00:00:00Z",
+                5000,
+                fc(feature("LineString", [[inside_point.x, inside_point.y], [inside_point.x + 1e-8, inside_point.y + 1e-8]])),
+            )
+        else:
+            inside = route_inside_barcelona
+        service = MapitServices(GeoClient([{"data": [inside, route_outside_amb]}]))
+        result = service.get_geographic_summary("2026-01-01", "2026-02-01", area, source)
+        assert result.area_source == source
+        assert result.area_type == expected_type
+        assert (result.fully_inside_routes, result.outside_routes) == (1, 1)
+
+
+def test_prepared_area_rejects_unknown_provenance_before_any_read():
+    pytest.importorskip("shapely")
+    from shapely.geometry import box
+    from shapely import prepare
+
+    from mapit.geography_engine import PreparedPublicArea, _PREPARED_AREA_TOKEN
+
+    geometry = box(0, 0, 1, 1)
+    prepare(geometry)
+    area = PreparedPublicArea(geometry=geometry, _validation_token=_PREPARED_AREA_TOKEN)
+    client = GeoClient([])
+    with pytest.raises(ServiceError) as error:
+        MapitServices(client).get_geographic_summary("2026-01-01", "2026-02-01", area, "caller-string")
+    assert error.value.code == "unsupported_area_source"
+    assert client.calls == []

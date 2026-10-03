@@ -18,6 +18,16 @@ new paid inference, third-party MAPIT credentials, unbounded polling, or an
 expanded hosted identity/IAM/storage scope from this request. Preserve the
 working single-owner service until those prerequisites are reviewed.
 
+The renewed-window Menorca production upgrade is COMPLETE: fresh publication,
+independent shutdown, exact closed update/readbacks and reopening passed.
+Codex discovery verified twelve tools with four protocol requests and zero
+tool/model calls. Parent private runtime receipts now bind the deployed Menorca
+artifact; old journals/intents must not be replayed. Barcelona/AMB assets and
+registry remain under separate offline review and fresh-artifact deployment.
+The invitation-only tenant router is independently accepted offline (28 tests),
+not connected to production, Telegram identity linking or real credential storage.
+No new live history probe or production multiuser capability follows.
+
 On 2026-10-03 the user approved the geographic-query increment and two hours
 of temporary display/system wakefulness, 13:42–15:42 UTC. Reused Luna/high
 researcher, implementer and tester roles; canonical MCP/delegation guides were

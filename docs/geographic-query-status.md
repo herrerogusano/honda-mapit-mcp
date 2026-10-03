@@ -1,5 +1,26 @@
 # Geographic queries — acceptance checkpoint
 
+## Current deployment (2026-10-03, renewed window)
+
+The Menorca code-only production upgrade completed in the fresh
+15:51:57–17:51:57 UTC authorization window: content-addressed publication,
+independent control-plane closure, exact stack/code readbacks, update and
+verified reopening. Discovery through the configured Codex app server returned
+the exact twelve-tool catalog (four protocol requests, zero tool/model calls).
+The previous runtime artifact is retained. Owner/MFA, IAM, quota 10 and existing
+shutdown controls are unchanged. This is catalog interoperability, not another
+live historical-data or geographic Lambda-output test.
+
+Barcelona municipality, the official 36-municipality AMB union and its named
+municipalities passed independent offline review, including the real service
+path and exact Polygon/MultiPolygon reporting. The frozen public asset verifies
+36 codes, 38 rings and 32,299 vertices. A freshly built synthetic ARM package
+passed all 22 checks with network disabled and a 256 MiB memory cap; the exact
+real-bound artifact passed eight metadata/authorization/public-registry checks
+offline without reading a session. They are not yet deployed. Nationwide Spain
+remains a later bounded-data/packaging decision;
+see [public-source research](geographic-spain-research.md).
+
 ## Accepted
 
 - Frozen public IGN eight-municipality Menorca union, EPSG:4258 to EPSG:4326
@@ -57,9 +78,9 @@
   not publish an object, close the service, request an update, reopen the API,
   invoke a Lambda handler, or make another MAPIT read.
 
-## Remaining
+## Earlier-window checkpoint (superseded for Menorca deployment)
 
-Production currently retains the previous ten-tool package. A code-only upgrade
+At the earlier 13:42–15:42 UTC checkpoint production retained the ten-tool package. The code-only upgrade
 needs fresh durable intents, exact ownership/template/code readbacks, independent
 closure, reviewed reopening/recovery and final endpoint/tool-discovery checks.
 Do not replay initial deployment operators. Retain existing owner/MFA, IAM,

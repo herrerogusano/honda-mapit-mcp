@@ -525,7 +525,15 @@ rules and the distinction between project environments and MAPIT endpoints.
 See `docs/phase-0-status.md` and the research notes for current findings and
 open questions.
 
-## Future AWS deployment
+## AWS deployment
+
+Current status (2026-10-03): private single-owner production is deployed in
+eu-west-1 with retained Cognito MFA. Its Menorca geographic opt-in now advertises
+twelve tools; code update, independent shutdown/reopening and Codex catalog
+discovery passed. No paid model is hosted. Barcelona/AMB support is under review,
+and hosted multiuser/Telegram expansion is not active. See the current
+[geographic checkpoint](docs/geographic-query-status.md) and
+[AWS preparation record](docs/phase-8-aws-preparation.md).
 
 Phase 8 plans an optional always-available remote MCP on AWS with separate dev
 and prod environments. Hosting the MCP does not require hosting a model. A
@@ -538,8 +546,9 @@ The IaC candidates remain deliberately closed and contain no credentials.
 On 2026-10-02 a bounded [closed AWS rehearsal](docs/phase-8-closed-rehearsal.md)
 verified scheduled shutdown and scoped deletion; all six application and twelve
 control resources were then removed. The regional concurrency quota remains 10.
-No remote MCP is currently active. Real OAuth/owner enrollment and synthetic
-tool interoperability are still pending; Phase 8 is not complete.
+That earlier rehearsal was removed; later owner enrollment, synthetic cloud
+interoperability and private production activation supersede that checkpoint.
+Phase 8's broader multiuser/always-on acceptance is not complete.
 
 The accepted offline block is a deliberately synthetic local HTTP/auth adapter;
 see its [contract and acceptance limits](docs/phase-8-local-http-contract.md).

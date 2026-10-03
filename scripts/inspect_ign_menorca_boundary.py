@@ -8,6 +8,7 @@ Requires defusedxml, pyproj, and Shapely in an explicitly selected environment.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import stat
@@ -31,6 +32,7 @@ MAX_ELEMENTS = 100_000
 MAX_DEPTH = 32
 MAX_VERTICES = 35_000
 EXPECTED_SOURCE_CRS = "http://www.opengis.net/def/crs/EPSG/0/4258"
+EXPECTED_AMB_SOURCE_SHA256 = "5249ea12f55825213590ec9da298f12852535bfa036e00a0c3c76e637f86b5ca"
 EXPECTED_CODES = {
     "34040707002": "Alaior",
     "34040707015": "Ciutadella de Menorca",
@@ -40,6 +42,44 @@ EXPECTED_CODES = {
     "34040707023": "Ferreries",
     "34040707032": "Maó",
     "34040707052": "Sant Lluís",
+}
+EXPECTED_AMB_CODES = {
+    "34090808015": "Badalona",
+    "34090808904": "Badia del Vallès",
+    "34090808252": "Barberà del Vallès",
+    "34090808019": "Barcelona",
+    "34090808020": "Begues",
+    "34090808054": "Castellbisbal",
+    "34090808056": "Castelldefels",
+    "34090808266": "Cerdanyola del Vallès",
+    "34090808068": "Cervelló",
+    "34090808072": "Corbera de Llobregat",
+    "34090808073": "Cornellà de Llobregat",
+    "34090808077": "Esplugues de Llobregat",
+    "34090808089": "Gavà",
+    "34090808101": "L'Hospitalet de Llobregat",
+    "34090808123": "Molins de Rei",
+    "34090808125": "Montcada i Reixac",
+    "34090808126": "Montgat",
+    "34090808157": "Pallejà",
+    "34090808158": "El Papiol",
+    "34090808169": "El Prat de Llobregat",
+    "34090808180": "Ripollet",
+    "34090808194": "Sant Adrià de Besòs",
+    "34090808196": "Sant Andreu de la Barca",
+    "34090808200": "Sant Boi de Llobregat",
+    "34090808204": "Sant Climent de Llobregat",
+    "34090808205": "Sant Cugat del Vallès",
+    "34090808211": "Sant Feliu de Llobregat",
+    "34090808217": "Sant Joan Despí",
+    "34090808221": "Sant Just Desvern",
+    "34090808244": "Santa Coloma de Cervelló",
+    "34090808245": "Santa Coloma de Gramenet",
+    "34090808263": "Sant Vicenç dels Horts",
+    "34090808282": "Tiana",
+    "34090808289": "Torrelles de Llobregat",
+    "34090808301": "Viladecans",
+    "34090808905": "La Palma de Cervelló",
 }
 NS = {
     "wfs": "http://www.opengis.net/wfs/2.0",
@@ -120,7 +160,8 @@ def _positions(
     return result
 
 
-def _read_features(source: bytes) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _read_features(source: bytes, expected_codes: dict[str, str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    expected_codes = EXPECTED_CODES if expected_codes is None else expected_codes
     transform_started = time.perf_counter()
     if len(source) > MAX_SOURCE_BYTES:
         raise BoundaryError("source_byte_limit")
@@ -134,7 +175,8 @@ def _read_features(source: bytes) -> tuple[list[dict[str, Any]], dict[str, Any]]
     if root.tag != f"{{{NS['wfs']}}}FeatureCollection":
         raise BoundaryError("unexpected_root")
     timestamp = root.attrib.get("timeStamp")
-    if not timestamp or root.attrib.get("numberMatched") != "8" or root.attrib.get("numberReturned") != "8":
+    expected_count = str(len(expected_codes))
+    if not timestamp or root.attrib.get("numberMatched") != expected_count or root.attrib.get("numberReturned") != expected_count:
         raise BoundaryError("unexpected_feature_collection_metadata")
 
     crs = CRS.from_epsg(4258)
@@ -162,7 +204,7 @@ def _read_features(source: bytes) -> tuple[list[dict[str, Any]], dict[str, Any]]
         raise BoundaryError("transform_accuracy_unverified")
 
     members = root.findall(f"{{{NS['wfs']}}}member")
-    if len(members) != 8:
+    if len(members) != len(expected_codes):
         raise BoundaryError("unexpected_member_count")
     features: list[dict[str, Any]] = []
     seen_codes: set[str] = set()
@@ -175,7 +217,7 @@ def _read_features(source: bytes) -> tuple[list[dict[str, Any]], dict[str, Any]]
     for member in members:
         unit = _exact_child(member, NS["au"], "AdministrativeUnit")
         code = (_exact_child(unit, NS["au"], "nationalCode").text or "").strip()
-        if code not in EXPECTED_CODES or code in seen_codes:
+        if code not in expected_codes or code in seen_codes:
             raise BoundaryError("unexpected_national_code")
         seen_codes.add(code)
         feature_id = unit.attrib.get(f"{{{NS['gml']}}}id", "")
@@ -223,7 +265,7 @@ def _read_features(source: bytes) -> tuple[list[dict[str, Any]], dict[str, Any]]
 
         name_node = _exact_child(unit, NS["au"], "name")
         name = "".join(name_node.itertext()).strip()
-        if name != EXPECTED_CODES[code]:
+        if name != expected_codes[code]:
             raise BoundaryError("unexpected_municipality_name")
         features.append(
             {
@@ -236,7 +278,7 @@ def _read_features(source: bytes) -> tuple[list[dict[str, Any]], dict[str, Any]]
         rings_by_code[code] = local_rings
         ring_count += local_rings
 
-    if seen_codes != set(EXPECTED_CODES):
+    if seen_codes != set(expected_codes):
         raise BoundaryError("missing_national_code")
     union_started = time.perf_counter()
     try:
@@ -270,6 +312,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--area", choices=("menorca", "amb"), default="menorca")
     args = parser.parse_args()
     if args.input.absolute() == args.output.absolute():
         parser.error("input and output must be different files")
@@ -284,7 +327,9 @@ def main() -> int:
             source = source_file.read(MAX_SOURCE_BYTES + 1)
         if len(source) > MAX_SOURCE_BYTES:
             raise BoundaryError("source_byte_limit")
-        features, report = _read_features(source)
+        if args.area == "amb" and hashlib.sha256(source).hexdigest() != EXPECTED_AMB_SOURCE_SHA256:
+            raise BoundaryError("source_digest_mismatch")
+        features, report = _read_features(source, EXPECTED_AMB_CODES if args.area == "amb" else EXPECTED_CODES)
     except BoundaryError as exc:
         code = str(exc)
         print(json.dumps({"status": "rejected", "category": code}), file=sys.stderr)

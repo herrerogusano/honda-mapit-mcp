@@ -83,7 +83,8 @@ def test_geographic_probe_matrix_requires_all_optional_checks():
 
 def test_geographic_probe_exercises_asset_boundaries_and_presecret_negatives():
     for marker in ("MENORCA_GEOJSON_SHA256", "fully_inside_distance_km", "2026-05-31T22:00:00.000Z",
-                   "invalid_area_before_ssm", "invalid_year_before_ssm", "ru_maxrss",
+                   "AMB_GEOJSON_SHA256", "ign_amb_36_municipalities_union_2026_10_03",
+                   "ign_amb_municipality_34090808019_2026_10_03", "invalid_area_before_ssm", "invalid_year_before_ssm", "ru_maxrss",
                    "range(1000)"):
         assert marker in probe._CONTAINER_PROBE
 

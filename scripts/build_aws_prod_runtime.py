@@ -30,6 +30,8 @@ JWKS_FILENAME = "cognito-public-jwks.json"
 GEOGRAPHY_SOURCE_MODULES = ("geography_engine.py", "geographic_tools.py")
 GEOGRAPHY_ASSET = "data/menorca-ign-20261003.geojson"
 GEOGRAPHY_ASSET_SHA256 = "1e75a0c988fe13c2917487bf6b9834bd6aa4f48af5117b6ed216901be09b33cd"
+GEOGRAPHY_AMB_ASSET = "data/amb-ign-20261003.geojson"
+GEOGRAPHY_AMB_ASSET_SHA256 = "13a14638f0dbe45b4c34a2b5bdea9923da4bb2a174e79697d65ae157b7caed3a"
 PROD_SOURCE_MODULES = (
     "aws_dev_runtime.py",  # Shared fixed Cognito/JWKS validators only.
     "aws_prod_runtime.py",
@@ -118,13 +120,17 @@ def _source_entries(repo: Path, *, geography_enabled: bool = False) -> list[tupl
             raise ProdBuildError("runtime_source_invalid") from None
         result.append((f"mapit/{module}", raw))
     if geography_enabled:
-        asset = source_root / GEOGRAPHY_ASSET
-        if dev_builder._has_symlink_or_reparse_ancestor(asset) or not asset.is_file():
-            raise ProdBuildError("geography_asset_invalid")
-        raw = dev_builder._read_bounded(asset, 1024 * 1024, "geography_asset_invalid")
-        if hashlib.sha256(raw).hexdigest() != GEOGRAPHY_ASSET_SHA256:
-            raise ProdBuildError("geography_asset_invalid")
-        result.append((f"mapit/{GEOGRAPHY_ASSET}", raw))
+        for asset_name, expected_sha256 in (
+            (GEOGRAPHY_ASSET, GEOGRAPHY_ASSET_SHA256),
+            (GEOGRAPHY_AMB_ASSET, GEOGRAPHY_AMB_ASSET_SHA256),
+        ):
+            asset = source_root / asset_name
+            if dev_builder._has_symlink_or_reparse_ancestor(asset) or not asset.is_file():
+                raise ProdBuildError("geography_asset_invalid")
+            raw = dev_builder._read_bounded(asset, 1024 * 1024, "geography_asset_invalid")
+            if hashlib.sha256(raw).hexdigest() != expected_sha256:
+                raise ProdBuildError("geography_asset_invalid")
+            result.append((f"mapit/{asset_name}", raw))
     return result
 
 

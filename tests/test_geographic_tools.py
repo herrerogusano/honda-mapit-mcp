@@ -81,17 +81,44 @@ async def test_geographic_tools_are_opt_in_and_default_tool_contract_stays_ten()
 async def test_tool_rejects_unknown_area_and_bad_window_before_provider_get():
     provider = Provider()
     async with Client(create_server(provider, geographic_queries=True)) as client:
-        bad_area = await client.call_tool(
-            "geographic_summary",
-            {"area_name": "not-menorca", "from_time": "2026-01-01", "to_time": "2026-02-01"},
-        )
+        bad_areas = [
+            await client.call_tool(
+                "geographic_summary",
+                {"area_name": area, "from_time": "2026-01-01", "to_time": "2026-02-01"},
+            )
+            for area in ("not-menorca", "Sabadell", "Barcelona 10 km", "alrededores")
+        ]
         bad_window = await client.call_tool(
             "geographic_summary",
             {"area_name": "menorca", "from_time": "2026-01-01", "to_time": "2026-06-01"},
         )
         bad_year = await client.call_tool("summer_geographic_summary", {"area_name": "menorca", "year": 2040})
-    assert bad_area.is_error and bad_window.is_error and bad_year.is_error
+    assert all(result.is_error for result in bad_areas) and bad_window.is_error and bad_year.is_error
     assert provider.gets == 0
+
+
+@pytest.mark.anyio
+async def test_named_amb_area_and_barcelona_select_distinct_registry_sources_before_reads():
+    pytest.importorskip("shapely")
+    provider = Provider()
+    async with Client(create_server(provider, geographic_queries=True)) as client:
+        amb = await client.call_tool(
+            "geographic_summary",
+            {"area_name": "Àrea Metropolitana de Barcelona", "from_time": "2026-01-01", "to_time": "2026-02-01"},
+        )
+        city = await client.call_tool(
+            "geographic_summary",
+            {"area_name": "barcelona", "from_time": "2026-01-01", "to_time": "2026-02-01"},
+        )
+        surroundings = await client.call_tool(
+            "geographic_summary",
+            {"area_name": "alrededores", "from_time": "2026-01-01", "to_time": "2026-02-01"},
+        )
+    assert not amb.is_error and not city.is_error
+    assert surroundings.is_error
+    assert provider.gets == 2
+    assert provider.service.calls[0][2] == "ign_amb_36_municipalities_union_2026_10_03"
+    assert provider.service.calls[1][2] == "ign_amb_municipality_34090808019_2026_10_03"
 
 
 @pytest.mark.anyio
