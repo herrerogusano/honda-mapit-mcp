@@ -86,8 +86,10 @@ def token(private, policy, **overrides):
 
 
 def event(policy, access=None, *, method="tools/call", path="/mcp"):
-    body = "" if path != "/mcp" else json.dumps({"jsonrpc": "2.0", "id": 1, "method": method,
-                                                "params": {"name": "get_vehicle_status", "arguments": {}}})
+    params = {} if method == "tools/list" else {"name": "get_vehicle_status", "arguments": {}}
+    body = "" if path != "/mcp" else json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    )
     headers = {"host": policy.api_host, "content-type": "application/json",
                "accept": "application/json, text/event-stream", "content-length": str(len(body.encode()))}
     if access:
@@ -151,6 +153,23 @@ def test_each_tool_invocation_has_fresh_provider_without_warm_secret_cache(keys)
     assert upstream.reads == 2 and upstream.auth_calls == 6 and upstream.mapit_calls == 2
     assert len(upstream.providers) == 2 and upstream.providers[0] is not upstream.providers[1]
     assert all(deadline <= time.monotonic() + 14 for deadline in upstream.deadlines)
+
+
+@pytest.mark.parametrize(("enabled", "expected_count"), [(False, 10), (True, 12)])
+def test_production_geographic_tools_require_explicit_opt_in(keys, enabled, expected_count):
+    upstream = Upstream()
+    policy = CognitoProdPolicy(**POLICY)
+    runtime = create_aws_prod_runtime(
+        policy, keys[1], provider_builder=upstream.build, geographic_queries=enabled
+    )
+    response = runtime.lambda_handler(event(policy, token(keys[0], policy), method="tools/list"), Context())
+    assert response["statusCode"] == 200
+    payload = json.loads(response["body"])
+    tools = payload["result"]["tools"]
+    assert len(tools) == expected_count
+    names = {item["name"] for item in tools}
+    assert ("geographic_summary" in names) is enabled
+    assert ("summer_geographic_summary" in names) is enabled
 
 
 @pytest.mark.parametrize("remaining", [0, 1000, True, None])

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import math
 from calendar import monthrange
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from threading import Lock
-from typing import Any, Callable, Literal, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,7 +26,21 @@ from .analytics import (
 )
 from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
 from .distance_units import DISTANCE_CONVERSION_BASIS, native_distance_to_km
+from .geography import (
+    GeographyError,
+    MAX_GEOGRAPHIC_ROUTE_COORDINATES,
+    MAX_GEOGRAPHIC_ROUTE_FEATURES,
+    MAX_ROUTE_COORDINATES,
+    MAX_ROUTE_FEATURES,
+    classify_route_geojson_with_work,
+    sanitize_route_geojson,
+    summer_window_utc,
+    validate_area,
+)
 from .session import SessionManager, WindowsKeyringRefreshTokenStore
+
+if TYPE_CHECKING:
+    from .geography_engine import PreparedPublicArea
 
 MAX_PERIOD_DAYS = 366
 MAX_RETURNED_ROUTES = 500
@@ -35,6 +50,10 @@ MAX_ANALYTIC_ROUTES = 10_000
 MAPIT_NATIVE_UNIT = "mapit_native_unconfirmed"
 MAX_QUALITY_FEATURES = 4096
 MAX_QUALITY_COORDINATES = 100_000
+MAX_GEOGRAPHIC_BATCH_COORDINATES = MAX_GEOGRAPHIC_ROUTE_COORDINATES
+MAX_GEOGRAPHIC_BATCH_OPERATIONS = 5_000_000
+MAX_GEOGRAPHIC_BATCH_FEATURES = MAX_GEOGRAPHIC_ROUTE_FEATURES
+MAX_GEOGRAPHIC_ROUTES = 2_000
 _QUALITY_WARNINGS = {
     "inferred_present": "At least one LineString is marked inferred; this does not establish real-street coverage or GPS accuracy.",
     "none_marked_inferred": "No inspected LineString is marked inferred; this does not guarantee GPS accuracy.",
@@ -230,6 +249,37 @@ class DistanceResult(OutputModel):
     completeness: Literal["unverified"] = "unverified"
 
 
+class GeographicRouteSummary(OutputModel):
+    """Area relation for embedded route geometry; never a clipped-distance estimate."""
+
+    from_time: str
+    to_time: str
+    area_source: Literal[
+        "caller_supplied_geojson",
+        "ign_menorca_municipalities_union_2026_10_03",
+    ] = "caller_supplied_geojson"
+    area_type: Literal["Polygon", "MultiPolygon"]
+    matched_routes: int
+    fully_inside_routes: int
+    outside_routes: int
+    crossing_routes: int
+    unknown_routes: int
+    fully_inside_distance: float
+    fully_inside_distance_km: float | None = None
+    inferred_marked_inside_routes: int
+    not_marked_inferred_inside_routes: int
+    inference_unknown_inside_routes: int
+    metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
+    conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
+    completeness: Literal["unverified"] = "unverified"
+    interpretation_warning: str = (
+        "Classification assumes supplied area and MAPIT coordinates are longitude/latitude; MAPIT CRS semantics "
+        "remain unverified. Bounded source geometry does not prove physical area coverage, street matching, "
+        "GPS accuracy, or complete route history. Distances include fully-contained routes only; "
+        "crossing routes are never clipped or prorated."
+    )
+
+
 class DistanceComparison(OutputModel):
     period_a: DistanceResult
     period_b: DistanceResult
@@ -240,6 +290,12 @@ class DistanceComparison(OutputModel):
     percentage_difference: float | None
     metric_unit: Literal["mapit_native_unconfirmed"] = MAPIT_NATIVE_UNIT
     conversion_basis: Literal["ui_correlated_meter_interpretation_unconfirmed"] = DISTANCE_CONVERSION_BASIS
+
+
+@dataclass(frozen=True, repr=False)
+class _RouteFact:
+    route: RouteSummary
+    geojson: Any = field(repr=False)
 
 
 def _string(value: Any) -> str | None:
@@ -443,12 +499,21 @@ class MapitServices:
             odometer_end=_number(raw.get("odometerEnd")),
         )
 
-    def _all_routes(self, from_time: str, to_time: str) -> tuple[str, str, list[RouteSummary]]:
+    def _collect_routes(
+        self,
+        from_time: str,
+        to_time: str,
+        *,
+        include_geojson: bool = False,
+        route_visitor: Callable[[_RouteFact], None] | None = None,
+    ) -> tuple[str, str, list[_RouteFact]]:
         start, end = _validated_period(from_time, to_time)
         _, vehicle = self._account_and_vehicle()
         vehicle_id = _string(vehicle.get("id"))
         assert vehicle_id is not None
-        routes: dict[str, RouteSummary] = {}
+        routes: dict[str, _RouteFact] = {}
+        aggregate_features = 0
+        aggregate_coordinates = 0
         for window_start, window_end in split_month_windows(start, end):
             try:
                 payload = self.client.get_geo(
@@ -468,19 +533,185 @@ class MapitServices:
                 route = self._normalize_route(item)
                 if route is None:
                     raise ServiceError("invalid_response", "MAPIT route history contains a route without an ID")
+                if include_geojson:
+                    try:
+                        started_at = route.started_at
+                        if not isinstance(started_at, str) or len(started_at) <= 10:
+                            raise ValueError
+                        parsed_start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                        if parsed_start.tzinfo is None or parsed_start.utcoffset() is None:
+                            raise ValueError
+                        parsed_start = parsed_start.astimezone(timezone.utc)
+                    except (OverflowError, ValueError):
+                        raise ServiceError(
+                            "invalid_route_timestamp", "one or more MAPIT routes have invalid start timestamps"
+                        ) from None
+                    if not start <= parsed_start < end:
+                        raise ServiceError(
+                            "route_outside_requested_interval",
+                            "MAPIT returned a route outside the requested half-open interval",
+                        )
+                    if route.distance is None or route.distance < 0 or not math.isfinite(route.distance):
+                        raise ServiceError("distance_unavailable", "one or more MAPIT routes do not provide valid distance")
                 existing = routes.get(route.route_id)
+                if include_geojson and existing is None and len(routes) >= MAX_GEOGRAPHIC_ROUTES:
+                    raise ServiceError("geographic_route_limit", "too many routes for bounded area analysis")
+                geometry = item.get("geoJSON", item.get("geojson")) if include_geojson else None
+                feature_count = coordinate_count = 0
+                if include_geojson:
+                    try:
+                        geometry, feature_count, coordinate_count = sanitize_route_geojson(
+                            geometry,
+                            remaining_features=(
+                                MAX_ROUTE_FEATURES
+                                if existing is not None
+                                else MAX_GEOGRAPHIC_BATCH_FEATURES - aggregate_features
+                            ),
+                            remaining_coordinates=(
+                                MAX_ROUTE_COORDINATES
+                                if existing is not None
+                                else MAX_GEOGRAPHIC_BATCH_COORDINATES - aggregate_coordinates
+                            ),
+                        )
+                    except GeographyError as exc:
+                        raise ServiceError(exc.category, "route geometry exceeded geographic analysis limits") from None
                 if existing is not None:
-                    if existing != route:
+                    if existing.route != route or (include_geojson and existing.geojson != geometry):
                         raise ServiceError(
                             "duplicate_route_conflict",
                             "MAPIT returned conflicting normalized data for one route ID",
                         )
                     continue
-                routes[route.route_id] = route
+                if include_geojson:
+                    aggregate_features += feature_count
+                    aggregate_coordinates += coordinate_count
+                fact = _RouteFact(route=route, geojson=geometry)
+                if route_visitor is not None:
+                    route_visitor(fact)
+                routes[route.route_id] = fact
                 if len(routes) > MAX_ANALYTIC_ROUTES:
                     raise ServiceError("route_limit_exceeded", "MAPIT returned more routes than the safety limit")
-        ordered = sorted(routes.values(), key=lambda item: (item.started_at or "", item.route_id))
+        ordered = sorted(routes.values(), key=lambda item: (item.route.started_at or "", item.route.route_id))
         return _iso(start), _iso(end), ordered
+
+    def _all_routes(self, from_time: str, to_time: str) -> tuple[str, str, list[RouteSummary]]:
+        normalized_from, normalized_to, facts = self._collect_routes(from_time, to_time)
+        return normalized_from, normalized_to, [fact.route for fact in facts]
+
+    def get_geographic_summary(
+        self,
+        from_time: str,
+        to_time: str,
+        area_geojson: Mapping[str, Any] | PreparedPublicArea,
+        area_source: str = "caller_supplied_geojson",
+    ) -> GeographicRouteSummary:
+        """Summarize routes against caller geometry without detail GETs or clipping."""
+        try:
+            start, end = _validated_period(from_time, to_time)
+            if end - start > timedelta(days=93):
+                raise ServiceError("geographic_period_too_large", "area analysis is limited to 93 days")
+            # Keep the optional GEOS/Shapely engine out of the default/dev ZIP.
+            from .geography_engine import (
+                GeographyEngineError,
+                PreparedPublicArea,
+                classify_public_area_route,
+                is_valid_prepared_public_area,
+            )
+
+            if isinstance(area_geojson, PreparedPublicArea):
+                if not is_valid_prepared_public_area(area_geojson):
+                    raise GeographyError("invalid_prepared_area")
+                if area_source != "ign_menorca_municipalities_union_2026_10_03":
+                    raise GeographyError("unsupported_area_source")
+                area = area_geojson
+                classify = classify_public_area_route
+                area_type = "MultiPolygon"
+            else:
+                area = validate_area(area_geojson, source=area_source)
+                classify = classify_route_geojson_with_work
+                area_type = area_geojson.get("type")
+        except ServiceError:
+            raise
+        except GeographyError as exc:
+            raise ServiceError(exc.category, "the supplied geographic area is invalid or unsupported") from None
+        relations: dict[str, int] = {key: 0 for key in ("fully_inside", "outside", "crossing", "unknown")}
+        inside_distance_values: list[float] = []
+        inferred_true = inferred_false = inferred_unknown = 0
+        remaining_operations = MAX_GEOGRAPHIC_BATCH_OPERATIONS
+
+        def visit_route(fact: _RouteFact) -> None:
+            nonlocal remaining_operations
+            nonlocal inferred_true, inferred_false, inferred_unknown
+            route = fact.route
+            if remaining_operations <= 0:
+                raise ServiceError("geometry_budget_exceeded", "geographic analysis exceeded its work budget")
+            if isinstance(area, PreparedPublicArea):
+                try:
+                    relation = classify(fact.geojson, area)
+                except GeographyEngineError:
+                    raise ServiceError("geometry_budget_exceeded", "geographic analysis exceeded its work budget") from None
+            else:
+                relation, work_used, coordinates_used = classify(
+                    fact.geojson,
+                    area,
+                    max_segment_edge_tests=remaining_operations,
+                )
+                if work_used > remaining_operations or coordinates_used > MAX_GEOGRAPHIC_BATCH_COORDINATES:
+                    raise ServiceError("geometry_budget_exceeded", "geographic analysis exceeded its work budget")
+                remaining_operations -= work_used
+            relations[relation] += 1
+            if relation == "fully_inside":
+                inside_distance_values.append(route.distance)
+                if route.has_inferred_segments is True:
+                    inferred_true += 1
+                elif route.has_inferred_segments is False:
+                    inferred_false += 1
+                else:
+                    inferred_unknown += 1
+
+        normalized_from, normalized_to, facts = self._collect_routes(
+            from_time,
+            to_time,
+            include_geojson=True,
+            route_visitor=visit_route,
+        )
+        total_inside = sum(inside_distance_values)
+        if not math.isfinite(total_inside):
+            raise ServiceError("numeric_overflow", "area distance total exceeded finite numeric bounds")
+        if area_type not in {"Polygon", "MultiPolygon"}:
+            # validate_area already checks this; retain a strict output invariant.
+            raise ServiceError("invalid_area", "the supplied geographic area is invalid or unsupported")
+        return GeographicRouteSummary(
+            from_time=normalized_from,
+            to_time=normalized_to,
+            area_source=area_source,
+            area_type=area_type,
+            matched_routes=len(facts),
+            fully_inside_routes=relations["fully_inside"],
+            outside_routes=relations["outside"],
+            crossing_routes=relations["crossing"],
+            unknown_routes=relations["unknown"],
+            fully_inside_distance=total_inside,
+            fully_inside_distance_km=native_distance_to_km(total_inside),
+            inferred_marked_inside_routes=inferred_true,
+            not_marked_inferred_inside_routes=inferred_false,
+            inference_unknown_inside_routes=inferred_unknown,
+        )
+
+    def get_summer_geographic_summary(
+        self,
+        area_geojson: Mapping[str, Any] | PreparedPublicArea,
+        year: int | None = None,
+        *,
+        area_source: str = "caller_supplied_geojson",
+        now: datetime | None = None,
+    ) -> GeographicRouteSummary:
+        """Use the bounded fixed-CEST June–September reporting window."""
+        try:
+            summer_from, summer_to = summer_window_utc(year, now=now)
+        except GeographyError as exc:
+            raise ServiceError(exc.category, "the selected summer window is unsupported") from None
+        return self.get_geographic_summary(summer_from, summer_to, area_geojson, area_source)
 
     def list_routes(self, from_time: str, to_time: str) -> RouteList:
         normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)

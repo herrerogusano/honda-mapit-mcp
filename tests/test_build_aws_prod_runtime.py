@@ -101,6 +101,53 @@ def test_build_is_deterministic_prod_only_and_manifest_has_no_secrets(inputs):
         assert "aws_dev_entrypoint" not in " ".join(names)
 
 
+def _geography_inputs(inputs, monkeypatch):
+    repo = inputs[0]
+    source = repo / "src" / "mapit"
+    for name in builder.GEOGRAPHY_SOURCE_MODULES:
+        (source / name).write_text("# synthetic geometry module\n", encoding="utf-8")
+    asset = source / builder.GEOGRAPHY_ASSET
+    asset.parent.mkdir()
+    asset.write_bytes(b'{"type":"FeatureCollection","features":[]}')
+    monkeypatch.setattr(builder, "GEOGRAPHY_ASSET_SHA256", hashlib.sha256(asset.read_bytes()).hexdigest())
+    lock = repo / "infra" / "aws" / "geography-runtime-requirements.txt"
+    lock.write_text("numpy==2.4.3 --hash=sha256:" + "1" * 64 + "\nshapely==2.1.2 --hash=sha256:" + "2" * 64 + "\n", encoding="utf-8")
+    extra = inputs[1].parent / "geography-wheels"
+    extra.mkdir()
+    return extra, asset, lock
+
+
+def test_geography_requires_explicit_extra_directory_and_binds_manifest_asset(inputs, monkeypatch):
+    extra, asset, _ = _geography_inputs(inputs, monkeypatch)
+    summary = build(inputs, geography_wheel_dir=extra)
+    assert summary.source_modules == len(builder.PROD_SOURCE_MODULES) + 2
+    with zipfile.ZipFile(inputs[3]) as archive:
+        assert archive.read("mapit/" + builder.GEOGRAPHY_ASSET) == asset.read_bytes()
+        manifest = json.loads(archive.read("mapit/" + builder.MANIFEST_FILENAME))
+        assert manifest["geographic_queries"] is True
+        assert set(builder.GEOGRAPHY_SOURCE_MODULES) <= {name.removeprefix("mapit/") for name in archive.namelist()}
+
+
+@pytest.mark.parametrize("defect", ["bad_asset", "missing_asset", "missing_module", "unknown_lock", "duplicate_lock", "bad_version"])
+def test_geography_rejects_unbound_inputs_before_output(inputs, monkeypatch, defect):
+    extra, asset, lock = _geography_inputs(inputs, monkeypatch)
+    if defect == "bad_asset":
+        asset.write_bytes(b"different public asset")
+    elif defect == "missing_asset":
+        asset.unlink()
+    elif defect == "missing_module":
+        (inputs[0] / "src" / "mapit" / builder.GEOGRAPHY_SOURCE_MODULES[0]).unlink()
+    elif defect == "unknown_lock":
+        lock.write_text(lock.read_text() + "unknown==1 --hash=sha256:" + "3" * 64 + "\n")
+    elif defect == "duplicate_lock":
+        lock.write_text(lock.read_text() + "numpy==2.4.3 --hash=sha256:" + "1" * 64 + "\n")
+    else:
+        lock.write_text(lock.read_text().replace("numpy==2.4.3", "numpy==2.4.2"))
+    with pytest.raises(builder.ProdBuildError):
+        build(inputs, geography_wheel_dir=extra)
+    assert not inputs[3].exists()
+
+
 @pytest.mark.parametrize("overrides", [
     {"account_id": "bad"}, {"account_id": "000000000000"},
     {"parameter_version": True}, {"parameter_version": 2},

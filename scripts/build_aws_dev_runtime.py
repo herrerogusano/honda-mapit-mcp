@@ -47,6 +47,7 @@ SOURCE_MODULES = (
     "mcp_server.py",
     "services.py",
     "analytics.py",
+    "geography.py",
     "distance_units.py",
     "client.py",
     "session.py",

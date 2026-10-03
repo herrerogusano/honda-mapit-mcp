@@ -1,0 +1,4 @@
+# Optional production geometry engine only; base runtime lock is unchanged.
+# CPython 3.13 Linux ARM64 wheels downloaded from the official PyPI registry.
+numpy==2.4.3 --hash=sha256:decb0eb8a53c3b009b0962378065589685d66b23467ef5dac16cbe818afde27f
+shapely==2.1.2 --hash=sha256:fe7b77dc63d707c09726b7908f575fc04ff1d1ad0f3fb92aec212396bc6cfe5e

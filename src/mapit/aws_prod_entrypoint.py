@@ -107,7 +107,9 @@ def _parse_manifest(raw: bytes) -> dict[str, Any]:
         "environment", "region", "account_id", "parameter_version", "parameter_tier",
         "user_pool_id", "api_id", "client_id", "owner_subject", "jwks_sha256", "mapit_config",
     }
-    if set(result) != expected:
+    if set(result) not in (expected, expected | {"geographic_queries"}):
+        raise _EntryError("manifest_invalid")
+    if "geographic_queries" in result and result["geographic_queries"] is not True:
         raise _EntryError("manifest_invalid")
     text_fields = expected - {"parameter_version", "mapit_config"}
     if any(type(result[name]) is not str for name in text_fields):
@@ -242,7 +244,10 @@ def _load_runtime(manifest_raw: bytes, jwks_raw: bytes, manifest_sha: str) -> Aw
             config, reader, transport.cognito_json, transport.mapit_request, deadline=deadline,
         )
 
-    runtime = create_aws_prod_runtime(policy, jwks_raw, provider_builder=provider_builder)
+    runtime_options = {"geographic_queries": True} if parsed.get("geographic_queries") is True else {}
+    runtime = create_aws_prod_runtime(
+        policy, jwks_raw, provider_builder=provider_builder, **runtime_options,
+    )
     _CACHED_RUNTIME = runtime
     _CACHED_MANIFEST_SHA256 = manifest_sha
     return runtime

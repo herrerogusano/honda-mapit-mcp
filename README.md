@@ -59,6 +59,30 @@ Exposed tools:
 
 All ten tools carry MCP `readOnlyHint` and `idempotentHint` annotations.
 
+### Opt-in geographic summaries
+
+The independently tested geographic increment adds `geographic_summary` and
+`summer_geographic_summary`, initially for `menorca` only, using the frozen
+official IGN union of its eight municipalities. Local opt-in:
+
+```powershell
+pip install -e ".[windows-auth,geography]"
+mapit-mcp --geographic-queries
+```
+
+The ordinary CLI and synthetic dev package retain ten tools. The summer tool
+accepts an optional year (current year by default), using June 1 through
+September 1, exclusive, in the supported contemporary Madrid summer-time
+convention. Whole-route native distances and kilometre companions are summed
+only for source lines fully inside. Crossing and unknown routes are counted
+separately, never silently prorated or presented as verified street coverage.
+Queries are limited to 93 days/2,000 routes with response and geometry guards;
+no per-route detail fan-out or geometry persistence occurs. See the
+[contract](docs/geographic-query-contract.md),
+[research](docs/geographic-query-research.md) and
+[status](docs/geographic-query-status.md). The retained production package
+is not upgraded merely by this local opt-in.
+
 Phase 2 analytics group native distance by UTC day, month, or year and report
 observed counts, elapsed durations, deterministic extremes, and bounded period
 comparisons. Original values remain in native units; explicit `*_km` companions

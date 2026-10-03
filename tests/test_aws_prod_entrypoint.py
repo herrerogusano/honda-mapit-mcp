@@ -104,6 +104,32 @@ def test_manifest_size_is_bounded():
         entry._parse_manifest(b" " * (entry.MAX_MANIFEST_BYTES + 1))
 
 
+def test_geographic_manifest_accepts_only_explicit_true():
+    parsed = entry._parse_manifest(manifest_bytes(manifest_obj(geographic_queries=True)))
+    assert parsed["geographic_queries"] is True
+    assert "geographic_queries" not in entry._parse_manifest(manifest_bytes())
+
+
+@pytest.mark.parametrize("value", [False, 1, 0, "true", None, {}, []])
+def test_geographic_manifest_rejects_coerced_or_false_flag(value):
+    with pytest.raises(entry._EntryError, match="manifest_invalid"):
+        entry._parse_manifest(manifest_bytes(manifest_obj(geographic_queries=value)))
+
+
+def test_geographic_manifest_passes_bound_opt_in_to_runtime(monkeypatch):
+    _reset_cache(monkeypatch)
+    raw = manifest_bytes(manifest_obj(geographic_queries=True))
+    digest = hashlib.sha256(raw).hexdigest()
+    seen = []
+    def create(policy, jwks, *, provider_builder, geographic_queries):
+        seen.append(geographic_queries)
+        return object()
+    monkeypatch.setattr(entry, "create_aws_prod_runtime", create)
+    monkeypatch.setattr(entry, "_ssm_client_factory", lambda: pytest.fail("SSM touched"))
+    assert entry._load_runtime(raw, JWKS, digest) is not None
+    assert seen == [True]
+
+
 def test_environment_must_be_exact_before_artifact_or_sdk_access(monkeypatch):
     monkeypatch.setattr(entry, "_read_sibling", lambda *_: pytest.fail("artifact read before env gate"))
     monkeypatch.setattr(entry, "_ssm_client_factory", lambda: pytest.fail("SDK before env gate"))

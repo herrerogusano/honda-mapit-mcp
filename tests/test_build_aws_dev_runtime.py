@@ -87,7 +87,7 @@ def test_valid_fixture_build_is_deterministic_fixed_allowlist_and_safe_manifest(
     assert first == second
     assert first.zip_bytes == len(first_bytes)
     assert first.sha256 == hashlib.sha256(first_bytes).hexdigest()
-    assert (first.wheel_count, first.source_modules, first.public_key_count) == (28, 14, 1)
+    assert (first.wheel_count, first.source_modules, first.public_key_count) == (28, 15, 1)
     assert first.dependencies_valid and first.source_allowlist_valid and first.lock_valid and first.manifest_valid
     with zipfile.ZipFile(output_path) as archive:
         names = archive.namelist()

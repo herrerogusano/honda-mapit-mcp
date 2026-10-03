@@ -58,10 +58,45 @@ def test_docker_command_is_pinned_arm_networkless_and_mounts_archive_readonly(tm
     assert "--network" in command and command[command.index("--network") + 1] == "none"
     assert "--pull=never" in command and "--platform" in command
     assert command[command.index("--platform") + 1] == "linux/arm64"
+    assert command[command.index("--memory") + 1] == "256m"
     assert probe.IMAGE in command
     mount = command[command.index("--mount") + 1]
     assert str(archive) in mount and mount.endswith(",readonly")
     assert "-e" not in command and "--env" not in command
+
+
+def test_geographic_probe_matrix_requires_all_optional_checks():
+    statuses = {name: 200 for name in (
+        "initialize", "tools_list", "first_tool_call", "missing_auth", "unknown_kid",
+        "wrong_audience", "wrong_scope", "dev_isolation", "missing_config",
+    )}
+    checks = {name: True for name in probe._CHECKS + probe._GEOGRAPHY_CHECKS}
+    raw = json.dumps({"checks": checks, "statuses": statuses})
+    assert probe._parse_checks(raw, geography_enabled=True) == (checks, statuses)
+    with pytest.raises(probe.ProbeError):
+        probe._parse_checks(raw)
+    for name in probe._GEOGRAPHY_CHECKS:
+        fewer = {key: value for key, value in checks.items() if key != name}
+        with pytest.raises(probe.ProbeError):
+            probe._parse_checks(json.dumps({"checks": fewer, "statuses": statuses}), geography_enabled=True)
+
+
+def test_geographic_probe_exercises_asset_boundaries_and_presecret_negatives():
+    for marker in ("MENORCA_GEOJSON_SHA256", "fully_inside_distance_km", "2026-05-31T22:00:00.000Z",
+                   "invalid_area_before_ssm", "invalid_year_before_ssm", "ru_maxrss",
+                   "range(1000)"):
+        assert marker in probe._CONTAINER_PROBE
+
+
+def test_geographic_probe_inside_fixture_is_inside_frozen_public_boundary():
+    pytest.importorskip("shapely")
+    from mapit.geographic_tools import _load_menorca_area
+    from mapit.geography_engine import classify_public_area_route
+    positions = [[4.12, 39.96], [4.121, 39.961]]
+    assert "[[4.12,39.96],[4.121,39.961]]" in probe._CONTAINER_PROBE
+    geometry = {"type": "FeatureCollection", "features": [{"type": "Feature",
+        "geometry": {"type": "LineString", "coordinates": positions}}]}
+    assert classify_public_area_route(geometry, _load_menorca_area()) == "fully_inside"
 
 
 def test_container_probe_uses_only_synthetic_ssm_and_transport_fakes():

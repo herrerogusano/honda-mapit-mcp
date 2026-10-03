@@ -51,6 +51,11 @@ _CHECKS = (
     "missing_auth_401", "unknown_kid_401", "wrong_audience_401", "wrong_scope_403",
     "dev_isolation_503", "missing_config_503", "lazy_ssm_per_invocation", "token_signature_claims_valid",
 )
+_GEOGRAPHY_CHECKS = (
+    "geographic_summary_counts_and_km", "summer_summary_local_boundaries",
+    "invalid_area_before_ssm", "invalid_year_before_ssm", "geometry_asset_digest",
+    "geometry_engine_bounded_memory", "geometry_engine_repeat_classification",
+)
 _SAFE_FAILURES = frozenset({
     "wheel_directory_invalid", "temporary_directory_invalid", "local_docker_context_unavailable",
     "arm_probe_output_invalid", "arm_probe_execution_failed", "cleanup_unverified",
@@ -83,13 +88,20 @@ class FakeTransport:
   raise AssertionError("unexpected target")
  def mapit_request(self,method,url,headers):
   self.calls+=1
-  from urllib.parse import urlsplit
+  from urllib.parse import urlsplit,parse_qs
   path=urlsplit(url).path
   vehicle={"id":"synthetic-vehicle","km":1234,"product":"synthetic","device":{"state":{"status":"AT_REST","speed":0,"battery":80,"voltage":12,"lastTs":int(now),"lastCoordTs":int(now),"lat":1,"lng":2,"location":"synthetic","hdop":1}}}
   route={"id":"synthetic-route","startedAt":"2026-01-15T10:00:00Z","endedAt":"2026-01-15T10:30:00Z","distance":5000,"avgSpeed":20,"maxSpeed":40,"complete":True,"geoJSON":{"type":"FeatureCollection","features":[]}}
   if path=="/v1/account-summary": value={"vehicles":[vehicle]}
   elif path=="/v1/vehicles/synthetic-vehicle": value={"model":"Synthetic Model","registrationNumber":"SYNTH","vin":"SYNTH","km":1234,"products":["synthetic"]}
-  elif path=="/v1/routes": value={"data":[route]}
+  elif path=="/v1/routes":
+   query=parse_qs(urlsplit(url).query)
+   if manifest.get("geographic_queries") is True and query.get("from",[""])[0]>="2026-05":
+    def geo_route(ident,positions):
+     return dict(route,id=ident,startedAt="2026-06-15T10:00:00Z",endedAt="2026-06-15T10:30:00Z",geoJSON={"type":"FeatureCollection","features":[{"type":"Feature","properties":{"inferred":False},"geometry":{"type":"LineString","coordinates":positions}}]})
+    rows=[geo_route("synthetic-menorca",[[4.12,39.96],[4.121,39.961]]),geo_route("synthetic-outside",[[2.16,41.39],[2.17,41.40]])]
+    value={"data":rows if query.get("from",[""])[0]<="2026-06-15T10:00:00Z"<query.get("to",[""])[0] else []}
+   else: value={"data":[route]}
   elif path=="/v1/vehicles/synthetic-vehicle/routes/synthetic-route": value=route
   else: raise AssertionError("unexpected path")
   return json.dumps(value,separators=(",",":")).encode()
@@ -117,7 +129,9 @@ out["initialize"]=init.get("statusCode")==200 and idoc.get("jsonrpc")=="2.0" and
 statuses={"initialize":init.get("statusCode",0)}
 listing=invoke(valid,rpc("tools/list")); doc=parsed(listing); names=[x.get("name") for x in doc.get("result",{}).get("tools",[])]
 expected=["get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"]
-out["tools_list_exactly_ten"]=listing.get("statusCode")==200 and len(names)==10 and set(names)==set(expected)
+geo_enabled=manifest.get("geographic_queries") is True
+if geo_enabled: expected.extend(["geographic_summary","summer_geographic_summary"])
+out["tools_list_exactly_ten"]=listing.get("statusCode")==200 and len(names)==len(expected) and set(names)==set(expected)
 statuses["tools_list"]=listing.get("statusCode",0)
 rng={"from_time":"2026-01-01","to_time":"2026-02-01"}; period={"period_a":rng,"period_b":{"from_time":"2026-02-01","to_time":"2026-03-01"}}
 calls=[("get_vehicle_status",{}),("get_vehicle_details",{}),("list_routes",rng),("get_route_detail",{"route_id":"synthetic-route"}),("get_distance",rng),("compare_distance_periods",period),("get_route_statistics",rng),("get_distance_breakdown",dict(rng,group_by="day")),("get_route_extremes",rng),("compare_route_periods",period)]
@@ -127,7 +141,24 @@ for i,(name,args) in enumerate(calls,1):
  if i==1: statuses["first_tool_call"]=response.get("statusCode",0)
 out["tool_calls_all_succeeded"]=success==10
 a=invoke(valid,rpc("tools/list")); b=invoke(valid,rpc("tools/list")); an=[x.get("name") for x in parsed(a).get("result",{}).get("tools",[])]; bn=[x.get("name") for x in parsed(b).get("result",{}).get("tools",[])]
-out["warm_repeat"]=a.get("statusCode")==b.get("statusCode")==200 and len(an)==len(bn)==10 and set(an)==set(bn)==set(expected)
+out["warm_repeat"]=a.get("statusCode")==b.get("statusCode")==200 and len(an)==len(bn)==len(expected) and set(an)==set(bn)==set(expected)
+if geo_enabled:
+ def geo_call(name,args): return parsed(invoke(valid,rpc("tools/call",{"name":name,"arguments":args}))).get("result",{})
+ g=geo_call("geographic_summary",{"area_name":"menorca","from_time":"2026-06-01","to_time":"2026-07-01"}); gd=g.get("structuredContent",{})
+ out["geographic_summary_counts_and_km"]=g.get("isError") is False and gd.get("fully_inside_routes")==1 and gd.get("outside_routes")==1 and gd.get("fully_inside_distance_km")==5 and gd.get("unknown_routes")==0
+ su=geo_call("summer_geographic_summary",{"area_name":"menorca","year":2026}); sd=su.get("structuredContent",{})
+ out["summer_summary_local_boundaries"]=su.get("isError") is False and sd.get("from_time")=="2026-05-31T22:00:00.000Z" and sd.get("to_time")=="2026-08-31T22:00:00.000Z" and sd.get("fully_inside_distance_km")==5
+ before=ssm.calls; invalid=geo_call("geographic_summary",{"area_name":"unknown","from_time":"2026-06-01","to_time":"2026-07-01"})
+ out["invalid_area_before_ssm"]=invalid.get("isError") is True and ssm.calls==before
+ invalid=geo_call("summer_geographic_summary",{"area_name":"menorca","year":1900})
+ out["invalid_year_before_ssm"]=invalid.get("isError") is True and ssm.calls==before
+ from mapit.geography_engine import MENORCA_GEOJSON_SHA256,load_frozen_menorca_area,classify_public_area_route
+ raw=(root/"mapit"/"data"/"menorca-ign-20261003.geojson").read_bytes()
+ out["geometry_asset_digest"]=hashlib.sha256(raw).hexdigest()==MENORCA_GEOJSON_SHA256
+ area=load_frozen_menorca_area(raw); line={"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[[4.12,39.96],[4.121,39.961]]}}]}
+ started=__import__("time").monotonic(); matches=sum(classify_public_area_route(line,area)=="fully_inside" for _ in range(1000)); elapsed=__import__("time").monotonic()-started
+ out["geometry_engine_repeat_classification"]=matches==1000 and elapsed<10
+ out["geometry_engine_bounded_memory"]=__import__("resource").getrusage(__import__("resource").RUSAGE_SELF).ru_maxrss<230*1024
 missing=invoke(None,rpc("tools/list")).get("statusCode",0); unknown=invoke(p["tokens"]["unknown_kid"],rpc("tools/list")).get("statusCode",0); wrong_aud=invoke(p["tokens"]["wrong_audience"],rpc("tools/list")).get("statusCode",0); wrong_scope=invoke(p["tokens"]["wrong_scope"],rpc("tools/list")).get("statusCode",0)
 statuses.update({"missing_auth":missing,"unknown_kid":unknown,"wrong_audience":wrong_aud,"wrong_scope":wrong_scope})
 out["missing_auth_401"]=missing==401
@@ -138,7 +169,7 @@ def clear(): ep._CACHED_RUNTIME=None; ep._CACHED_MANIFEST_SHA256=None; ep._CACHE
 os.environ["MAPIT_MCP_ENV"]="dev"; clear(); dev_status=invoke(valid,rpc("tools/list")).get("statusCode",0); out["dev_isolation_503"]=dev_status==503
 os.environ["MAPIT_MCP_ENV"]="prod"; os.environ.pop("MAPIT_PROD_MANIFEST_SHA256",None); clear(); missing_config_status=invoke(valid,rpc("tools/list")).get("statusCode",0); out["missing_config_503"]=missing_config_status==503
 statuses.update({"dev_isolation":dev_status,"missing_config":missing_config_status})
-out["lazy_ssm_per_invocation"]=ssm.calls==10
+out["lazy_ssm_per_invocation"]=ssm.calls==(12 if geo_enabled else 10)
 print(json.dumps({"checks":out,"statuses":statuses},sort_keys=True,separators=(",",":"))); sys.exit(0 if all(out.values()) else 2)
 '''
 
@@ -279,7 +310,7 @@ def _fixture(policy: CognitoProdPolicy, now: int) -> tuple[bytes, dict[str, str]
     }
 
 
-def _parse_checks(stdout: str) -> tuple[dict[str, bool], dict[str, int]]:
+def _parse_checks(stdout: str, *, geography_enabled: bool = False) -> tuple[dict[str, bool], dict[str, int]]:
     if type(stdout) is not str or not stdout or len(stdout.encode("utf-8", errors="ignore")) > _MAX_OUTPUT:
         raise ProbeError("arm_probe_output_invalid")
     try:
@@ -290,7 +321,8 @@ def _parse_checks(stdout: str) -> tuple[dict[str, bool], dict[str, int]]:
     if type(value) is not dict or set(value) != {"checks", "statuses"}:
         raise ProbeError("arm_probe_output_invalid")
     checks, statuses = value["checks"], value["statuses"]
-    if type(checks) is not dict or set(checks) != set(_CHECKS) or any(type(checks[k]) is not bool for k in _CHECKS):
+    expected_checks = _CHECKS + (_GEOGRAPHY_CHECKS if geography_enabled else ())
+    if type(checks) is not dict or set(checks) != set(expected_checks) or any(type(checks[k]) is not bool for k in expected_checks):
         raise ProbeError("arm_probe_output_invalid")
     expected_statuses = {"initialize", "tools_list", "first_tool_call", "missing_auth", "unknown_kid",
                          "wrong_audience", "wrong_scope", "dev_isolation", "missing_config"}
@@ -305,11 +337,11 @@ def _command(archive: Path, context: str, name: str, run_id: str, cid_file: Path
     return ["docker", "--context", context, "run", "--rm", "--pull=never", "-i", "--name", name,
             "--label", f"{docker_helpers._OWNER_LABEL}=honda-mapit-mcp", "--label",
             f"{docker_helpers._RUN_LABEL}={run_id}", "--cidfile", str(cid_file), "--platform", "linux/arm64",
-            "--network", "none", "--mount", f"type=bind,source={archive},target=/probe/runtime.zip,readonly",
+            "--network", "none", "--memory", "256m", "--mount", f"type=bind,source={archive},target=/probe/runtime.zip,readonly",
             "--entrypoint", "python3", IMAGE, "-c", _CONTAINER_PROBE]
 
 
-def run_probe(wheel_dir: Path) -> dict[str, Any]:
+def run_probe(wheel_dir: Path, *, geography_wheel_dir: Path | None = None) -> dict[str, Any]:
     """Build and exercise one exact prod ZIP using a synthetic in-container stack."""
     try:
         repo = prod_builder.dev_builder._repo_root()
@@ -333,6 +365,7 @@ def run_probe(wheel_dir: Path) -> dict[str, Any]:
             summary = prod_builder.build_prod_runtime_archive(
                 wheels, jwks_path, archive_path, policy=policy, mapit_config=config,
                 account_id=_ACCOUNT, parameter_version=1, parameter_tier="Standard",
+                geography_wheel_dir=geography_wheel_dir,
             )
             run_id = uuid.uuid4().hex
             name = f"{_NAME_PREFIX}{run_id}"
@@ -356,7 +389,7 @@ def run_probe(wheel_dir: Path) -> dict[str, Any]:
             return_code, stdout = process_result
             if return_code not in (0, 2):
                 raise ProbeError("arm_probe_execution_failed")
-            checks, statuses = _parse_checks(stdout)
+            checks, statuses = _parse_checks(stdout, geography_enabled=geography_wheel_dir is not None)
             success = return_code == 0 and all(checks.values())
             return {"success": success, "category": "prod_runtime_arm_probe_passed" if success else "prod_runtime_arm_probe_failed",
                     "zip_bytes": summary.zip_bytes, "zip_sha256": summary.sha256, "wheel_count": summary.wheel_count,
@@ -371,9 +404,10 @@ def run_probe(wheel_dir: Path) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel-dir", type=Path, required=True)
+    parser.add_argument("--geography-wheel-dir", type=Path)
     args = parser.parse_args(argv)
     try:
-        result = run_probe(args.wheel_dir)
+        result = run_probe(args.wheel_dir, geography_wheel_dir=args.geography_wheel_dir)
     except Exception as exc:
         category = str(exc) if isinstance(exc, ProbeError) and str(exc) in _SAFE_FAILURES else "production_runtime_arm_probe_failed"
         print(json.dumps({"success": False, "category": category}, separators=(",", ":")))

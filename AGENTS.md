@@ -2,6 +2,26 @@
 
 ## Scope
 
+On 2026-10-03 the user approved the geographic-query increment and two hours
+of temporary display/system wakefulness, 13:42–15:42 UTC. Reused Luna/high
+researcher, implementer and tester roles; canonical MCP/delegation guides were
+consulted. The fixed IGN eight-municipality Menorca union, exact prepared
+topology, bounded embedded-list service path, two opt-in MCP tools and local
+CLI flag are independently accepted offline. Default/dev still expose ten
+tools; geographic opt-in exposes twelve. No street reconstruction, persistence,
+Telegram, multiuser, paid model or IAM/quota change is included.
+The 30-wheel opt-in production package passed nineteen synthetic checks in the
+pinned official ARM image with network disabled and 256 MiB memory limit.
+One new real summer-2026 geography probe, defined before execution in
+`docs/geographic-query-live-protocol.md`, passed: one Core/four Geo logical
+reads, eight total auth/MAPIT wire attempts, approximately 6.2 seconds. The
+allowance is consumed; do not repeat it, scan other dates or request details.
+No coordinates/IDs/history facts were persisted. Source geometry and native
+distance/units/history limitations remain explicit; crossing routes are not
+prorated. Production still runs the earlier ten-tool package pending separate
+reviewed code-only update/readbacks. Never reuse initial-deployment write
+intents, change owner/MFA, expand IAM or increase regional quota 10.
+
 Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
 client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), Phase 3
 (the reusable read-only realtime component), Phase 4 (the local Codex-to-MCP

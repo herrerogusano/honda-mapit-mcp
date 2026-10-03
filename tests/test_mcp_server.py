@@ -217,3 +217,31 @@ async def test_service_errors_are_redacted_tool_errors():
     rendered = " ".join(block.text for block in result.content if hasattr(block, "text"))
     assert "not_found" in rendered
     assert "private-route-id" not in rendered
+
+
+def test_cli_geographic_tools_require_explicit_flag_and_preserve_stdio(monkeypatch):
+    import mapit.mcp_server as module
+
+    created = []
+
+    class FakeServer:
+        def run(self, *, transport):
+            assert transport == "stdio"
+
+    def fake_create_server(*, geographic_queries=False):
+        created.append(geographic_queries)
+        return FakeServer()
+
+    monkeypatch.setattr(module, "create_server", fake_create_server)
+    module.main([])
+    module.main(["--geographic-queries"])
+    assert created == [False, True]
+
+
+def test_cli_rejects_every_unrecognized_option(monkeypatch):
+    import mapit.mcp_server as module
+
+    monkeypatch.setattr(module, "create_server", lambda **_: pytest.fail("invalid args must stop before server"))
+    with pytest.raises(SystemExit) as error:
+        module.main(["--enable-all-tools"])
+    assert error.value.code == 2

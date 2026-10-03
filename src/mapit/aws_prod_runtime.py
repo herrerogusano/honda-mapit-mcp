@@ -61,7 +61,13 @@ def _unavailable() -> dict[str, Any]:
     }
 
 
-def _build_prod_http_app(policy: CognitoProdPolicy, keys: Mapping[str, bytes | str], provider: CloudServicesProvider):
+def _build_prod_http_app(
+    policy: CognitoProdPolicy,
+    keys: Mapping[str, bytes | str],
+    provider: CloudServicesProvider,
+    *,
+    geographic_queries: bool = False,
+):
     if type(policy) is not CognitoProdPolicy or type(provider) is not CloudServicesProvider:
         raise ValueError("explicit production policy and cloud provider required")
     server = create_server(
@@ -73,6 +79,7 @@ def _build_prod_http_app(policy: CognitoProdPolicy, keys: Mapping[str, bytes | s
             required_scopes=[policy.required_scope],
         ),
         token_verifier=FixedRS256TokenVerifier(policy, keys),
+        geographic_queries=geographic_queries,
     )
     sdk_app = server.streamable_http_app(
         json_response=True,
@@ -95,9 +102,14 @@ def create_aws_prod_runtime(
     jwks_snapshot: bytes | str,
     *,
     provider_builder: Callable[[float], CloudServicesProvider],
+    geographic_queries: bool = False,
 ) -> AwsProdRuntime:
     """Compose only explicit bindings; construction performs no upstream reads."""
-    if type(policy) is not CognitoProdPolicy or not callable(provider_builder):
+    if (
+        type(policy) is not CognitoProdPolicy
+        or not callable(provider_builder)
+        or type(geographic_queries) is not bool
+    ):
         raise ValueError("explicit production composition required")
     keys = parse_cognito_jwks(jwks_snapshot)
 
@@ -115,7 +127,9 @@ def create_aws_prod_runtime(
         # Builder is trusted operator composition, not an input from an MCP call.
         # The provider itself must remain lazy until an authenticated tool call.
         provider = provider_builder(deadline)
-        return _build_prod_http_app(config, material, provider)
+        return _build_prod_http_app(
+            config, material, provider, geographic_queries=geographic_queries
+        )
 
     adapter = _build_synthetic_lambda_handler(
         policy, keys, key_validator=validate_keys, app_builder=build_app

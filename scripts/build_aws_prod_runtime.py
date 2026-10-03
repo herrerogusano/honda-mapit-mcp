@@ -27,6 +27,9 @@ MAX_JWKS_BYTES = 32 * 1024
 MAX_ARCHIVE_BYTES = dev_builder.MAX_ARCHIVE_BYTES
 MANIFEST_FILENAME = "mapit-prod.manifest.json"
 JWKS_FILENAME = "cognito-public-jwks.json"
+GEOGRAPHY_SOURCE_MODULES = ("geography_engine.py", "geographic_tools.py")
+GEOGRAPHY_ASSET = "data/menorca-ign-20261003.geojson"
+GEOGRAPHY_ASSET_SHA256 = "1e75a0c988fe13c2917487bf6b9834bd6aa4f48af5117b6ed216901be09b33cd"
 PROD_SOURCE_MODULES = (
     "aws_dev_runtime.py",  # Shared fixed Cognito/JWKS validators only.
     "aws_prod_runtime.py",
@@ -39,6 +42,7 @@ PROD_SOURCE_MODULES = (
     "mcp_server.py",
     "services.py",
     "analytics.py",
+    "geography.py",
     "distance_units.py",
     "client.py",
     "session.py",
@@ -99,12 +103,12 @@ def _validated_config(value: MapitConfig) -> MapitConfig:
     return value
 
 
-def _source_entries(repo: Path) -> list[tuple[str, bytes]]:
+def _source_entries(repo: Path, *, geography_enabled: bool = False) -> list[tuple[str, bytes]]:
     source_root = repo / "src" / "mapit"
     if dev_builder._has_symlink_or_reparse_ancestor(source_root) or not source_root.is_dir():
         raise ProdBuildError("runtime_source_invalid")
     result = [("mapit/__init__.py", b"")]
-    for module in PROD_SOURCE_MODULES:
+    for module in (*PROD_SOURCE_MODULES, *(GEOGRAPHY_SOURCE_MODULES if geography_enabled else ())):
         path = source_root / module
         if dev_builder._has_symlink_or_reparse_ancestor(path) or not path.is_file():
             raise ProdBuildError("runtime_source_invalid")
@@ -113,6 +117,35 @@ def _source_entries(repo: Path) -> list[tuple[str, bytes]]:
         except Exception:
             raise ProdBuildError("runtime_source_invalid") from None
         result.append((f"mapit/{module}", raw))
+    if geography_enabled:
+        asset = source_root / GEOGRAPHY_ASSET
+        if dev_builder._has_symlink_or_reparse_ancestor(asset) or not asset.is_file():
+            raise ProdBuildError("geography_asset_invalid")
+        raw = dev_builder._read_bounded(asset, 1024 * 1024, "geography_asset_invalid")
+        if hashlib.sha256(raw).hexdigest() != GEOGRAPHY_ASSET_SHA256:
+            raise ProdBuildError("geography_asset_invalid")
+        result.append((f"mapit/{GEOGRAPHY_ASSET}", raw))
+    return result
+
+
+def _geography_lock(repo: Path) -> dict[str, tuple[str, str]]:
+    path = repo / "infra" / "aws" / "geography-runtime-requirements.txt"
+    if dev_builder._has_symlink_or_reparse_ancestor(path) or not path.is_file():
+        raise ProdBuildError("geography_lock_invalid")
+    raw = dev_builder._read_bounded(path, dev_builder.MAX_LOCK_BYTES, "geography_lock_invalid")
+    result: dict[str, tuple[str, str]] = {}
+    try:
+        for line in raw.decode("utf-8").splitlines():
+            if not line.strip() or line.startswith("#"):
+                continue
+            match = dev_builder._LOCK_LINE.fullmatch(line)
+            if match is None or match.group(1) in result:
+                raise ProdBuildError("geography_lock_invalid")
+            result[match.group(1)] = (match.group(2), match.group(3))
+    except UnicodeError:
+        raise ProdBuildError("geography_lock_invalid") from None
+    if set(result) != {"numpy", "shapely"} or result["numpy"][0] != "2.4.3" or result["shapely"][0] != "2.1.2":
+        raise ProdBuildError("geography_lock_invalid")
     return result
 
 
@@ -178,6 +211,7 @@ def build_prod_runtime_archive(
     account_id: str,
     parameter_version: int,
     parameter_tier: str,
+    geography_wheel_dir: Path | None = None,
 ) -> ProdBuildSummary:
     """Create a production-only ZIP. This performs no credential/AWS reads."""
     repo = dev_builder._repo_root()
@@ -201,12 +235,29 @@ def build_prod_runtime_archive(
     target = dev_builder._output_path(Path(output_path), repo, wheel_root, jwks_file)
     lock = dev_builder._read_lock(repo)
     wheel_files = dev_builder._wheel_file_inventory(wheel_root, lock)
+    geography_enabled = geography_wheel_dir is not None
+    if geography_enabled:
+        extra_root = dev_builder._validate_external_wheel_dir(Path(geography_wheel_dir), repo)
+        if dev_builder._inside(target, extra_root):
+            raise ProdBuildError("archive_output_invalid")
+        extra_lock = _geography_lock(repo)
+        extra_files = dev_builder._wheel_file_inventory(extra_root, extra_lock)
+        lock = {**lock, **extra_lock}
+        wheel_files = [*wheel_files, *extra_files]
+        if sum(len(data) for _, data in wheel_files) > dev_builder.MAX_INPUT_BYTES:
+            raise ProdBuildError("wheel_input_size_exceeded")
     wheel_entries = dev_builder._unpack_wheels(wheel_files, lock)
-    source_entries = _source_entries(repo)
+    source_entries = _source_entries(repo, geography_enabled=geography_enabled)
     manifest = _manifest(
         policy, config, account_id, parameter_version, parameter_tier,
         hashlib.sha256(jwks_bytes).hexdigest(),
     )
+    if geography_enabled:
+        manifest_value = json.loads(manifest)
+        manifest_value["geographic_queries"] = True
+        manifest = json.dumps(manifest_value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        if len(manifest) > MAX_MANIFEST_BYTES:
+            raise ProdBuildError("production_binding_invalid")
     entries = [*wheel_entries, *source_entries,
                (f"mapit/{JWKS_FILENAME}", jwks_bytes),
                (f"mapit/{MANIFEST_FILENAME}", manifest)]
@@ -248,7 +299,7 @@ def build_prod_runtime_archive(
     return ProdBuildSummary(
         zip_bytes=len(archive_bytes), sha256=hashlib.sha256(archive_bytes).hexdigest(),
         wheel_count=len(wheel_files), archive_entries=len(entries),
-        source_modules=len(PROD_SOURCE_MODULES), public_key_count=len(public_keys),
+        source_modules=len(PROD_SOURCE_MODULES) + (len(GEOGRAPHY_SOURCE_MODULES) if geography_enabled else 0), public_key_count=len(public_keys),
         manifest_valid=True,
     )
 

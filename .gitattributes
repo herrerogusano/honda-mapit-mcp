@@ -1,0 +1,3 @@
+# Frozen public boundary inputs must retain their exact digest across checkouts.
+samples/public-boundaries/*.gml -text
+src/mapit/data/*.geojson -text

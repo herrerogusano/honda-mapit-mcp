@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from typing import Callable, TypeVar
 
 from mcp.server import MCPServer
@@ -44,12 +45,15 @@ def create_server(
     *,
     auth_settings: AuthSettings | None = None,
     token_verifier: TokenVerifier | None = None,
+    geographic_queries: bool = False,
 ) -> MCPServer:
     """Build an injectable MCP server; handlers contain no business logic."""
     if (auth_settings is None) != (token_verifier is None):
         raise ValueError("auth_settings and token_verifier must be provided together")
     if auth_settings is not None and provider is None:
         raise ValueError("authenticated server construction requires an explicit provider")
+    if type(geographic_queries) is not bool:
+        raise ValueError("geographic_queries must be a boolean")
     selected = provider if provider is not None else ServiceProvider()
     server = MCPServer(
         "honda-mapit",
@@ -116,14 +120,30 @@ def create_server(
         """Compare bounded route statistics with safe signed changes."""
         return _safe_call(lambda: selected.get().compare_route_periods(period_a, period_b))
 
+    if geographic_queries:
+        # Optional engine and public-boundary asset are not needed by the
+        # ordinary ten-tool/dev package.
+        from .geographic_tools import register_geographic_tools
+
+        register_geographic_tools(server, selected)
+
     return server
 
 
 mcp = create_server()
 
 
-def main() -> None:
-    mcp.run(transport="stdio")
+def main(argv: list[str] | None = None) -> None:
+    """Run stdio MCP; geographic analysis is enabled only by an explicit flag."""
+    parser = argparse.ArgumentParser(prog="mapit-mcp")
+    parser.add_argument(
+        "--geographic-queries",
+        action="store_true",
+        help="opt in to the bounded public Menorca route-summary tools",
+    )
+    args = parser.parse_args(argv)
+    server = create_server(geographic_queries=args.geographic_queries)
+    server.run(transport="stdio")
 
 
 if __name__ == "__main__":
