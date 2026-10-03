@@ -47,6 +47,16 @@ was created. Keep production single-owner until real account linking, tenant
 secret isolation, persistent update receipts and hosted identity/cost controls
 are independently accepted.
 
+The injected tenant session reader and A/B provider pipeline are independently
+accepted offline (82 focused tests). Exact opaque tenant namespace/version,
+original response name/ARN/account, atomic one-attempt budget and grant checks
+around the call are required. The existing owner reader and deployed artifact
+remain unchanged. No tenant parameter, HMAC key, third-party session, IAM role,
+durable link/update store or bot transport was created. Before hosted activation,
+resolve fresh application-session renewal/delegation, real human onboarding and
+stable MAPIT identity proof, durable revoke/idempotency state and exact regional
+cost/transport controls per `docs/telegram-multiuser-expansion-contract.md`.
+
 On 2026-10-03 the user approved the geographic-query increment and two hours
 of temporary display/system wakefulness, 13:42–15:42 UTC. Reused Luna/high
 researcher, implementer and tester roles; canonical MCP/delegation guides were

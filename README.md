@@ -536,6 +536,12 @@ multiuser/Telegram expansion is not active. See the current
 [geographic checkpoint](docs/geographic-query-status.md) and
 [AWS preparation record](docs/phase-8-aws-preparation.md).
 
+The offline invitation-only expansion now includes per-request tenant isolation,
+one-use Telegram linking, deterministic geographic commands, bounded delivery
+receipts and an exact per-tenant session-reader seam. It has not replaced the
+single-owner runtime or started a permanent bot. See the
+[multiuser/Telegram contract and next hosted gate](docs/telegram-multiuser-expansion-contract.md).
+
 Phase 8 plans an optional always-available remote MCP on AWS with separate dev
 and prod environments. Hosting the MCP does not require hosting a model. A
 managed agent and its model/provider evaluation are a separate optional track,

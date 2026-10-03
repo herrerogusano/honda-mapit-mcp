@@ -52,6 +52,56 @@ after business output but before send, concurrent duplicates and cancellation.
 Durable storage, human OAuth/MAPIT linking, application-session renewal and a
 hosted Telegram transport remain separate work, not implied by this acceptance.
 
+## Accepted offline tenant session reader
+
+`AwsTenantSessionReader` reuses the existing fixed reader through a strict
+namespace bridge rather than changing the production reader. A fresh validated
+grant selects `/honda-mapit-mcp/prod/tenants/<opaque-key>/mapit-refresh-token`.
+Exactly one injected read attempt is permitted per reader, including ambiguous
+failures; the bridge verifies the original tenant name/account ARN before
+normalizing a new response copy for the established version/type/value/deadline
+checks. Authorization is checked after method lookup, immediately before the
+read and after the result. There is no legacy-owner fallback, SDK construction,
+list/scan, parameter publication or IAM change.
+
+Independent synthetic integration covers Router → tenant reader →
+CloudServicesProvider: A/B select distinct exact SSM names, refresh with their
+own tokens and return disjoint synthetic status. Wrong namespace metadata fails
+before Cognito and prior revocation prevents provider/SSM work. The 82 focused
+tests do **not** prove that arbitrary token content belongs to the advertised
+MAPIT account: stable provider identity verification at real onboarding remains
+mandatory. The existing production package still contains only the fixed
+single-owner reader, not this opt-in library.
+
+Final local checkpoint: 2,002 tests passed, five Windows fixture skips;
+compilation and the twelve-case model-free evaluator passed. The optional
+geometry tests run in the pinned geometry-enabled CI job; the base matrix keeps
+geometry optional without skipping identity/linking/privacy checks.
+
+## Next concrete hosted gate
+
+Do not switch the deployed single-owner runtime to these libraries implicitly.
+Before a real invited user can use Telegram, accept the complete application
+composition: authenticated Bot API delivery; protected first-party OAuth/PKCE
+linking and initial human MFA; separate MAPIT identity/session proof; exact
+tenant-scoped secret publication/IAM; durable revocation/link/update receipts;
+and reviewed request/cost/shutdown controls. No paid conversational model is
+needed for the implemented commands.
+
+The authorization-renewal decision is still open. The current core deliberately
+requires a fresh verified OAuth grant for every command. A Telegram message
+does not supply that token. A persistent bot must use a reviewed application
+session renewal/delegation flow (not a Codex login/subscription credential or an
+unchecked tenant lookup), so normal use does not require interactive MFA for
+each message. Each new person still needs one explicit initial application and
+MAPIT login/link. Public signup remains excluded.
+
+A webhook and a new durable AWS state store would expand the Phase 5 transport
+and hosted-storage contract; the only live Telegram write previously accepted
+was bounded `sendMessage`. Present the exact resources, regional cost estimate,
+authorization/retention policy and bounded first-user test before enabling that
+permanent transport. No new live historical query is authorized by this gate.
+
 ## What exists today
 
 - `src/mapit/telegram_bot.py` is a synchronous, one-update long-polling client.
