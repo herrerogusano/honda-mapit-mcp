@@ -213,6 +213,11 @@ entitlement model.
 
 ## Implementation and acceptance gates
 
+The concrete invitation-only hosted proposal, durable delivery semantics,
+separate app-session renewal, and incomplete incremental cost illustration are
+in [`telegram-hosted-gate.md`](telegram-hosted-gate.md). It is design evidence,
+not deployment acceptance or an authorization expansion.
+
 Before code changes, decide whether Telegram is only a transport for an
 already-authenticated MCP caller or a separate login/linking client. Do not
 combine the trust models implicitly. A bounded implementation should proceed
