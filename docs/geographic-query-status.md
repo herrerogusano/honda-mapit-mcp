@@ -42,15 +42,35 @@
 - A separate discovery-only app-server probe passed independent review and
   23 focused tests: it requires exactly twelve tools without calling any tool
   or model. Full offline checkpoint including the coordinator: 1,904 passed,
-  five Windows fixture skips. These are not cloud upgrade receipts.
+  five Windows fixture skips. The final checkpoint, including a real-shaped
+  CloudWatch double-threshold regression, passed 1,909 tests with five skips;
+  compilation and model-free evaluation remain successful. All eight CI jobs
+  passed on `2bf706e`.
+- The private one-step operator passed static independent review and three
+  fake-journal regressions. Its publication receipt must bind the exact intent,
+  archive/manifest and stack/run, with successful PUT, verified HEAD and known
+  outcome, both at publication and before downstream steps. Emergency closure
+  verifies the exact STANDARD workflow/role/definition and derived execution ARN.
+- One live **read-only** upgrade preflight passed twelve account/control reads:
+  exact existing template/code, enabled API, unreserved handler, quota 10,
+  stable alarm/rule/target and exact independent shutdown definition. This did
+  not publish an object, close the service, request an update, reopen the API,
+  invoke a Lambda handler, or make another MAPIT read.
 
 ## Remaining
 
 Production currently retains the previous ten-tool package. A code-only upgrade
 needs fresh durable intents, exact ownership/template/code readbacks, independent
-closure, reviewed reopening/rollback and final endpoint/tool-discovery checks.
+closure, reviewed reopening/recovery and final endpoint/tool-discovery checks.
 Do not replay initial deployment operators. Retain existing owner/MFA, IAM,
 quota 10 and the USD 1/month target, not a billing hard cap.
+
+The 13:42–15:42 UTC window was nearly exhausted when final operator acceptance
+arrived. No production mutation was started; the existing service was left
+unchanged and available. A renewed bounded deployment window and fresh durable
+intents/readbacks are required; do not replay old initial-deployment operators
+or widen the immutable cutoff of the consumed preparation journal. Discovery
+and final upgrade receipt helpers remain unexecuted.
 
 The new live probe was local against the real bounded cloud-compatible provider,
 not a newly activated geographic tool call on production Lambda. A production

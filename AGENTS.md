@@ -21,6 +21,15 @@ distance/units/history limitations remain explicit; crossing routes are not
 prorated. Production still runs the earlier ten-tool package pending separate
 reviewed code-only update/readbacks. Never reuse initial-deployment write
 intents, change owner/MFA, expand IAM or increase regional quota 10.
+The code-only upgrade core and private single-step publication/recovery wrapper
+are independently accepted. Final local checkpoint: 1,909 passed, five skips;
+eight CI jobs passed on `2bf706e`. One read-only account preflight passed twelve
+exact ownership/code/API/quota/tripwire/workflow reads. No artifact publication,
+closure, update, reopening or geographic prod discovery was executed: final
+operator review left insufficient safe margin in the two-hour window. The old
+production service remains unchanged. A renewed bounded window with fresh
+intents and readbacks is needed; never extend the old immutable cutoff or replay
+consumed operators. See `docs/geographic-query-status.md`.
 
 Phase 0 (MAPIT research, API discovery, and the reusable standalone Python
 client), Phase 1 (local read-only MCP core), Phase 2 (route analytics), Phase 3
