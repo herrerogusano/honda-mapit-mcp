@@ -461,7 +461,12 @@ class ProdGeographyUpgrade:
             "OKActions": [],
             "InsufficientDataActions": [],
         }
-        if any(alarm.get(key) != value or type(alarm.get(key)) is not type(value) for key, value in stable_alarm.items()):
+        threshold = alarm.get("Threshold")
+        if (type(threshold) not in (int, float) or not math.isfinite(threshold)
+            or threshold != stable_alarm["Threshold"]):
+            raise ProdGeographyUpgradeError("tripwire_unverified")
+        if any(alarm.get(key) != value or type(alarm.get(key)) is not type(value)
+               for key, value in stable_alarm.items() if key != "Threshold"):
             raise ProdGeographyUpgradeError("tripwire_unverified")
         rule_reply = self._call("events", "describe_rule", Name=rule_name, EventBusName="default")
         expected_rule_arn = f"arn:aws:events:{REGION}:{self.account_id}:rule/{rule_name}"
