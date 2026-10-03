@@ -85,6 +85,7 @@ class _Provider:
 
 
 def test_two_authenticated_tenants_get_only_their_own_geographic_counts():
+    pytest.importorskip("shapely")
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public = private.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
@@ -126,6 +127,7 @@ def test_two_authenticated_tenants_get_only_their_own_geographic_counts():
     ],
 )
 def test_dispatch_rejects_summary_not_bound_to_requested_area_and_period(area_source, from_time, to_time):
+    pytest.importorskip("shapely")
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public = private.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo

@@ -41,7 +41,7 @@ jobs:
       - name: Install pinned geometry and boundary-review dependencies
         run: python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test,geography,boundary-import]"
       - name: Test pure geometry, bounded services, and public asset derivation
-        run: python -m pytest -q tests/test_geography.py tests/test_geography_independent.py tests/test_services_geography.py tests/test_services_geography_independent.py tests/test_ign_boundary_independent.py tests/test_geography_engine.py tests/test_geography_engine_independent.py tests/test_geographic_tools.py tests/test_probe_geographic_summary.py tests/test_probe_geographic_summary_independent.py tests/test_aws_prod_entrypoint.py tests/test_aws_prod_runtime.py tests/test_build_aws_prod_runtime.py tests/test_probe_aws_prod_runtime_arm.py
+        run: python -m pytest -q tests/test_geography.py tests/test_geography_independent.py tests/test_services_geography.py tests/test_services_geography_independent.py tests/test_ign_boundary_independent.py tests/test_geography_engine.py tests/test_geography_engine_independent.py tests/test_amb_geography.py tests/test_geographic_tools.py tests/test_probe_geographic_summary.py tests/test_probe_geographic_summary_independent.py tests/test_aws_prod_entrypoint.py tests/test_aws_prod_runtime.py tests/test_build_aws_prod_runtime.py tests/test_probe_aws_prod_runtime_arm.py tests/test_telegram_geographic_commands.py tests/test_telegram_geographic_commands_independent.py
   cloudformation-schema:
     name: Offline CloudFormation schemas
     runs-on: ubuntu-latest

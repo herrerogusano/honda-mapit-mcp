@@ -108,6 +108,7 @@ def test_help_requires_authenticated_context_but_does_not_fetch_provider():
 
 
 def test_kms_dispatches_fixed_area_period_and_formats_only_safe_metrics():
+    pytest.importorskip("shapely")
     services, factories = Services(), []
     _, grant, router = _router(services, factories)
     answer = dispatch_geographic_command(
@@ -121,6 +122,7 @@ def test_kms_dispatches_fixed_area_period_and_formats_only_safe_metrics():
 
 
 def test_summer_accepts_fixed_named_areas_with_spaces_and_optional_year():
+    pytest.importorskip("shapely")
     services, factories = Services(), []
     _, grant, router = _router(services, factories)
     answer = dispatch_geographic_command("/verano Àrea Metropolitana de Barcelona 2026", grant, router)
@@ -150,6 +152,7 @@ def test_invalid_commands_fail_before_provider_factory(command, category):
 
 
 def test_provider_failures_are_redacted_and_bad_summary_is_rejected():
+    pytest.importorskip("shapely")
     services, factories = Services(), []
     _, grant, router = _router(services, factories)
     services.get_geographic_summary = lambda *args: (_ for _ in ()).throw(RuntimeError("private-route-canary"))
