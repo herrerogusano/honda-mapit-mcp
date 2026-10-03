@@ -48,6 +48,34 @@ Sources: [GetParameter](https://docs.aws.amazon.com/systems-manager/latest/APIRe
 
 ### Invocation-local live-provider contract
 
+Accepted progress: independent reader review passed 41 focused tests, create-only
+publication passed 34 (including an independent SDK Stubber), and the final live-
+provider/direct-transport/production-runtime composition passed 62 offline tests.
+The production runtime uses a distinct exact policy type; dev factories still
+reject it and remain synthetic. Authorization-negative/metadata requests read no
+MAPIT secret and make no MAPIT calls; each tool invocation gets a fresh provider.
+
+Approved live preparation verified the same non-root account, unchanged regional
+quota 10 and a public MAPIT configuration snapshot, recorded only in protected
+operator state outside Git/OneDrive. One native keyring-to-SSM create-only handoff
+succeeded with exact versioned decrypted readback. The first operator run stopped
+before publication intent; its journal confirmed no publication attempt. A narrow
+diagnostic-stage repair preceded the successful single PutParameter. No secret
+file/argument/output, password transfer, MAPIT read, endpoint activation or history
+migration occurred. The stored session is Standard SecureString under aws/ssm.
+
+The approved session handoff uses a separate injected-client create-only
+publisher: exactly one PutParameter for the fixed prod path, SecureString,
+Standard, alias/aws/ssm, Overwrite=false, text and project/prod ownership tags.
+Require a 1..4096-byte UTF-8 value and exact HTTP-200/version-1/Standard write
+acknowledgement, then one pinned decrypted readback with the reader above and
+constant-time value comparison. No secret appears in result/projection; no
+overwrite, retry, list, delete or compensation is allowed. An ambiguous outcome
+is unknown, not absence. Record an acknowledged write even if readback/deadline
+fails. The caller must preverify account/region/client IAM, and wire timeouts;
+the whole cooperative handoff has at most ten seconds. This component cannot
+load the Windows keyring itself and is not an MCP tool.
+
 The next composition accepts a pinned explicit MAPIT config, an injected secret
 reader and deadline-bound transports. It constructs neither an AWS client nor a
 local session manager. Require eu-west-1, the canonical Core/Geo URLs, explicit
@@ -76,6 +104,27 @@ The eventual Lambda hard timeout and adapter serialization reserve must be
 verified separately; do not claim an asyncio timeout forcibly cancels urllib.
 Use fake transports/clocks/openers and network-denied tests for this block.
 Neither its acceptance nor a unit test authorizes private upstream execution.
+
+Production packaging/entrypoint must be separate from the dev entrypoint and
+must leave all dev guards unchanged. Reuse the pinned ARM wheel/source archive
+validation, include only a fixed prod source allowlist and a bounded non-secret
+manifest plus public JWKS. The manifest binds prod/eu-west-1, exact account,
+parameter version 1/Standard, canonical one-owner OAuth policy, JWKS hash and
+validated public MAPIT config (never email/password/token). Require strict JSON
+duplicate/field/type checks and an environment-pinned manifest SHA-256.
+Validate `AWS_LAMBDA_FUNCTION_NAME=honda-mapit-mcp-prod-handler`, AWS_REGION and
+MAPIT_MCP_ENV before any SDK construction. No dev execution-window removal.
+
+Only the production entrypoint may lazily construct an SSM client under its
+Lambda execution role: explicit eu-west-1, no proxies, one wire attempt and
+one-second connect/read timeouts. Cache no MAPIT secret/session/services across
+invocations; a cached AWS role client/public runtime is not a MAPIT session.
+Each invocation builds a fresh CloudDirectTransport/CloudServicesProvider and
+reader. No local keyring/env MAPIT credentials, discovery, arbitrary providers,
+SSM writes or SDK operations other than GetParameter belong in the runtime.
+Package testing must use fake SDK factories or a network-denied ARM container.
+Lambda hard timeout 15s, provider deadline at most 14s and serialization reserve
+are distinct controls; no hard wall-clock claim for blocking DNS/thread work.
 
 ### Permanent single-owner service: decisions before activation
 
@@ -117,7 +166,11 @@ remain outside that verification. The revised illustration is about USD 0.203.
 Do not assume free-tier eligibility or credits, or represent this as a billing
 hard cap. Advanced Parameter Store would add USD 0.05 per parameter-month and
 USD 0.05 per 10,000 interactions; Standard is eligible only if the actual UTF-8
-value fits its 4 KiB ceiling. No actual secret length was read in this block.
+value fits its 4 KiB ceiling. After handoff approval, a native Windows keyring
+preflight confirmed only `saved_session_present=true` and `fits_standard=true`;
+no token or exact length was returned, stored in a file or transferred to AWS.
+The audit venv lacked keyring, so this read-only check used the existing Python
+installation with the native backend; no fallback store or package was installed.
 
 Before activation, obtain a stated monthly gross spending envelope and retained-
 resource policy, approve the private refresh-token handoff, and independently
@@ -1268,3 +1321,31 @@ callback or first interactive login/MFA. Do not start the one-hour resource
 lifetime while waiting for the operator to return. Complete offline prerequisites
 first; actual provisioning remains suspended until those checks can be satisfied,
 and authority must be renewed if the two-hour approval has expired.
+### Permanent production progress (2026-10-03, not functional acceptance)
+
+The user approved retained private single-owner production in eu-west-1, a
+USD 1 gross/month target (not a hard billing ceiling), session-only transfer,
+and one vehicle-status/current-UTC-month distance smoke. Lambda quota remains
+10; no paid inference, password transfer or historical ledger migration.
+
+The saved refresh session was published once as Standard SecureString with the
+AWS-managed SSM key. Version-one readback and metadata/ownership checks passed;
+no secret values were recorded in this repository. The five-resource production
+bootstrap is created and verified with API disabled and Lambda reservation zero.
+The five-resource independent Step Functions stop controller is created. A real
+closed rehearsal succeeded and independently verified both shutdown targets.
+
+Offline production reader/publication/provider/transport/runtime/packaging
+changes passed independent focused review; the full suite passed 1,742 tests
+with five skipped, compilation succeeded and the model-free evaluator passed
+12/12. This does not prove the real production package or upstream smoke yet.
+The private retained artifact-bucket factory additionally passed its focused
+test and offline pinned cfn-lint with zero findings.
+
+One cost-allocation metadata read found Project inactive; no account billing
+setting was changed and no project-specific monthly Budget alert is claimed.
+Emergency request-pressure shutdown is not a monthly spending hard cap.
+The permanent Codex connection was prepared with its own loopback callback;
+other connection/global configuration remained unchanged. OAuth binding,
+exact ARM package acceptance, closed runtime deployment and authenticated real
+smoke remain pending before the endpoint can be opened.

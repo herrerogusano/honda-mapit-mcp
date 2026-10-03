@@ -1,0 +1,257 @@
+"""Build the fixed, deterministic production Lambda ZIP without network/AWS.
+
+Inputs are hash-locked wheels, a public JWKS snapshot and explicit validated
+production bindings. The output contains no credentials or local session data.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import re
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from mapit.aws_dev_runtime import parse_cognito_jwks
+from mapit.aws_prod_runtime import CognitoProdPolicy
+from mapit.cloud_transport import validate_cloud_config
+from mapit.config import MapitConfig
+
+from scripts import build_aws_dev_runtime as dev_builder
+
+MAX_MANIFEST_BYTES = 8 * 1024
+MAX_JWKS_BYTES = 32 * 1024
+MAX_ARCHIVE_BYTES = dev_builder.MAX_ARCHIVE_BYTES
+MANIFEST_FILENAME = "mapit-prod.manifest.json"
+JWKS_FILENAME = "cognito-public-jwks.json"
+PROD_SOURCE_MODULES = (
+    "aws_dev_runtime.py",  # Shared fixed Cognito/JWKS validators only.
+    "aws_prod_runtime.py",
+    "aws_prod_entrypoint.py",
+    "aws_session_reader.py",
+    "cloud_provider.py",
+    "cloud_transport.py",
+    "lambda_adapter.py",
+    "remote_http.py",
+    "mcp_server.py",
+    "services.py",
+    "analytics.py",
+    "distance_units.py",
+    "client.py",
+    "session.py",
+    "auth.py",
+    "config.py",
+    "http_transport.py",
+    "signing.py",
+)
+
+
+class ProdBuildError(ValueError):
+    """Closed build failure without paths, bindings or provider output."""
+
+
+@dataclass(frozen=True)
+class ProdBuildSummary:
+    zip_bytes: int
+    sha256: str
+    wheel_count: int
+    archive_entries: int
+    source_modules: int
+    public_key_count: int
+    manifest_valid: bool
+
+
+def _validated_policy(value: CognitoProdPolicy) -> CognitoProdPolicy:
+    if (
+        type(value) is not CognitoProdPolicy
+        or type(value.request_deadline_seconds) not in (int, float)
+        or isinstance(value.request_deadline_seconds, bool)
+        or value.request_deadline_seconds != 14.0
+    ):
+        raise ProdBuildError("production_policy_invalid")
+    try:
+        result = CognitoProdPolicy(
+            user_pool_id=value.user_pool_id,
+            api_id=value.api_id,
+            client_id=value.client_id,
+            owner_subject=value.owner_subject,
+            request_deadline_seconds=value.request_deadline_seconds,
+        )
+    except Exception:
+        raise ProdBuildError("production_policy_invalid") from None
+    if result != value:
+        raise ProdBuildError("production_policy_invalid")
+    return result
+
+
+def _validated_config(value: MapitConfig) -> MapitConfig:
+    if type(value) is not MapitConfig:
+        raise ProdBuildError("mapit_configuration_invalid")
+    try:
+        validate_cloud_config(value)
+    except Exception:
+        raise ProdBuildError("mapit_configuration_invalid") from None
+    if value.email is not None or value.password is not None or value.discovery_enabled is not False:
+        raise ProdBuildError("mapit_configuration_invalid")
+    return value
+
+
+def _source_entries(repo: Path) -> list[tuple[str, bytes]]:
+    source_root = repo / "src" / "mapit"
+    if dev_builder._has_symlink_or_reparse_ancestor(source_root) or not source_root.is_dir():
+        raise ProdBuildError("runtime_source_invalid")
+    result = [("mapit/__init__.py", b"")]
+    for module in PROD_SOURCE_MODULES:
+        path = source_root / module
+        if dev_builder._has_symlink_or_reparse_ancestor(path) or not path.is_file():
+            raise ProdBuildError("runtime_source_invalid")
+        try:
+            raw = dev_builder._read_bounded(path, dev_builder.MAX_SOURCE_BYTES, "runtime_source_invalid")
+        except Exception:
+            raise ProdBuildError("runtime_source_invalid") from None
+        result.append((f"mapit/{module}", raw))
+    return result
+
+
+def _manifest(
+    policy: CognitoProdPolicy,
+    config: MapitConfig,
+    account_id: str,
+    parameter_version: int,
+    parameter_tier: str,
+    jwks_sha256: str,
+) -> bytes:
+    if (
+        type(account_id) is not str
+        or not re.fullmatch(r"[0-9]{12}", account_id)
+        or account_id == "000000000000"
+        or type(parameter_version) is not int
+        or parameter_version != 1
+        or type(parameter_tier) is not str
+        or parameter_tier != "Standard"
+        or type(jwks_sha256) is not str
+        or not re.fullmatch(r"[0-9a-f]{64}", jwks_sha256)
+    ):
+        raise ProdBuildError("production_binding_invalid")
+    config_record = {
+        "region": config.region,
+        "user_pool_id": config.user_pool_id,
+        "user_pool_client_id": config.user_pool_client_id,
+        "identity_pool_id": config.identity_pool_id,
+        "core_api_url": config.core_api_url,
+        "geo_api_url": config.geo_api_url,
+        "discovery_enabled": config.discovery_enabled,
+        "http_timeout": config.http_timeout,
+    }
+    record = {
+        "environment": "prod",
+        "region": "eu-west-1",
+        "account_id": account_id,
+        "parameter_version": parameter_version,
+        "parameter_tier": parameter_tier,
+        "user_pool_id": policy.user_pool_id,
+        "api_id": policy.api_id,
+        "client_id": policy.client_id,
+        "owner_subject": policy.owner_subject,
+        "jwks_sha256": jwks_sha256,
+        "mapit_config": config_record,
+    }
+    try:
+        encoded = json.dumps(record, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("ascii")
+    except Exception:
+        raise ProdBuildError("production_manifest_invalid") from None
+    if len(encoded) > MAX_MANIFEST_BYTES:
+        raise ProdBuildError("production_manifest_oversized")
+    return encoded
+
+
+def build_prod_runtime_archive(
+    wheel_dir: Path,
+    public_jwks_path: Path,
+    output_path: Path,
+    *,
+    policy: CognitoProdPolicy,
+    mapit_config: MapitConfig,
+    account_id: str,
+    parameter_version: int,
+    parameter_tier: str,
+) -> ProdBuildSummary:
+    """Create a production-only ZIP. This performs no credential/AWS reads."""
+    repo = dev_builder._repo_root()
+    if dev_builder._is_reparse_or_symlink(repo) or not repo.is_dir():
+        raise ProdBuildError("repository_invalid")
+    policy = _validated_policy(policy)
+    config = _validated_config(mapit_config)
+    wheel_root = dev_builder._validate_external_wheel_dir(Path(wheel_dir), repo)
+    jwks_file = Path(public_jwks_path)
+    try:
+        jwks_bytes = dev_builder._snapshot_file(jwks_file, repo)
+        if len(jwks_bytes) > MAX_JWKS_BYTES:
+            raise ProdBuildError("public_jwks_invalid")
+        public_keys = parse_cognito_jwks(jwks_bytes)
+    except ProdBuildError:
+        raise
+    except Exception:
+        raise ProdBuildError("public_jwks_invalid") from None
+    if not public_keys:
+        raise ProdBuildError("public_jwks_invalid")
+    target = dev_builder._output_path(Path(output_path), repo, wheel_root, jwks_file)
+    lock = dev_builder._read_lock(repo)
+    wheel_files = dev_builder._wheel_file_inventory(wheel_root, lock)
+    wheel_entries = dev_builder._unpack_wheels(wheel_files, lock)
+    source_entries = _source_entries(repo)
+    manifest = _manifest(
+        policy, config, account_id, parameter_version, parameter_tier,
+        hashlib.sha256(jwks_bytes).hexdigest(),
+    )
+    entries = [*wheel_entries, *source_entries,
+               (f"mapit/{JWKS_FILENAME}", jwks_bytes),
+               (f"mapit/{MANIFEST_FILENAME}", manifest)]
+    seen: set[str] = set()
+    total_bytes = 0
+    for name, data in entries:
+        folded = name.casefold()
+        if folded in seen:
+            raise ProdBuildError("archive_path_collision")
+        seen.add(folded)
+        if len(data) > dev_builder.MAX_ENTRY_BYTES or total_bytes + len(data) > dev_builder.MAX_TOTAL_BYTES:
+            raise ProdBuildError("archive_content_too_large")
+        total_bytes += len(data)
+    if len(entries) > dev_builder.MAX_FILE_COUNT:
+        raise ProdBuildError("archive_file_count_exceeded")
+    import io
+
+    buffer = io.BytesIO()
+    try:
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED,
+                             compresslevel=9, strict_timestamps=True) as archive:
+            for name, data in sorted(entries, key=lambda item: item[0]):
+                info = zipfile.ZipInfo(name, date_time=dev_builder.ZIP_TIMESTAMP)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 3
+                info.external_attr = (0o100644 & 0xFFFF) << 16
+                info.extra = b""
+                info.comment = b""
+                archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+        archive_bytes = buffer.getvalue()
+        if len(archive_bytes) > MAX_ARCHIVE_BYTES:
+            raise ProdBuildError("archive_compressed_size_exceeded")
+        with target.open("xb") as output:
+            output.write(archive_bytes)
+    except ProdBuildError:
+        raise
+    except Exception:
+        raise ProdBuildError("archive_write_failed") from None
+    return ProdBuildSummary(
+        zip_bytes=len(archive_bytes), sha256=hashlib.sha256(archive_bytes).hexdigest(),
+        wheel_count=len(wheel_files), archive_entries=len(entries),
+        source_modules=len(PROD_SOURCE_MODULES), public_key_count=len(public_keys),
+        manifest_valid=True,
+    )
+
+
+__all__ = ["MANIFEST_FILENAME", "JWKS_FILENAME", "PROD_SOURCE_MODULES", "ProdBuildError",
+           "ProdBuildSummary", "build_prod_runtime_archive"]
