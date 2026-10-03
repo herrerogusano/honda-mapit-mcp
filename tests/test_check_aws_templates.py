@@ -24,6 +24,8 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "closed_oauth_cleanup_draft", "closed_oauth_setup_cleanup_draft",
         "closed_oauth_setup_control_draft",
         "shared_identity_dev_runtime_draft", "shared_identity_dev_cleanup_draft",
+        "prod_bootstrap_draft", "prod_controls_draft", "prod_artifacts_draft",
+        "prod_oauth_draft", "prod_runtime_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
@@ -64,6 +66,40 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         statement["Action"] if isinstance(statement.get("Action"), list) else [statement.get("Action")]
     )]
     assert not {"cognito-idp:DeleteUserPool", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:DescribeUserPoolDomain"} & set(shared_actions)
+
+    prod_bootstrap = json.loads(documents["prod_bootstrap_draft"])
+    assert prod_bootstrap["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
+    assert prod_bootstrap["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
+    assert not any(item["Type"].startswith("AWS::Cognito") for item in prod_bootstrap["Resources"].values())
+
+    prod_controls = json.loads(documents["prod_controls_draft"])
+    assert prod_controls["Metadata"]["NoActivation"] is True
+    assert prod_controls["Resources"]["RequestTripwireAlarm"]["Properties"]["ActionsEnabled"] is False
+    assert prod_controls["Resources"]["RequestTripwireAlarmRule"]["Properties"]["State"] == "DISABLED"
+    assert not any(item["Type"] == "AWS::Lambda::Function" for item in prod_controls["Resources"].values())
+
+    prod_artifacts = json.loads(documents["prod_artifacts_draft"])
+    assert prod_artifacts["Metadata"]["NoDeployment"] is True
+    assert len(prod_artifacts["Resources"]) == 2
+    prod_bucket = prod_artifacts["Resources"]["RuntimeArtifactBucket"]
+    assert prod_bucket["DeletionPolicy"] == prod_bucket["UpdateReplacePolicy"] == "Retain"
+    prod_bucket_props = prod_bucket["Properties"]
+    assert all(value is True for value in prod_bucket_props["PublicAccessBlockConfiguration"].values())
+    assert "BucketName" not in prod_bucket_props and "VersioningConfiguration" not in prod_bucket_props
+
+    prod_oauth = json.loads(documents["prod_oauth_draft"])
+    assert prod_oauth["Metadata"]["NoActivation"] is True
+    assert set(prod_oauth["Resources"]) == {
+        "ProdMcpResourceServer", "ProdMcpUserPoolClient", "ProdMcpManagedLoginBranding",
+    }
+    assert prod_oauth["Resources"]["ProdMcpUserPoolClient"]["Properties"]["GenerateSecret"] is False
+    assert prod_oauth["Resources"]["ProdMcpUserPoolClient"]["Properties"]["AllowedOAuthFlows"] == ["code"]
+
+    prod_runtime = json.loads(documents["prod_runtime_draft"])
+    assert prod_runtime["Metadata"]["RuntimeActivation"] is False
+    assert prod_runtime["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
+    assert prod_runtime["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
+    assert not any(item["Type"].startswith("AWS::Cognito") for item in prod_runtime["Resources"].values())
 
 
 def test_socket_and_dns_guard_restores_after_success_and_exception():

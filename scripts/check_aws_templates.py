@@ -61,6 +61,13 @@ def fixed_documents() -> dict[str, str]:
     from scripts.build_aws_dev_runtime_template import (
         fixed_runtime_bucket_template, fixed_runtime_candidate_template,
     )
+    from scripts.build_aws_prod_bootstrap import fixed_prod_bootstrap_template
+    from scripts.build_aws_prod_controls import fixed_prod_controls_template
+    from scripts.build_aws_prod_artifacts import fixed_prod_artifact_template
+    from scripts.build_aws_prod_oauth_template import (
+        build_prod_oauth_template, build_prod_runtime_template,
+    )
+    from mapit.aws_prod_runtime import CognitoProdPolicy
 
     documents = {}
     for label, filename in (
@@ -158,6 +165,22 @@ def fixed_documents() -> dict[str, str]:
         resource_started_epoch=1893456000,
         now_epoch=1893456060,
         activation_start_epoch=1893456240,
+    ))
+    prod_policy = CognitoProdPolicy(
+        user_pool_id="eu-west-1_A1b2C3d4E", api_id="a1b2c3d4e5",
+        client_id="ProdClientSynthetic123",
+        owner_subject="12345678-1234-4234-8234-123456789abc",
+    )
+    documents["prod_bootstrap_draft"] = json.dumps(fixed_prod_bootstrap_template())
+    documents["prod_controls_draft"] = json.dumps(fixed_prod_controls_template("a1b2c3d4e5"))
+    documents["prod_artifacts_draft"] = json.dumps(fixed_prod_artifact_template())
+    documents["prod_oauth_draft"] = json.dumps(build_prod_oauth_template(
+        user_pool_id=prod_policy.user_pool_id, api_id=prod_policy.api_id,
+        callback_url="http://localhost:8786/mcp/oauth/callback/codex-fixed-server",
+    ))
+    documents["prod_runtime_draft"] = json.dumps(build_prod_runtime_template(
+        prod_policy, bucket="honda-mapit-prod-runtime-artifacts",
+        zip_sha256="a" * 64, manifest_sha256="b" * 64,
     ))
     return documents
 
