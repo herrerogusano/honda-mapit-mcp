@@ -96,6 +96,9 @@ async def test_tool_rejects_unknown_area_and_bad_window_before_provider_get():
 
 @pytest.mark.anyio
 async def test_menorca_public_area_is_loaded_before_service_and_tool_output_has_no_geometry():
+    # This positive optional-engine case runs in the dedicated geography job;
+    # ordinary runtime jobs intentionally do not install the geography extra.
+    pytest.importorskip("shapely")
     provider = Provider()
     async with Client(create_server(provider, geographic_queries=True)) as client:
         result = await client.call_tool(
