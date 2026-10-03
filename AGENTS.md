@@ -363,7 +363,20 @@ This accepts synthetic dev cloud interoperability only: production, real MAPIT
 session migration/live-data acceptance, always-on operations and hosted multiuser
 isolation remain separate gates. See docs/phase-8-persistent-identity.md.
 
-Do not expand into an
+On 2026-10-03 the user explicitly approved permanent private single-owner
+production hosting in eu-west-1, retaining its resources, securely transferring
+only the MAPIT session (no password/history database), and bounded real checks
+of vehicle status and current-month distances. Monthly gross spending target:
+USD 1, controls/alerts but no guaranteed billing hard cap; exact regional pricing
+remains pending. Keep regional Lambda quota 10 and exclude paid model calls.
+This overrides the earlier no-production gate only for that scope. Technical
+acceptance of secure handoff/IAM, real-provider deadline handling, owner binding,
+independent shutdown and cost controls is still required before activation.
+Do not migrate the local ledger, store geometry, scan other months, make live
+Telegram calls or modify other projects. Retain the definitive owner/MFA.
+See docs/phase-8-aws-preparation.md for the accepted scope and remaining work.
+
+Do not otherwise expand into an
 agent UI, frontend, live project-owned AWS
 infrastructure, webhook deployment, Home Assistant, or HA integration.
 

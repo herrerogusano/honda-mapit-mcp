@@ -13,6 +13,139 @@ Phase 8 as a whole is not yet complete.
 
 The following dated sections retain their historical scope and evidence.
 
+### Production preparation: read-only secret reader (offline)
+
+The user requested continuing toward permanent MAPIT hosting. The next bounded
+implementation is an injected-client Parameter Store reader, not a production
+entrypoint, credential exporter or deployment. It must construct no SDK/session,
+read no local keyring/environment credential, and use only fake/Stubber tests.
+
+- One fixed prod parameter path in this project's namespace, exact eu-west-1
+  account ARN and mandatory positive version binding; no path scan or fallback.
+- One logical GetParameter with decryption and a fixed version selector, exact
+  HTTP-200 SecureString/name/ARN/version/text readback, bounded UTF-8 value.
+- Explicit Standard/Advanced size policy (4096/8192 bytes). The local store's
+  8192-byte ceiling is not evidence that an actual token fits Standard.
+- Secret material excluded from repr/errors/safe diagnostics; SDK exceptions
+  become closed categories without raw messages or responses.
+- Absolute monotonic caller deadline capped to five seconds for the read;
+  expired/invalid/rollback clocks reject before dispatch or before returning.
+  This is cooperative; the later SDK composition must separately enforce one
+  wire attempt and bounded connect/read timeouts.
+- No save/delete/list/automatic rotation, no use of SessionManager's automatic
+  persistence, no default local-session loading and no MCP tool exposure.
+
+GetParameter does not attest parameter Tier/KeyId. Operator-owned parameter
+creation/readback, KMS/least-privilege IAM, secure session handoff, identity-to-
+MAPIT binding, live upstream deadlines, distributed refresh behavior and a
+retained-resource monthly cost envelope remain separate reviewed prerequisites.
+No production activation or private credential transfer follows from this block.
+Independent review accepted the final reader with **41 focused offline tests**;
+any SourceResult field, including null, is rejected. SDK Stubber coverage makes
+no wire call. This reader is not yet wired into a production entrypoint.
+Sources: [GetParameter](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_GetParameter.html),
+[parameter tiers](https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-advanced-parameters.html).
+
+### Invocation-local live-provider contract
+
+The next composition accepts a pinned explicit MAPIT config, an injected secret
+reader and deadline-bound transports. It constructs neither an AWS client nor a
+local session manager. Require eu-west-1, the canonical Core/Geo URLs, explicit
+validated MAPIT Cognito identifiers, discovery disabled, no email/password and
+finite timeout at most two seconds. Do not read env/keyring/files or discover
+configuration during a tool request.
+
+For each request use one fresh provider, one secret read and direct refresh-token
+authentication; cache services only inside that request. Secrets, identity and
+temporary credentials remain in memory. Reject an unexpectedly changed refresh
+token rather than silently persisting it or proceeding with a stale parameter.
+Wrap the authenticator's in-memory refresh callback with the same policy and
+deadline. No automatic SSM writes, session logging or local ledger access.
+
+All transport attempts share a finite absolute monotonic deadline. Cap socket
+timeouts to two seconds and remaining time, check rollback/expiry before open,
+before/after each bounded body read and before return. Core/Geo are GET-only;
+Cognito POST is restricted to InitiateAuth REFRESH_TOKEN_AUTH, GetId and
+GetCredentialsForIdentity with fixed endpoints/targets. Disable proxies and
+redirects; cap auth JSON at 256 KiB and MAPIT bodies at 2 MiB. Keep a finite
+per-request attempt ceiling and do not add retries. The existing client's one
+auth recovery is allowed only within these same bounds. Errors must be generic.
+
+Socket timeout is not a hard total deadline (notably DNS/thread cancellation).
+The eventual Lambda hard timeout and adapter serialization reserve must be
+verified separately; do not claim an asyncio timeout forcibly cancels urllib.
+Use fake transports/clocks/openers and network-denied tests for this block.
+Neither its acceptance nor a unit test authorizes private upstream execution.
+
+### Permanent single-owner service: decisions before activation
+
+On 2026-10-03 the user explicitly approved retaining a private production service
+in eu-west-1, securely transferring only the MAPIT session (no password or
+historical database), and a bounded real check of vehicle status and current-
+month distances. The agreed monthly gross spending target is USD 1, with
+controls/alerts but no guaranteed billing hard cap; exact regional estimation
+remains pending. Keep Lambda quota 10 and exclude paid models. This supersedes
+the earlier no-production authority for that stated scope, not the technical
+acceptance requirements or other-project isolation. Do not broaden the smoke
+into historical scans, route details, Telegram or automatic ledger collection.
+
+Production would reuse the retained owner and TOTP enrollment, with its own
+OAuth client and explicit owner-subject binding. It must use a new live-provider
+composition; the accepted dev entrypoint remains synthetic, time-bounded and
+fail-closed. Do not turn that experiment into production by deleting its guards.
+
+The initial proposal is Lambda ARM and HTTP API in eu-west-1, the existing
+Cognito identity, one pinned SecureString, short-retention sanitized logs and
+an independent control-plane shutdown. Keep the regional shared pool at 10.
+No NAT gateway, RDS, paid model, persistent Telegram worker or private route
+database migration is included. Shared capacity is not a per-project concurrency
+guarantee; request bounds and a separately tested shutdown remain necessary.
+
+Public pricing gives a directional illustration, not a billing guarantee:
+10,000 requests/month, 256 MiB and one second average duration, one active direct
+Cognito user, one SSM read per request, 2 KiB sanitized logging per request and
+one ordinary metric alarm total roughly USD 0.20/month before egress, storage,
+tax, retries and unpriced extras. A custom metric could add approximately
+USD 0.30/month; an alarm has a retained cost even with no traffic. Several public
+examples were initially US-region prices. Subsequent bounded direct public
+Price List reads verified eu-west-1 ARM duration (USD 0.0000133334/GB-second),
+requests (USD 0.20/million), HTTP API (USD 1.11/million at the first tier),
+Cognito Essentials direct MAU (USD 0.015), ordinary metric alarms (USD 0.10/month),
+custom metrics (USD 0.30/month first tier), Standard log ingestion (USD 0.57/GB)
+and log storage (USD 0.03/GB-month). Step Functions' regional rate and egress
+remain outside that verification. The revised illustration is about USD 0.203.
+Do not assume free-tier eligibility or credits, or represent this as a billing
+hard cap. Advanced Parameter Store would add USD 0.05 per parameter-month and
+USD 0.05 per 10,000 interactions; Standard is eligible only if the actual UTF-8
+value fits its 4 KiB ceiling. No actual secret length was read in this block.
+
+Before activation, obtain a stated monthly gross spending envelope and retained-
+resource policy, approve the private refresh-token handoff, and independently
+accept exact IAM/KMS binding, direct upstream timeouts, owner isolation and a
+bounded real MAPIT read. The secret must not appear in chat, Git, tool responses,
+logs or command arguments. No password transfer or ledger/geometry upload is
+proposed. Local ledger-based answers will not silently become cloud features.
+Refresh-token rotation is not yet established for MAPIT; no automatic SSM write
+is allowed. Parameter Store PutParameter has no expected-version CAS, and a
+pinned read is not a distributed refresh lock.
+
+Public primary sources:
+[Lambda](https://aws.amazon.com/lambda/pricing/),
+[HTTP API](https://aws.amazon.com/api-gateway/pricing/),
+[Cognito](https://aws.amazon.com/cognito/pricing/),
+[SSM](https://aws.amazon.com/systems-manager/pricing/),
+[KMS](https://aws.amazon.com/kms/pricing/),
+[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/),
+[Step Functions](https://aws.amazon.com/step-functions/pricing/),
+[PutParameter](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_PutParameter.html),
+[Cognito refresh rotation](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-refresh-token.html).
+
+Regional offer snapshots (public, no account API):
+[Lambda](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/current/eu-west-1/index.json),
+[API Gateway](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/current/eu-west-1/index.json),
+[CloudWatch](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/eu-west-1/index.json),
+[Cognito](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCognito/current/eu-west-1/index.json).
+
 Current status — 2026-10-02: local synthetic runtime and exact ARM package are
 accepted. The user chose the regional shared pool of 10, with independent
 control-plane shutdown. There is no pending quota-increase decision. A renewed
