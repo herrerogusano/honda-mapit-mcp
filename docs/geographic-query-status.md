@@ -17,8 +17,15 @@ path and exact Polygon/MultiPolygon reporting. The frozen public asset verifies
 36 codes, 38 rings and 32,299 vertices. A freshly built synthetic ARM package
 passed all 22 checks with network disabled and a 256 MiB memory cap; the exact
 real-bound artifact passed eight metadata/authorization/public-registry checks
-offline without reading a session. They are not yet deployed. Nationwide Spain
-remains a later bounded-data/packaging decision;
+offline without reading a session. A separate fresh Barcelona/AMB upgrade then
+completed publication, exact independent closure, closed stack update/readbacks
+and reopening. Codex discovery again verified twelve tools (four protocol
+requests, zero tool/model calls). The code/public-asset revision retains the
+same exact identity manifest; the upgrade guard permits that while still
+requiring a changed ZIP and rejecting any other template difference. Both
+previous ZIPs remain available for reviewed recovery. No new MAPIT history read
+or live geographic Lambda-output check was made. Nationwide Spain remains a
+later bounded-data/packaging decision;
 see [public-source research](geographic-spain-research.md).
 
 ## Accepted

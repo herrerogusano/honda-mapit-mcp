@@ -174,7 +174,10 @@ class ProdGeographyUpgrade:
         for digest in (old_zip_sha256, old_manifest_sha256, new_zip_sha256, new_manifest_sha256):
             if type(digest) is not str or not _SHA.fullmatch(digest):
                 raise ProdGeographyUpgradeError("inputs_invalid")
-        if old_zip_sha256 == new_zip_sha256 or old_manifest_sha256 == new_manifest_sha256:
+        # A code/public-asset-only revision retains the exact runtime identity
+        # manifest. The ZIP must change; manifest changes remain optional and
+        # are still the sole permitted environment-variable difference.
+        if old_zip_sha256 == new_zip_sha256:
             raise ProdGeographyUpgradeError("inputs_invalid")
         if type(bucket) is not str or len(bucket) > 63:
             raise ProdGeographyUpgradeError("inputs_invalid")

@@ -23,7 +23,13 @@ independent shutdown, exact closed update/readbacks and reopening passed.
 Codex discovery verified twelve tools with four protocol requests and zero
 tool/model calls. Parent private runtime receipts now bind the deployed Menorca
 artifact; old journals/intents must not be replayed. Barcelona/AMB assets and
-registry remain under separate offline review and fresh-artifact deployment.
+registry subsequently passed independent review and a fresh-artifact update:
+exact shutdown/update/reopen checks and Codex twelve-tool discovery passed,
+without MAPIT history/tool/model calls. The parent receipt now binds Barcelona;
+neither consumed geography upgrade journal may be replayed. The same-manifest
+ZIP-only guard adjustment is independently accepted; every other template field
+remains exact. Synthetic ARM 22 checks and real-bound offline ARM eight checks
+passed; prior artifacts are retained for separately reviewed recovery.
 The invitation-only tenant router is independently accepted offline (28 tests),
 not connected to production, Telegram identity linking or real credential storage.
 No new live history probe or production multiuser capability follows.

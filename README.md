@@ -530,8 +530,9 @@ open questions.
 Current status (2026-10-03): private single-owner production is deployed in
 eu-west-1 with retained Cognito MFA. Its Menorca geographic opt-in now advertises
 twelve tools; code update, independent shutdown/reopening and Codex catalog
-discovery passed. No paid model is hosted. Barcelona/AMB support is under review,
-and hosted multiuser/Telegram expansion is not active. See the current
+discovery passed. Barcelona city, AMB (36 municipalities) and its individually
+named municipalities are also deployed. No paid model is hosted; hosted
+multiuser/Telegram expansion is not active. See the current
 [geographic checkpoint](docs/geographic-query-status.md) and
 [AWS preparation record](docs/phase-8-aws-preparation.md).
 

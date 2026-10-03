@@ -46,7 +46,7 @@ class Stub:
 
 
 def make_core(*, authorized_from_epoch=None, authorized_until_epoch=AUTHORIZATION_CUTOFF_EPOCH,
-              wall_clock=None, monotonic=None):
+              wall_clock=None, monotonic=None, new_manifest_sha256="4" * 64):
     policy = CognitoProdPolicy(user_pool_id=POOL, api_id=API,
                                client_id="SyntheticProdClient012345", owner_subject=OWNER)
     journal = Journal()
@@ -64,7 +64,7 @@ def make_core(*, authorized_from_epoch=None, authorized_until_epoch=AUTHORIZATIO
         prod_run_id=RUN_ID, api_id=API, function_name=FUNCTION,
         shutdown_state_machine_arn=MACHINE, bucket=BUCKET,
         old_zip_sha256="1" * 64, old_manifest_sha256="2" * 64,
-        new_zip_sha256="3" * 64, new_manifest_sha256="4" * 64,
+        new_zip_sha256="3" * 64, new_manifest_sha256=new_manifest_sha256,
         authorized_until_epoch=authorized_until_epoch,
         authorized_from_epoch=authorized_from_epoch,
         wall_clock=wall_clock,
@@ -79,6 +79,19 @@ def test_template_candidate_changes_only_zip_key_and_manifest_digest():
     altered = copy.deepcopy(core.new_template)
     altered["Resources"]["McpHandler"]["Properties"]["Timeout"] += 1
     assert not _only_two_template_changes(core.old_template, altered)
+
+
+def test_code_only_revision_can_retain_exact_identity_manifest():
+    core, _ = make_core(new_manifest_sha256="2" * 64)
+    old_fn = core.old_template["Resources"]["McpHandler"]["Properties"]
+    new_fn = core.new_template["Resources"]["McpHandler"]["Properties"]
+    assert old_fn["Environment"] == new_fn["Environment"]
+    assert old_fn["Code"]["S3Key"] != new_fn["Code"]["S3Key"]
+    assert _only_two_template_changes(core.old_template, core.new_template)
+    for field in ("Timeout", "MemorySize", "Role"):
+        altered = copy.deepcopy(core.new_template)
+        altered["Resources"]["McpHandler"]["Properties"][field] = "unexpected"
+        assert not _only_two_template_changes(core.old_template, altered)
 
 
 def test_constructor_binds_fixed_account_stack_function_machine_and_cutoff():
