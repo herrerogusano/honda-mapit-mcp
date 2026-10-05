@@ -437,7 +437,7 @@ class ProdGeographyUpgrade:
         ):
             raise ProdGeographyUpgradeError("stack_not_owned")
         status = stack.get("StackStatus")
-        if status == "UPDATE_IN_PROGRESS" and allow_in_progress:
+        if status in {"UPDATE_IN_PROGRESS", "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS"} and allow_in_progress:
             return stack
         accepted_statuses = {"UPDATE_COMPLETE"}
         if self.retained_recovery:
