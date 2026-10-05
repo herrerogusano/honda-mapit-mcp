@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  geography:
+    name: Offline geographic queries and public boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Reject provider credentials
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(MAPIT_EMAIL|MAPIT_PASSWORD|OPENAI_API_KEY|ANTHROPIC_API_KEY|TELEGRAM_BOT_TOKEN|MAPIT_TELEGRAM_BOT_TOKEN|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_PROFILE|AWS_DEFAULT_PROFILE|AWS_ROLE_ARN|AWS_WEB_IDENTITY_TOKEN_FILE|AWS_CONTAINER_CREDENTIALS_FULL_URI|AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|AWS_CONTAINER_AUTHORIZATION_TOKEN|AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE|AWS_SHARED_CREDENTIALS_FILE|AWS_CONFIG_FILE)$/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "Provider credentials must not be present in geographic tests"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install pinned geometry and boundary-review dependencies
+        run: python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test,geography,boundary-import]"
+      - name: Test pure geometry, bounded services, and public asset derivation
+        run: python -m pytest -q tests/test_geography.py tests/test_geography_independent.py tests/test_services_geography.py tests/test_services_geography_independent.py tests/test_ign_boundary_independent.py tests/test_geography_engine.py tests/test_geography_engine_independent.py tests/test_amb_geography.py tests/test_geographic_tools.py tests/test_probe_geographic_summary.py tests/test_probe_geographic_summary_independent.py tests/test_aws_prod_entrypoint.py tests/test_aws_prod_runtime.py tests/test_build_aws_prod_runtime.py tests/test_probe_aws_prod_runtime_arm.py tests/test_telegram_geographic_commands.py tests/test_telegram_geographic_commands_independent.py
+  cloudformation-schema:
+    name: Offline CloudFormation schemas
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Reject AWS credentials and credential sources
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_PROFILE|AWS_DEFAULT_PROFILE|AWS_ROLE_ARN|AWS_WEB_IDENTITY_TOKEN_FILE|AWS_CONTAINER_CREDENTIALS_FULL_URI|AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|AWS_CONTAINER_AUTHORIZATION_TOKEN|AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE|AWS_SHARED_CREDENTIALS_FILE|AWS_CONFIG_FILE)$/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "AWS credentials must not be present in static schema checks"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install isolated static-lint tools (public package downloads)
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test]" -r infra/aws/schema-requirements.txt
+      - name: Test static-check guards
+        run: python -m pytest -q tests/test_check_aws_templates.py tests/test_aws_infrastructure_draft.py
+      - name: Validate fixed synthetic templates (Python networking denied)
+        run: python scripts/check_aws_templates.py
+  shutdown-sdk:
+    name: Offline shutdown SDK contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Reject AWS credentials
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_PROFILE|AWS_DEFAULT_PROFILE|AWS_ROLE_ARN|AWS_WEB_IDENTITY_TOKEN_FILE|AWS_CONTAINER_CREDENTIALS_FULL_URI|AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|AWS_CONTAINER_AUTHORIZATION_TOKEN|AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE|AWS_SHARED_CREDENTIALS_FILE|AWS_CONFIG_FILE)$/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "AWS credentials must not be present in SDK tests"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install isolated SDK test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test]" "pip-audit==2.10.1"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+      - name: Test real SDK shapes with offline stubs
+        run: python -m pytest -q tests/test_aws_dev_shutdown_sdk.py tests/test_aws_dev_shutdown_entrypoint.py tests/test_aws_dev_shutdown_entrypoint_independent.py tests/test_aws_dev_shutdown_template_independent.py tests/test_build_aws_dev_shutdown.py tests/test_build_aws_dev_shutdown_independent.py tests/test_aws_closed_rehearsal_independent.py tests/test_aws_dev_runtime_artifact.py tests/test_aws_dev_runtime_artifact_retirement.py tests/test_aws_dev_oauth_setup_readback.py tests/test_aws_dev_oauth_setup_coordinator.py tests/test_aws_dev_oauth_setup_coordinator_independent.py tests/test_aws_dev_oauth_setup_cleanup_readback.py tests/test_aws_dev_oauth_setup_cleanup_readback_independent.py tests/test_aws_dev_runtime_readback.py tests/test_aws_identity_template.py tests/test_aws_shared_identity_dev.py tests/test_aws_dev_activation.py
+      - name: Audit pinned SDK dependencies (networked advisory lookup only)
+        run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/shutdown-requirements.txt --progress-spinner off --timeout 20 --desc off
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python-version: "3.11"}
+          - {os: ubuntu-latest, python-version: "3.12"}
+          - {os: ubuntu-latest, python-version: "3.13"}
+          - {os: windows-latest, python-version: "3.13"}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject provider credentials in the job environment
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(MAPIT_EMAIL|MAPIT_PASSWORD|OPENAI_API_KEY|ANTHROPIC_API_KEY|TELEGRAM_BOT_TOKEN|MAPIT_TELEGRAM_BOT_TOKEN|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN)$/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "Provider credentials must not be present in CI"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test,agent,realtime,windows-auth]"
+
+      - name: Compile
+        run: python -m compileall -q src tests scripts
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Synthetic model-free evaluator
+        run: python scripts/evaluate_agent_dataset.py
+
+      - name: Offline environment diagnostics
+        run: python -m mapit.health
+
+  dependency-audit:
+    name: Known dependency advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install audit environment
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test,agent,realtime]" "pip-audit==2.10.1"
+      - name: Export installed third-party inventory
+        run: python scripts/export_audit_requirements.py --output audit-requirements.txt
+      - name: Audit known advisories (networked, separate from offline tests)
+        run: python -m pip_audit --strict --no-deps --disable-pip -r audit-requirements.txt --progress-spinner off --timeout 20 --desc off
+      - name: Audit pinned ARM runtime versions (advisories only, no ARM installation)
+        run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/runtime-requirements.txt --progress-spinner off --timeout 20 --desc off
+      - name: Audit optional geographic ARM runtime versions
+        run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/geography-runtime-requirements.txt --progress-spinner off --timeout 20 --desc off
+      - name: Audit isolated static-lint tools (not Lambda dependencies)
+        run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/schema-requirements.txt --progress-spinner off --timeout 20 --desc off

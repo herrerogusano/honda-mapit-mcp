@@ -1,0 +1,1017 @@
+{
+  "fields": {
+    "account": {
+      "fields": {
+        "id": {
+          "nullable": false,
+          "type": "string"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "branch": {
+      "nullable": false,
+      "type": "string"
+    },
+    "canAccessAccidentAlert": {
+      "nullable": false,
+      "type": "boolean"
+    },
+    "canAccessFallAlert": {
+      "nullable": false,
+      "type": "boolean"
+    },
+    "createdAt": {
+      "nullable": false,
+      "type": "string"
+    },
+    "crmMotoId": {
+      "nullable": false,
+      "type": "string"
+    },
+    "dealer": {
+      "fields": {
+        "id": {
+          "nullable": false,
+          "type": "string"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "demoBike": {
+      "nullable": false,
+      "type": "boolean"
+    },
+    "device": {
+      "fields": {
+        "id": {
+          "nullable": false,
+          "type": "string"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "firebaseKey": {
+      "nullable": false,
+      "type": "string"
+    },
+    "id": {
+      "nullable": false,
+      "type": "string"
+    },
+    "km": {
+      "nullable": false,
+      "type": "number"
+    },
+    "legacy": {
+      "fields": {
+        "detail": {
+          "fields": {
+            "AnyRiskInsurance": {
+              "nullable": false,
+              "type": "number"
+            },
+            "DemoBike": {
+              "nullable": false,
+              "type": "number"
+            },
+            "Financing": {
+              "nullable": false,
+              "type": "number"
+            },
+            "HondaConnect": {
+              "nullable": false,
+              "type": "number"
+            },
+            "HondaPlus": {
+              "nullable": false,
+              "type": "number"
+            },
+            "HondaPlusGo": {
+              "nullable": false,
+              "type": "number"
+            },
+            "Insurance": {
+              "nullable": false,
+              "type": "number"
+            },
+            "Model": {
+              "nullable": false,
+              "type": "string"
+            },
+            "Plate": {
+              "nullable": false,
+              "type": "string"
+            },
+            "SaleDate": {
+              "nullable": false,
+              "type": "string"
+            },
+            "Vin": {
+              "nullable": false,
+              "type": "string"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "id": {
+          "nullable": false,
+          "type": "number"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "model": {
+      "nullable": false,
+      "type": "string"
+    },
+    "productPlanName": {
+      "nullable": false,
+      "type": "string"
+    },
+    "products": {
+      "items": {
+        "nullable": false,
+        "type": "string"
+      },
+      "nullable": false,
+      "type": "array"
+    },
+    "registration": {
+      "fields": {
+        "id": {
+          "nullable": false,
+          "type": "string"
+        },
+        "subtype": {
+          "nullable": false,
+          "type": "string"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "registrationNumber": {
+      "nullable": false,
+      "type": "string"
+    },
+    "saleDate": {
+      "nullable": false,
+      "type": "string"
+    },
+    "subscription": {
+      "fields": {
+        "account": {
+          "fields": {
+            "id": {
+              "nullable": false,
+              "type": "string"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "cancelAtEnd": {
+          "nullable": false,
+          "type": "boolean"
+        },
+        "createdAt": {
+          "nullable": false,
+          "type": "string"
+        },
+        "crmDealId": {
+          "nullable": false,
+          "type": "string"
+        },
+        "id": {
+          "nullable": false,
+          "type": "string"
+        },
+        "periodEnd": {
+          "nullable": false,
+          "type": "string"
+        },
+        "status": {
+          "nullable": false,
+          "type": "string"
+        },
+        "stripeApiVersion": {
+          "nullable": false,
+          "type": "string"
+        },
+        "stripeId": {
+          "nullable": false,
+          "type": "string"
+        },
+        "stripeObject": {
+          "fields": {
+            "application": {
+              "nullable": true,
+              "type": "null"
+            },
+            "application_fee_percent": {
+              "nullable": true,
+              "type": "null"
+            },
+            "automatic_tax": {
+              "fields": {
+                "disabled_reason": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "enabled": {
+                  "nullable": false,
+                  "type": "boolean"
+                },
+                "liability": {
+                  "nullable": true,
+                  "type": "null"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "billing_cycle_anchor": {
+              "nullable": false,
+              "type": "number"
+            },
+            "billing_cycle_anchor_config": {
+              "nullable": true,
+              "type": "null"
+            },
+            "billing_mode": {
+              "fields": {
+                "flexible": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "type": {
+                  "nullable": false,
+                  "type": "string"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "billing_thresholds": {
+              "nullable": true,
+              "type": "null"
+            },
+            "cancel_at": {
+              "nullable": true,
+              "type": "null"
+            },
+            "cancel_at_period_end": {
+              "nullable": false,
+              "type": "boolean"
+            },
+            "canceled_at": {
+              "nullable": true,
+              "type": "null"
+            },
+            "cancellation_details": {
+              "fields": {
+                "comment": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "feedback": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "reason": {
+                  "nullable": true,
+                  "type": "null"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "collection_method": {
+              "nullable": false,
+              "type": "string"
+            },
+            "created": {
+              "nullable": false,
+              "type": "number"
+            },
+            "currency": {
+              "nullable": false,
+              "type": "string"
+            },
+            "current_period_end": {
+              "nullable": false,
+              "type": "number"
+            },
+            "current_period_start": {
+              "nullable": false,
+              "type": "number"
+            },
+            "customer": {
+              "nullable": false,
+              "type": "string"
+            },
+            "customer_account": {
+              "nullable": true,
+              "type": "null"
+            },
+            "days_until_due": {
+              "nullable": true,
+              "type": "null"
+            },
+            "default_payment_method": {
+              "nullable": true,
+              "type": "null"
+            },
+            "default_source": {
+              "nullable": true,
+              "type": "null"
+            },
+            "default_tax_rates": {
+              "items": {
+                "fields": {
+                  "active": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "country": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "created": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "description": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "display_name": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "effective_percentage": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "flat_amount": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "id": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "inclusive": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "jurisdiction": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "jurisdiction_level": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "livemode": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "metadata": {
+                    "fields": {},
+                    "nullable": false,
+                    "type": "object"
+                  },
+                  "object": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "percentage": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "rate_type": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "state": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "tax_type": {
+                    "nullable": true,
+                    "type": "null"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              },
+              "nullable": false,
+              "type": "array"
+            },
+            "description": {
+              "nullable": true,
+              "type": "null"
+            },
+            "discount": {
+              "nullable": true,
+              "type": "null"
+            },
+            "discounts": {
+              "items": {
+                "nullable": false,
+                "type": "unknown"
+              },
+              "nullable": false,
+              "type": "array"
+            },
+            "ended_at": {
+              "nullable": true,
+              "type": "null"
+            },
+            "id": {
+              "nullable": false,
+              "type": "string"
+            },
+            "invoice_settings": {
+              "fields": {
+                "account_tax_ids": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "custom_fields": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "description": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "footer": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "issuer": {
+                  "fields": {
+                    "type": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "items": {
+              "fields": {
+                "data": {
+                  "items": {
+                    "fields": {
+                      "billing_thresholds": {
+                        "nullable": true,
+                        "type": "null"
+                      },
+                      "created": {
+                        "nullable": false,
+                        "type": "number"
+                      },
+                      "current_period_end": {
+                        "nullable": false,
+                        "type": "number"
+                      },
+                      "current_period_start": {
+                        "nullable": false,
+                        "type": "number"
+                      },
+                      "discounts": {
+                        "items": {
+                          "nullable": false,
+                          "type": "unknown"
+                        },
+                        "nullable": false,
+                        "type": "array"
+                      },
+                      "id": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "metadata": {
+                        "fields": {},
+                        "nullable": false,
+                        "type": "object"
+                      },
+                      "object": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "plan": {
+                        "fields": {
+                          "active": {
+                            "nullable": false,
+                            "type": "boolean"
+                          },
+                          "aggregate_usage": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "amount": {
+                            "nullable": false,
+                            "type": "number"
+                          },
+                          "amount_decimal": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "billing_scheme": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "created": {
+                            "nullable": false,
+                            "type": "number"
+                          },
+                          "currency": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "id": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "interval": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "interval_count": {
+                            "nullable": false,
+                            "type": "number"
+                          },
+                          "livemode": {
+                            "nullable": false,
+                            "type": "boolean"
+                          },
+                          "metadata": {
+                            "fields": {},
+                            "nullable": false,
+                            "type": "object"
+                          },
+                          "meter": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "nickname": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "object": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "product": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "tiers_mode": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "transform_usage": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "trial_period_days": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "usage_type": {
+                            "nullable": false,
+                            "type": "string"
+                          }
+                        },
+                        "nullable": false,
+                        "type": "object"
+                      },
+                      "price": {
+                        "fields": {
+                          "active": {
+                            "nullable": false,
+                            "type": "boolean"
+                          },
+                          "billing_scheme": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "created": {
+                            "nullable": false,
+                            "type": "number"
+                          },
+                          "currency": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "custom_unit_amount": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "id": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "livemode": {
+                            "nullable": false,
+                            "type": "boolean"
+                          },
+                          "lookup_key": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "metadata": {
+                            "fields": {},
+                            "nullable": false,
+                            "type": "object"
+                          },
+                          "nickname": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "object": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "product": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "recurring": {
+                            "fields": {
+                              "aggregate_usage": {
+                                "nullable": true,
+                                "type": "null"
+                              },
+                              "interval": {
+                                "nullable": false,
+                                "type": "string"
+                              },
+                              "interval_count": {
+                                "nullable": false,
+                                "type": "number"
+                              },
+                              "meter": {
+                                "nullable": true,
+                                "type": "null"
+                              },
+                              "trial_period_days": {
+                                "nullable": true,
+                                "type": "null"
+                              },
+                              "usage_type": {
+                                "nullable": false,
+                                "type": "string"
+                              }
+                            },
+                            "nullable": false,
+                            "type": "object"
+                          },
+                          "tax_behavior": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "tiers_mode": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "transform_quantity": {
+                            "nullable": true,
+                            "type": "null"
+                          },
+                          "type": {
+                            "nullable": false,
+                            "type": "string"
+                          },
+                          "unit_amount": {
+                            "nullable": false,
+                            "type": "number"
+                          },
+                          "unit_amount_decimal": {
+                            "nullable": false,
+                            "type": "string"
+                          }
+                        },
+                        "nullable": false,
+                        "type": "object"
+                      },
+                      "quantity": {
+                        "nullable": false,
+                        "type": "number"
+                      },
+                      "subscription": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "tax_rates": {
+                        "items": {
+                          "nullable": false,
+                          "type": "unknown"
+                        },
+                        "nullable": false,
+                        "type": "array"
+                      }
+                    },
+                    "nullable": false,
+                    "type": "object"
+                  },
+                  "nullable": false,
+                  "type": "array"
+                },
+                "has_more": {
+                  "nullable": false,
+                  "type": "boolean"
+                },
+                "object": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "total_count": {
+                  "nullable": false,
+                  "type": "number"
+                },
+                "url": {
+                  "nullable": false,
+                  "type": "string"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "latest_invoice": {
+              "nullable": false,
+              "type": "string"
+            },
+            "livemode": {
+              "nullable": false,
+              "type": "boolean"
+            },
+            "managed_payments": {
+              "fields": {
+                "enabled": {
+                  "nullable": false,
+                  "type": "boolean"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "metadata": {
+              "fields": {
+                "accountId": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "deviceId": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "vehicleId": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "vehicleRegistrationNumber": {
+                  "nullable": false,
+                  "type": "string"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "next_pending_invoice_item_invoice": {
+              "nullable": true,
+              "type": "null"
+            },
+            "object": {
+              "nullable": false,
+              "type": "string"
+            },
+            "on_behalf_of": {
+              "nullable": true,
+              "type": "null"
+            },
+            "pause_collection": {
+              "nullable": true,
+              "type": "null"
+            },
+            "payment_settings": {
+              "fields": {
+                "payment_method_options": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "payment_method_types": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "save_default_payment_method": {
+                  "nullable": true,
+                  "type": "null"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "pending_invoice_item_interval": {
+              "nullable": true,
+              "type": "null"
+            },
+            "pending_setup_intent": {
+              "nullable": true,
+              "type": "null"
+            },
+            "pending_update": {
+              "nullable": true,
+              "type": "null"
+            },
+            "plan": {
+              "fields": {
+                "active": {
+                  "nullable": false,
+                  "type": "boolean"
+                },
+                "aggregate_usage": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "amount": {
+                  "nullable": false,
+                  "type": "number"
+                },
+                "amount_decimal": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "billing_scheme": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "created": {
+                  "nullable": false,
+                  "type": "number"
+                },
+                "currency": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "id": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "interval": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "interval_count": {
+                  "nullable": false,
+                  "type": "number"
+                },
+                "livemode": {
+                  "nullable": false,
+                  "type": "boolean"
+                },
+                "metadata": {
+                  "fields": {},
+                  "nullable": false,
+                  "type": "object"
+                },
+                "meter": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "nickname": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "object": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "product": {
+                  "nullable": false,
+                  "type": "string"
+                },
+                "tiers_mode": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "transform_usage": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "trial_period_days": {
+                  "nullable": true,
+                  "type": "null"
+                },
+                "usage_type": {
+                  "nullable": false,
+                  "type": "string"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "quantity": {
+              "nullable": false,
+              "type": "number"
+            },
+            "schedule": {
+              "nullable": true,
+              "type": "null"
+            },
+            "start_date": {
+              "nullable": false,
+              "type": "number"
+            },
+            "status": {
+              "nullable": false,
+              "type": "string"
+            },
+            "test_clock": {
+              "nullable": true,
+              "type": "null"
+            },
+            "transfer_data": {
+              "nullable": true,
+              "type": "null"
+            },
+            "trial_end": {
+              "nullable": false,
+              "type": "number"
+            },
+            "trial_settings": {
+              "fields": {
+                "end_behavior": {
+                  "fields": {
+                    "missing_payment_method": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            },
+            "trial_start": {
+              "nullable": false,
+              "type": "number"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "stripeTenant": {
+          "nullable": false,
+          "type": "string"
+        },
+        "updatedAt": {
+          "nullable": false,
+          "type": "string"
+        },
+        "vehicle": {
+          "fields": {
+            "id": {
+              "nullable": false,
+              "type": "string"
+            },
+            "registrationNumber": {
+              "nullable": false,
+              "type": "string"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "updatedAt": {
+      "nullable": false,
+      "type": "string"
+    },
+    "vin": {
+      "nullable": false,
+      "type": "string"
+    }
+  },
+  "nullable": false,
+  "type": "object"
+}

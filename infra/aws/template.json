@@ -1,0 +1,246 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "OFFLINE DRAFT ONLY: disabled, pre-registered Cognito OAuth scaffold for the Honda MAPIT MCP. Not deploy-ready; do not deploy before the Phase 8 gates.",
+  "Metadata": {
+    "Readiness": "DRAFT_NOT_DEPLOY_READY",
+    "ExpectedSessionParameterName": "honda-mapit-mcp/{EnvironmentName}/mapit-session",
+    "UserPoolDomainConstraint": "The generated domain prefix hm-<environment>-<stack-name> must be globally unique, lowercase, and at most 63 characters; choose a lowercase environment-specific stack name no longer than 55 characters.",
+    "StageTagPolicy": "Explicit stage tags omitted because current public documentation and bundled regional schema disagree on their shape; project/environment tags are explicit on the API parent, without claiming stage inheritance.",
+    "NoSecretValuesOrResources": true,
+    "NoRuntimeImplementation": true
+  },
+  "Parameters": {
+    "EnvironmentName": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedValues": ["dev", "prod"],
+      "Description": "Environment namespace. Dev and prod are separate stacks and identities."
+    },
+    "McpResourceUri": {
+      "Type": "String",
+      "Default": "https://mcp-dev.example.invalid/mcp",
+      "Description": "Placeholder canonical MCP resource URI. Must be replaced and kept identical in Cognito and API Gateway before any deployment."
+    },
+    "OAuthCallbackURL": {
+      "Type": "String",
+      "Default": "http://localhost:39031/callback/REPLACE_WITH_ACTUAL_CLIENT_CALLBACK",
+      "Description": "Placeholder only; replace with the actual pre-registered OAuth client callback before deployment."
+    }
+  },
+  "Resources": {
+    "McpApi": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-api"},
+        "ProtocolType": "HTTP",
+        "DisableExecuteApiEndpoint": true,
+        "Description": "Phase 8 draft; default public execute-api endpoint disabled.",
+        "Tags": {
+          "Project": "honda-mapit-mcp",
+          "Environment": {"Ref": "EnvironmentName"}
+        }
+      }
+    },
+    "McpApiStage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {"Ref": "McpApi"},
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "ThrottlingRateLimit": 1,
+          "ThrottlingBurstLimit": 1,
+          "DetailedMetricsEnabled": false
+        }
+      }
+    },
+    "McpUserPool": {
+      "Type": "AWS::Cognito::UserPool",
+      "Properties": {
+        "UserPoolName": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-users"},
+        "UserPoolTier": "ESSENTIALS",
+        "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": true},
+        "MfaConfiguration": "ON",
+        "EnabledMfas": ["SOFTWARE_TOKEN_MFA"],
+        "UsernameAttributes": ["email"],
+        "UserPoolTags": {
+          "Project": "honda-mapit-mcp",
+          "Environment": {"Ref": "EnvironmentName"}
+        }
+      }
+    },
+    "McpUserPoolDomain": {
+      "Type": "AWS::Cognito::UserPoolDomain",
+      "Properties": {
+        "UserPoolId": {"Ref": "McpUserPool"},
+        "Domain": {"Fn::Sub": "hm-${EnvironmentName}-${AWS::StackName}"},
+        "ManagedLoginVersion": 2
+      }
+    },
+    "McpResourceServer": {
+      "Type": "AWS::Cognito::UserPoolResourceServer",
+      "Properties": {
+        "UserPoolId": {"Ref": "McpUserPool"},
+        "Identifier": {"Ref": "McpResourceUri"},
+        "Name": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}"},
+        "Scopes": [
+          {"ScopeName": "use", "ScopeDescription": "Call the protected MCP endpoint."}
+        ]
+      }
+    },
+    "McpUserPoolClient": {
+      "Type": "AWS::Cognito::UserPoolClient",
+      "DependsOn": ["McpResourceServer", "McpUserPoolDomain"],
+      "Properties": {
+        "ClientName": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-client"},
+        "UserPoolId": {"Ref": "McpUserPool"},
+        "GenerateSecret": false,
+        "AllowedOAuthFlowsUserPoolClient": true,
+        "AllowedOAuthFlows": ["code"],
+        "AllowedOAuthScopes": [{"Fn::Sub": "${McpResourceUri}/use"}],
+        "CallbackURLs": [{"Ref": "OAuthCallbackURL"}],
+        "DefaultRedirectURI": {"Ref": "OAuthCallbackURL"},
+        "SupportedIdentityProviders": ["COGNITO"],
+        "EnableTokenRevocation": true,
+        "PreventUserExistenceErrors": "ENABLED",
+        "AccessTokenValidity": 5,
+        "IdTokenValidity": 5,
+        "RefreshTokenValidity": 1,
+        "TokenValidityUnits": {
+          "AccessToken": "minutes",
+          "IdToken": "minutes",
+          "RefreshToken": "days"
+        }
+      }
+    },
+    "McpManagedLoginBranding": {
+      "Type": "AWS::Cognito::ManagedLoginBranding",
+      "DependsOn": ["McpUserPoolDomain"],
+      "Properties": {
+        "UserPoolId": {"Ref": "McpUserPool"},
+        "ClientId": {"Ref": "McpUserPoolClient"},
+        "UseCognitoProvidedValues": true
+      }
+    },
+    "McpJwtAuthorizer": {
+      "Type": "AWS::ApiGatewayV2::Authorizer",
+      "Properties": {
+        "ApiId": {"Ref": "McpApi"},
+        "Name": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-jwt"},
+        "AuthorizerType": "JWT",
+        "IdentitySource": ["$request.header.Authorization"],
+        "JwtConfiguration": {
+          "Issuer": {"Fn::Sub": "https://cognito-idp.${AWS::Region}.amazonaws.com/${McpUserPool}"},
+          "Audience": [{"Ref": "McpResourceUri"}]
+        }
+      }
+    },
+    "McpHandlerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-handler-role"},
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-owned-log-writes"},
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+                  "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/honda-mapit-mcp-${EnvironmentName}-handler:*"}
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "Project", "Value": "honda-mapit-mcp"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}}
+        ]
+      }
+    },
+    "McpHandlerLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/lambda/honda-mapit-mcp-${EnvironmentName}-handler"},
+        "RetentionInDays": 7,
+        "Tags": [
+          {"Key": "Project", "Value": "honda-mapit-mcp"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}}
+        ]
+      },
+      "DeletionPolicy": "Delete",
+      "UpdateReplacePolicy": "Delete"
+    },
+    "McpHandler": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": ["McpHandlerLogGroup"],
+      "Properties": {
+        "FunctionName": {"Fn::Sub": "honda-mapit-mcp-${EnvironmentName}-handler"},
+        "Architectures": ["arm64"],
+        "Runtime": "python3.13",
+        "Handler": "index.handler",
+        "MemorySize": 256,
+        "Timeout": 20,
+        "ReservedConcurrentExecutions": 0,
+        "Role": {"Fn::GetAtt": ["McpHandlerRole", "Arn"]},
+        "Code": {
+          "ZipFile": "def handler(event, context):\n    return {\"statusCode\": 503, \"headers\": {\"content-type\": \"application/json\", \"cache-control\": \"no-store\"}, \"body\": \"{\\\"error\\\":\\\"service_unavailable\\\"}\"}\n"
+        },
+        "Tags": [
+          {"Key": "Project", "Value": "honda-mapit-mcp"},
+          {"Key": "Environment", "Value": {"Ref": "EnvironmentName"}}
+        ]
+      }
+    },
+    "McpLambdaIntegration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {"Ref": "McpApi"},
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationMethod": "POST",
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 20000,
+        "IntegrationUri": {"Fn::Sub": "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${McpHandler.Arn}/invocations"}
+      }
+    },
+    "McpPostRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {"Ref": "McpApi"},
+        "RouteKey": "POST /mcp",
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {"Ref": "McpJwtAuthorizer"},
+        "AuthorizationScopes": [{"Fn::Sub": "${McpResourceUri}/use"}],
+        "Target": {"Fn::Join": ["/", ["integrations", {"Ref": "McpLambdaIntegration"}]]}
+      }
+    },
+    "McpLambdaInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Ref": "McpHandler"},
+        "Principal": "apigateway.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::Sub": "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${McpApi}/$default/POST/mcp"}
+      }
+    }
+  },
+  "Outputs": {
+    "ExpectedSessionParameterName": {
+      "Description": "Reserved name for a future approved runtime integration; this template does not create the parameter or contain its value.",
+      "Value": {"Fn::Sub": "honda-mapit-mcp/${EnvironmentName}/mapit-session"}
+    }
+  }
+}
