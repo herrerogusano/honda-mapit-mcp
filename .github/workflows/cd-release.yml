@@ -28,7 +28,6 @@ jobs:
       - name: Validate workflow-run source and latest required checks
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT_PATH: ${{ github.event_path }}
           REPOSITORY: ${{ github.repository }}
           REPOSITORY_ID: ${{ github.repository_id }}
           REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
@@ -48,7 +47,7 @@ jobs:
               raise SystemExit(1)
 
           try:
-              event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8-sig"))
               event_run = event["workflow_run"]
               event_run_id = event_run.get("id")
               event_sha = event_run.get("head_sha")

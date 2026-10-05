@@ -374,7 +374,7 @@ def _execute_source_gate(monkeypatch, tmp_path, *, mutate_rest=None):
     }), encoding="utf-8")
     output_path = tmp_path / "output.txt"
     for name, value in {
-        "EVENT_PATH": str(event_path), "REPOSITORY": repo,
+        "GITHUB_EVENT_PATH": str(event_path), "REPOSITORY": repo,
         "REPOSITORY_ID": "7654321", "REPOSITORY_OWNER_ID": "1234567",
         "WORKFLOW_RUN_ID": str(run_id), "DEFAULT_SHA": sha,
         "GITHUB_OUTPUT": str(output_path),
