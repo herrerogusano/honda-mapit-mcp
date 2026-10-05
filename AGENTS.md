@@ -96,6 +96,15 @@ identity_mismatch. AWS exchange returned HTTP 200; caller-identity was not reach
 The failing field remains unknown. This dev allowance is consumed; no prod
 attempt or blind format repair is approved. A bounded existing-audit-event read
 is proposed as the next gate, not performed or authorized.
+That audit gate was subsequently approved and completed: one regional account
+identity read plus two bounded, single-attempt lookups of the same dev job-time
+interval, without pagination or another token exchange. Both matched one exact
+event. Audience/subject/role/session checks matched; provider matched the exact
+owned OIDC-provider ARN rather than URL/host. Only booleans were emitted, no raw
+audit payload retained. AWS's CloudTrail OIDC example confirms ARN representation;
+the actual SDK payload was not retained. A strict URL-or-exact-owned-ARN repair
+is proposed, not implemented/approved by that read-only gate; another dev proof
+requires a new bounded allowance. See docs/cd-sts-proof-contract.md.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public

@@ -141,3 +141,30 @@ relax identity checks, replay this run or request another token automatically.
 The next diagnostic choice is a separately bounded read of the existing AWS
 audit event, filtering in memory to this exact role/session/time and emitting
 only field-match booleans; this is proposed, not authorized or performed.
+
+## Authorized existing-event audit read
+
+The owner subsequently authorized the bounded audit investigation. One regional
+STS account-identity read and two single-attempt CloudTrail lookups inspected the
+same narrow job-time interval in eu-west-1, at most ten events each with no
+pagination. Each query matched exactly the requested role/session event; neither
+was truncated. Responses remained in process memory and only comparison
+booleans were emitted. No new web-identity exchange was requested.
+
+The successful event's audience, subject digest, assumed-role ARN and session-ID
+suffix matched; a credentials object was present. Its `provider` matched exactly
+the privately verified owned OIDC-provider ARN, not the issuer URL or bare host.
+This is concrete audit evidence of the representation mismatch. The primary
+[CloudTrail STS documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/cloudtrail-integration.html)
+states that these events contain response elements except the secret access key,
+and its OIDC example represents `provider` as an IAM OIDC-provider ARN. The STS
+API reference's issuer wording differs. Do not expose raw audit data, which can
+include temporary session tokens; the actual SDK response was not retained.
+
+Proposed correction: accept only the exact configured issuer URL or the exact
+owned IAM OIDC-provider ARN derived from the already validated expected account
+and fixed GitHub issuer. Retain exact token issuer/audience/subject and all
+role/session/caller checks; reject other accounts/providers and malformed forms.
+This read-only authorization did not approve that implementation or another
+proof. Independent offline acceptance and a new dev-only attempt allowance
+remain separate before verifying actual SDK interoperability.
