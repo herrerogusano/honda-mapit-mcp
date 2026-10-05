@@ -28,6 +28,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "prod_bootstrap_draft", "prod_controls_draft", "prod_artifacts_draft",
         "prod_oauth_draft", "prod_runtime_draft",
         "cd_identity_legacy_draft", "cd_identity_immutable_draft",
+        "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
@@ -169,6 +170,30 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
                 {"Sid": "DenyEverythingExceptCallerIdentity", "Effect": "Deny",
                  "NotAction": "sts:GetCallerIdentity", "Resource": "*"},
             ]
+
+    for label, subject_format in (
+        ("cd_delivery_legacy_draft", "legacy_environment"),
+        ("cd_delivery_immutable_draft", "immutable_environment"),
+    ):
+        delivery = json.loads(documents[label])
+        assert delivery["Metadata"]["Readiness"] == "NOT_DEPLOY_READY"
+        assert delivery["Metadata"]["ApiGatewayHttpApiResourceScopePendingClosedValidation"] is True
+        assert delivery["Metadata"]["ApiGatewayPropertyChangeGuardIsTemplateOnly"] is True
+        assert set(delivery["Resources"]) == {
+            "ProdCdExecutorBoundary", "ProdCdExecutorRole",
+            "ProdCdCloudFormationBoundary", "ProdCdCloudFormationRole",
+        }
+        executor_trust = delivery["Resources"]["ProdCdExecutorRole"]["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]
+        expected_subject = (
+            f"repo:herrerogusano/honda-mapit-mcp:environment:prod"
+            if subject_format == "legacy_environment"
+            else f"repo:herrerogusano@{synthetic_owner}/honda-mapit-mcp@{synthetic_repository}:environment:prod"
+        )
+        assert executor_trust["Condition"]["StringEquals"]["token.actions.githubusercontent.com:sub"] == expected_subject
+        cfn_role = delivery["Resources"]["ProdCdCloudFormationRole"]["Properties"]
+        assert cfn_role["AssumeRolePolicyDocument"]["Statement"][0]["Principal"] == {
+            "Service": "cloudformation.amazonaws.com"
+        }
 
 
 def test_socket_and_dns_guard_restores_after_success_and_exception():
