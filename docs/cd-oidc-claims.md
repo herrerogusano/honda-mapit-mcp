@@ -7,7 +7,9 @@ exchange the token, call AWS, or deploy anything.
 
 The local validator checks the token's bounded, duplicate-free JWT header and
 claims against the runner's repository, owner, ref, SHA, environment, audience,
-and issuer. It recognizes only the documented legacy and immutable environment
+and issuer. Repository and owner IDs come directly from GitHub's default runner
+environment, not explicit workflow `env` entries that Actions prints in step
+setup logs. It recognizes only the documented legacy and immutable environment
 `sub` shapes. GitHub notes that the immutable shape depends on repository age or
 explicit opt-in, so discovery accepts either exact shape and reports only its
 category plus a SHA-256 digest of the subject.
