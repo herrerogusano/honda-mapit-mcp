@@ -154,8 +154,6 @@ def _parse_bindings(raw: Any) -> dict[str, Any]:
         config = MapitConfig(**config_data)
         if config.email is not None or config.password is not None or config.discovery_enabled is not False:
             raise ValueError
-        if config.user_pool_id != policy.user_pool_id or config.user_pool_client_id != policy.client_id:
-            raise ValueError
         if type(value["parameter_version"]) is not int or value["parameter_version"] != 1:
             raise ValueError
         if value["parameter_tier"] != "Standard" or type(value["parameter_tier"]) is not str:

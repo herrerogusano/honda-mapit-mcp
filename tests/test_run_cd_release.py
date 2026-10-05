@@ -45,6 +45,31 @@ def test_private_binding_is_strict_and_retains_attachment_mode():
     assert bindings["_validated_policy"].environment == "prod"
 
 
+def test_upstream_mapit_identity_is_independent_of_owner_cognito_identity():
+    value = _bindings()
+    value["mapit_config"]["user_pool_id"] = "eu-west-1_Z9y8X7w6V"
+    value["mapit_config"]["user_pool_client_id"] = "MapitClientABC123"
+
+    bindings = release._parse_bindings(json.dumps(value))
+
+    assert bindings["_validated_policy"].user_pool_id == "eu-west-1_A1b2C3d4E"
+    assert bindings["_validated_policy"].client_id == "ProdClient123456"
+    assert bindings["_validated_mapit_config"].user_pool_id == "eu-west-1_Z9y8X7w6V"
+    assert bindings["_validated_mapit_config"].user_pool_client_id == "MapitClientABC123"
+
+
+def test_distinct_identity_validation_remains_independent():
+    value = _bindings()
+    value["mapit_config"]["user_pool_id"] = "eu-west-1_Z9y8X7w6V"
+    value["mapit_config"]["user_pool_client_id"] = "MapitClientABC123"
+    value["mapit_config"]["core_api_url"] = "https://untrusted.example/api"
+
+    with pytest.raises(release.ReleaseError) as error:
+        release._parse_bindings(json.dumps(value))
+
+    assert error.value.category == "binding_invalid"
+
+
 @pytest.mark.parametrize("mutate", [
     lambda b: b.update(initial_service_role_attachment=1),
     lambda b: b.update(extra="canary"),
