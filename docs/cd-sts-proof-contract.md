@@ -62,3 +62,26 @@ metadata presence read back. GitHub does not return plaintext secret values,
 so this is a submission/metadata receipt, not a readable-value attestation.
 No AWS credentials or tokens were uploaded. Do not overwrite/replay these
 bindings; the actual protected STS runs and their approvals remain pending.
+
+## First authorized live proof — 2026-10-05
+
+The owner separately authorized exactly two identity-only runs. Fresh GitHub
+source CI, branch/environment protections, disabled administrator bypass and
+secret metadata checks passed. A separate read-only probe verified the exact
+four-resource identity stack, both closed roles/boundaries and existing OIDC
+provider with sixteen reads; it did not alter the original creation journal
+or extend its immutable window.
+
+- [Dev run](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37338161383):
+  source `726929c505ca11c21446ecf9a35c6d689773f027`, failed.
+- [Prod run](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37338166318):
+  source `6be4b6738ab100bae8b0944717c04e97a82e57d3`, failed.
+
+Both received normal protected-environment approval and emitted only the fixed
+`proof_failed` category. That category does not identify whether failure occurred
+at token acquisition, claims validation, STS exchange or response verification.
+Neither run establishes successful AWS identity interoperability. No deployment
+or MAPIT operation occurred. The two-run allowance is consumed: do not rerun,
+relax trust/verification or broaden role permissions automatically. Investigate
+offline and add reviewed, non-sensitive failure-stage diagnostics before seeking
+a new bounded proof allowance.
