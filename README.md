@@ -11,8 +11,10 @@ credentials, motorcycle data or a public signup flow.
 
 Invitation-only multiuser HTTP/Lambda components are tested offline with
 synthetic accounts, not enabled in production. Telegram remains owner-only.
-The [CD readiness workflow](docs/cd-contract.md) is preparation without AWS
-permissions, not an operational deployment pipeline. Development is reviewed
+The protected production release and retained-artifact recovery workflows are
+implemented and independently tested offline. Live bootstrap, deployment and
+recovery acceptance are tracked in [CD status](docs/cd-delivery-implementation.md);
+until those receipts pass, complete operational CD is not claimed. Development is reviewed
 in [PR #1](https://github.com/herrerogusano/honda-mapit-mcp/pull/1); pending
 changes are not implicitly merged into `main` or deployed.
 

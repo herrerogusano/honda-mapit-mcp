@@ -1,0 +1,284 @@
+name: Production code-only release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: honda-mapit-cd-prod
+  cancel-in-progress: false
+
+jobs:
+  source-gate:
+    name: Verify latest successful main CI
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+    outputs:
+      source_sha: ${{ steps.gate.outputs.source_sha }}
+    steps:
+      - name: Validate workflow-run source and latest required checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_PATH: ${{ github.event_path }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+          REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          DEFAULT_SHA: ${{ github.sha }}
+        shell: bash
+        id: gate
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          from pathlib import Path
+
+          def fail():
+              print("source_gate_failed")
+              raise SystemExit(1)
+
+          try:
+              event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
+              run = event["workflow_run"]
+              sha = run["head_sha"]
+              if (os.environ["REPOSITORY"] != "herrerogusano/honda-mapit-mcp"
+                  or run["event"] != "push" or run["head_branch"] != "main"
+                  or run["conclusion"] != "success" or run["head_repository"]["full_name"] != os.environ["REPOSITORY"]
+                  or run.get("name") != "CI" or run.get("path") != ".github/workflows/ci.yml"
+                  or type(sha) is not str or re.fullmatch(r"[0-9a-f]{40}", sha) is None
+                  or sha != os.environ["DEFAULT_SHA"]
+                  or str(run["head_repository"].get("id")) != os.environ["REPOSITORY_ID"]
+                  or str(event["repository"].get("id")) != os.environ["REPOSITORY_ID"]
+                  or str(event["repository"].get("owner", {}).get("id")) != os.environ["REPOSITORY_OWNER_ID"]):
+                  fail()
+              def api(path):
+                  proc = subprocess.run(["gh", "api", path], check=False, capture_output=True, text=True, timeout=20)
+                  if proc.returncode != 0:
+                      fail()
+                  return json.loads(proc.stdout)
+              workflow = api("repos/" + os.environ["REPOSITORY"] + "/actions/workflows/ci.yml")
+              if run.get("workflow_id") != workflow.get("id") or workflow.get("path") != ".github/workflows/ci.yml":
+                  fail()
+              branch = api("repos/" + os.environ["REPOSITORY"] + "/branches/main")
+              if branch["commit"]["sha"] != sha:
+                  fail()
+              checks = api("repos/" + os.environ["REPOSITORY"] + "/commits/" + sha + "/check-runs?filter=latest&per_page=100")
+              required = {
+                  "Offline geographic queries and public boundary",
+                  "Offline CloudFormation schemas",
+                  "Offline shutdown SDK contract",
+                  "ubuntu-latest / Python 3.11",
+                  "ubuntu-latest / Python 3.12",
+                  "ubuntu-latest / Python 3.13",
+                  "windows-latest / Python 3.13",
+                  "Known dependency advisories",
+              }
+              if checks.get("total_count") != len(checks.get("check_runs", [])):
+                  fail()
+              selected = [item for item in checks["check_runs"] if item.get("name") in required]
+              actual = {(item.get("name"), item.get("app", {}).get("id"), item.get("conclusion")) for item in selected
+                        if item.get("status") == "completed" and item.get("head_sha") == sha}
+              expected = {(name, 15368, "success") for name in required}
+              if len(selected) != len(required) or actual != expected:
+                  fail()
+              output = Path(os.environ["GITHUB_OUTPUT"])
+              output.write_text("source_sha=" + sha + "\n", encoding="utf-8")
+          except SystemExit:
+              raise
+          except Exception:
+              fail()
+          PY
+
+  arm-runtime-probe:
+    name: Network-disabled ARM runtime probe
+    needs: source-gate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact verified source
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.source-gate.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify checked-out source SHA
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+        id: checked
+        shell: bash
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          ACTUAL="$(git rev-parse HEAD)"
+          test "$ACTUAL" = "$SOURCE_SHA"
+          echo "sha=$ACTUAL" >> "$GITHUB_OUTPUT"
+      - name: Reject ambient provider credentials
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(AWS_|BOTO)/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "provider credential source present"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install local probe runtime
+        run: python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test,geography]"
+      - name: Download hash-locked ARM runtime wheels
+        env:
+          WHEEL_DIR: ${{ runner.temp }}/runtime-wheels
+          GEO_WHEEL_DIR: ${{ runner.temp }}/geography-wheels
+        shell: bash
+        run: |
+          mkdir -p "$WHEEL_DIR" "$GEO_WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/runtime-requirements.txt --dest "$WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/geography-runtime-requirements.txt --dest "$GEO_WHEEL_DIR"
+      - name: Pull the pinned public Lambda ARM image
+        shell: bash
+        run: |
+          IMAGE="$(python -c 'from scripts.probe_aws_prod_runtime_arm import IMAGE; print(IMAGE)')"
+          docker pull "$IMAGE"
+      - name: Probe production package offline with synthetic fixtures
+        env:
+          WHEEL_DIR: ${{ runner.temp }}/runtime-wheels
+          GEO_WHEEL_DIR: ${{ runner.temp }}/geography-wheels
+        run: python -m scripts.probe_aws_prod_runtime_arm --wheel-dir "$WHEEL_DIR" --geography-wheel-dir "$GEO_WHEEL_DIR"
+
+  release:
+    name: Close and update production runtime
+    needs: [source-gate, arm-runtime-probe]
+    if: needs.source-gate.result == 'success' && needs.arm-runtime-probe.result == 'success'
+    runs-on: ubuntu-24.04-arm
+    environment: prod
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      ready: ${{ steps.release.outputs.ready }}
+      artifact_sha256: ${{ steps.release.outputs.artifact_sha256 }}
+      manifest_sha256: ${{ steps.release.outputs.manifest_sha256 }}
+      authorization_start: ${{ steps.release.outputs.authorization_start }}
+      authorization_until: ${{ steps.release.outputs.authorization_until }}
+    steps:
+      - name: Checkout exact verified source
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.source-gate.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify checked-out source and reject ambient credentials
+        id: checked
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+        shell: bash
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          ACTUAL="$(git rev-parse HEAD)"
+          test "$ACTUAL" = "$SOURCE_SHA"
+          echo "sha=$ACTUAL" >> "$GITHUB_OUTPUT"
+          if env | awk -F= '$1 ~ /^(AWS_|BOTO)/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "provider credential source present"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install fixed build/runtime tools and download hash-locked ARM wheels
+        env:
+          WHEEL_DIR: ${{ runner.temp }}/runtime-wheels
+          GEO_WHEEL_DIR: ${{ runner.temp }}/geography-wheels
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[geography]"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+          mkdir -p "$WHEEL_DIR" "$GEO_WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/runtime-requirements.txt --dest "$WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/geography-runtime-requirements.txt --dest "$GEO_WHEEL_DIR"
+      - name: Pull pinned ARM image and validate the real-bound candidate without network
+        shell: bash
+        run: |
+          IMAGE="$(python -c 'from scripts.probe_aws_prod_runtime_arm import IMAGE; print(IMAGE)')"
+          docker pull "$IMAGE"
+      - name: Build, publish, independently close, and update once
+        id: release
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+          TARGET: prod
+          GITHUB_ENVIRONMENT: prod
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          MAPIT_CD_BINDING_JSON: ${{ secrets.MAPIT_CD_BINDING_JSON }}
+          MAPIT_CD_RUNTIME_WHEEL_DIR: ${{ runner.temp }}/runtime-wheels
+          MAPIT_CD_GEOGRAPHY_WHEEL_DIR: ${{ runner.temp }}/geography-wheels
+          CHECKED_OUT_SHA: ${{ steps.checked.outputs.sha }}
+        run: python -m scripts.run_cd_release build-update
+
+  reopen:
+    name: Independently approved production reopen
+    needs: [source-gate, release]
+    if: needs.release.result == 'success' && needs.release.outputs.ready == 'true'
+    runs-on: ubuntu-24.04-arm
+    environment: prod
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout exact verified source
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.source-gate.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify checkout and reject ambient credentials
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+        id: checked
+        shell: bash
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          ACTUAL="$(git rev-parse HEAD)"
+          test "$ACTUAL" = "$SOURCE_SHA"
+          echo "sha=$ACTUAL" >> "$GITHUB_OUTPUT"
+          if env | awk -F= '$1 ~ /^(AWS_|BOTO)/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "provider credential source present"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install fixed identity SDK
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[geography]"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+      - name: Reopen only the matching verified journal and artifact
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+          TARGET: prod
+          GITHUB_ENVIRONMENT: prod
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          MAPIT_CD_BINDING_JSON: ${{ secrets.MAPIT_CD_BINDING_JSON }}
+          CHECKED_OUT_SHA: ${{ steps.checked.outputs.sha }}
+          AUTHORIZATION_START: ${{ needs.release.outputs.authorization_start }}
+          AUTHORIZATION_UNTIL: ${{ needs.release.outputs.authorization_until }}
+          ARTIFACT_SHA256: ${{ needs.release.outputs.artifact_sha256 }}
+          MANIFEST_SHA256: ${{ needs.release.outputs.manifest_sha256 }}
+        run: python -m scripts.run_cd_release reopen

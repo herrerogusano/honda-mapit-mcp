@@ -1,0 +1,210 @@
+name: Protected production retained-artifact recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_sha256:
+        description: Exact SHA-256 of a previously retained runtime ZIP
+        required: true
+        type: string
+      manifest_sha256:
+        description: Exact SHA-256 of that ZIP's production manifest
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: honda-mapit-cd-prod
+  cancel-in-progress: false
+
+jobs:
+  source-gate:
+    name: Verify current main and required CI checks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+    outputs:
+      source_sha: ${{ steps.gate.outputs.source_sha }}
+    steps:
+      - name: Verify current main commit and its latest eight required checks
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+          REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+
+          def fail():
+              print("source_gate_failed")
+              raise SystemExit(1)
+
+          def api(path):
+              proc = subprocess.run(["gh", "api", path], check=False, capture_output=True, text=True, timeout=20)
+              if proc.returncode != 0:
+                  fail()
+              return json.loads(proc.stdout)
+
+          try:
+              repo = os.environ["REPOSITORY"]
+              sha = os.environ["SOURCE_SHA"]
+              if repo != "herrerogusano/honda-mapit-mcp" or re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+                  fail()
+              branch = api("repos/" + repo + "/branches/main")
+              if branch["commit"]["sha"] != sha:
+                  fail()
+              checks = api("repos/" + repo + "/commits/" + sha + "/check-runs?filter=latest&per_page=100")
+              required = {
+                  "Offline geographic queries and public boundary", "Offline CloudFormation schemas",
+                  "Offline shutdown SDK contract", "ubuntu-latest / Python 3.11",
+                  "ubuntu-latest / Python 3.12", "ubuntu-latest / Python 3.13",
+                  "windows-latest / Python 3.13", "Known dependency advisories",
+              }
+              if checks.get("total_count") != len(checks.get("check_runs", [])):
+                  fail()
+              selected = [c for c in checks["check_runs"] if c.get("name") in required]
+              actual = {(c.get("name"), c.get("app", {}).get("id"), c.get("conclusion")) for c in selected
+                        if c.get("status") == "completed" and c.get("head_sha") == sha}
+              if len(selected) != len(required) or actual != {(name, 15368, "success") for name in required}:
+                  fail()
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                  output.write("source_sha=" + sha + "\n")
+          except SystemExit:
+              raise
+          except Exception:
+              fail()
+          PY
+
+  rollback-update:
+    name: Close and restore exact retained runtime
+    needs: source-gate
+    if: needs.source-gate.result == 'success'
+    runs-on: ubuntu-24.04-arm
+    environment: prod
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      ready: ${{ steps.rollback.outputs.ready }}
+      artifact_sha256: ${{ steps.rollback.outputs.artifact_sha256 }}
+      manifest_sha256: ${{ steps.rollback.outputs.manifest_sha256 }}
+      authorization_start: ${{ steps.rollback.outputs.authorization_start }}
+      authorization_until: ${{ steps.rollback.outputs.authorization_until }}
+    steps:
+      - name: Checkout current main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.source-gate.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify exact checkout and reject ambient AWS sources
+        id: checked
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+        shell: bash
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          ACTUAL="$(git rev-parse HEAD)"
+          test "$ACTUAL" = "$SOURCE_SHA"
+          echo "sha=$ACTUAL" >> "$GITHUB_OUTPUT"
+          if env | awk -F= '$1 ~ /^(AWS_|BOTO)/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "provider credential source present"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install explicit runtime and SDK support
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[geography]"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+      - name: Pull pinned public Lambda ARM image before any identity request
+        shell: bash
+        run: |
+          IMAGE="$(python -c 'from scripts.probe_aws_prod_runtime_arm import IMAGE; print(IMAGE)')"
+          docker pull "$IMAGE"
+      - name: Restore only the exact retained object
+        id: rollback
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+          CHECKED_OUT_SHA: ${{ steps.checked.outputs.sha }}
+          TARGET: prod
+          GITHUB_ENVIRONMENT: prod
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          MAPIT_CD_BINDING_JSON: ${{ secrets.MAPIT_CD_BINDING_JSON }}
+          ROLLBACK_ARTIFACT_SHA256: ${{ inputs.artifact_sha256 }}
+          ROLLBACK_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+        run: python -m scripts.run_cd_recovery rollback-update
+
+  reopen:
+    name: Separately approved recovery reopen
+    needs: [source-gate, rollback-update]
+    if: needs.rollback-update.result == 'success' && needs.rollback-update.outputs.ready == 'true'
+    runs-on: ubuntu-24.04-arm
+    environment: prod
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout current main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.source-gate.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify checkout and reject ambient AWS sources
+        id: checked
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+        shell: bash
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          ACTUAL="$(git rev-parse HEAD)"
+          test "$ACTUAL" = "$SOURCE_SHA"
+          echo "sha=$ACTUAL" >> "$GITHUB_OUTPUT"
+          if env | awk -F= '$1 ~ /^(AWS_|BOTO)/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "provider credential source present"
+            exit 1
+          fi
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+      - name: Install explicit runtime and SDK support
+        run: |
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[geography]"
+          python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+      - name: Pull pinned public Lambda ARM image before any identity request
+        shell: bash
+        run: |
+          IMAGE="$(python -c 'from scripts.probe_aws_prod_runtime_arm import IMAGE; print(IMAGE)')"
+          docker pull "$IMAGE"
+      - name: Reopen exact rollback journal after separate approval
+        env:
+          SOURCE_SHA: ${{ needs.source-gate.outputs.source_sha }}
+          CHECKED_OUT_SHA: ${{ steps.checked.outputs.sha }}
+          TARGET: prod
+          GITHUB_ENVIRONMENT: prod
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          MAPIT_CD_BINDING_JSON: ${{ secrets.MAPIT_CD_BINDING_JSON }}
+          AUTHORIZATION_START: ${{ needs.rollback-update.outputs.authorization_start }}
+          AUTHORIZATION_UNTIL: ${{ needs.rollback-update.outputs.authorization_until }}
+          ARTIFACT_SHA256: ${{ needs.rollback-update.outputs.artifact_sha256 }}
+          MANIFEST_SHA256: ${{ needs.rollback-update.outputs.manifest_sha256 }}
+        run: python -m scripts.run_cd_recovery reopen

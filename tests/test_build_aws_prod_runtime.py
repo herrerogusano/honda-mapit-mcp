@@ -69,6 +69,32 @@ def build(inputs, **overrides):
     return builder.build_prod_runtime_archive(wheels, jwks, output, **args)
 
 
+def test_source_provenance_is_opt_in_deterministic_and_changes_package(inputs):
+    legacy = build(inputs)
+    inputs[3].unlink()
+    tagged = build(inputs, source_sha="a" * 40)
+    assert tagged.sha256 != legacy.sha256
+    with zipfile.ZipFile(inputs[3]) as archive:
+        assert json.loads(archive.read("mapit/source-provenance.json")) == {
+            "schema": 1, "source_sha": "a" * 40,
+        }
+        manifest = archive.read(f"mapit/{builder.MANIFEST_FILENAME}")
+    inputs[3].unlink()
+    assert build(inputs, source_sha="a" * 40) == tagged
+    inputs[3].unlink()
+    build(inputs)
+    with zipfile.ZipFile(inputs[3]) as archive:
+        assert "mapit/source-provenance.json" not in archive.namelist()
+        assert archive.read(f"mapit/{builder.MANIFEST_FILENAME}") == manifest
+
+
+@pytest.mark.parametrize("source_sha", ["0" * 40, "A" * 40, "a" * 39, True, 1, "secret"])
+def test_source_provenance_rejects_invalid_source(inputs, source_sha):
+    with pytest.raises(builder.ProdBuildError, match="production_source_invalid"):
+        build(inputs, source_sha=source_sha)
+    assert not inputs[3].exists()
+
+
 def test_build_is_deterministic_prod_only_and_manifest_has_no_secrets(inputs):
     first = build(inputs)
     first_bytes = inputs[3].read_bytes()
