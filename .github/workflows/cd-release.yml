@@ -38,7 +38,7 @@ jobs:
         id: gate
         run: |
           python - <<'PY'
-          import json, os, re, subprocess, sys
+          import json, os, re, subprocess
           from pathlib import Path
 
           def fail():
@@ -47,30 +47,52 @@ jobs:
 
           try:
               event = json.loads(Path(os.environ["EVENT_PATH"]).read_text(encoding="utf-8"))
-              run = event["workflow_run"]
-              sha = run["head_sha"]
-              if (os.environ["REPOSITORY"] != "herrerogusano/honda-mapit-mcp"
-                  or run["event"] != "push" or run["head_branch"] != "main"
-                  or run["conclusion"] != "success" or run["head_repository"]["full_name"] != os.environ["REPOSITORY"]
-                  or run.get("name") != "CI" or run.get("path") != ".github/workflows/ci.yml"
-                  or type(sha) is not str or re.fullmatch(r"[0-9a-f]{40}", sha) is None
-                  or sha != os.environ["DEFAULT_SHA"]
-                  or str(run["head_repository"].get("id")) != os.environ["REPOSITORY_ID"]
-                  or str(event["repository"].get("id")) != os.environ["REPOSITORY_ID"]
-                  or str(event["repository"].get("owner", {}).get("id")) != os.environ["REPOSITORY_OWNER_ID"]):
+              event_run = event["workflow_run"]
+              event_run_id = event_run.get("id")
+              event_sha = event_run.get("head_sha")
+              repo = os.environ["REPOSITORY"]
+              repo_id = os.environ["REPOSITORY_ID"]
+              owner_id = os.environ["REPOSITORY_OWNER_ID"]
+              run_id = os.environ["WORKFLOW_RUN_ID"]
+              if (repo != "herrerogusano/honda-mapit-mcp"
+                  or re.fullmatch(r"[1-9][0-9]*", run_id) is None
+                  or type(event_run_id) is not int or str(event_run_id) != run_id
+                  or type(event_sha) is not str or re.fullmatch(r"[0-9a-f]{40}", event_sha) is None
+                  or re.fullmatch(r"[1-9][0-9]*", repo_id) is None
+                  or re.fullmatch(r"[1-9][0-9]*", owner_id) is None
+                  or type(event.get("repository")) is not dict
+                  or type(event["repository"].get("id")) is not int
+                  or str(event["repository"]["id"]) != repo_id
+                  or type(event["repository"].get("owner")) is not dict
+                  or type(event["repository"]["owner"].get("id")) is not int
+                  or str(event["repository"]["owner"]["id"]) != owner_id):
                   fail()
               def api(path):
                   proc = subprocess.run(["gh", "api", path], check=False, capture_output=True, text=True, timeout=20)
                   if proc.returncode != 0:
                       fail()
                   return json.loads(proc.stdout)
-              workflow = api("repos/" + os.environ["REPOSITORY"] + "/actions/workflows/ci.yml")
-              if run.get("workflow_id") != workflow.get("id") or workflow.get("path") != ".github/workflows/ci.yml":
+              run = api("repos/" + repo + "/actions/runs/" + run_id)
+              sha = run.get("head_sha")
+              if (type(run) is not dict or type(run.get("id")) is not int or str(run["id"]) != run_id
+                  or sha != event_sha or type(sha) is not str
+                  or re.fullmatch(r"[0-9a-f]{40}", sha) is None or sha != os.environ["DEFAULT_SHA"]
+                  or run.get("event") != "push" or run.get("head_branch") != "main"
+                  or run.get("conclusion") != "success" or run.get("name") != "CI"
+                  or run.get("path") != ".github/workflows/ci.yml"
+                  or type(run.get("head_repository")) is not dict
+                  or run["head_repository"].get("full_name") != repo
+                  or type(run["head_repository"].get("id")) is not int
+                  or str(run["head_repository"]["id"]) != repo_id):
                   fail()
-              branch = api("repos/" + os.environ["REPOSITORY"] + "/branches/main")
+              workflow = api("repos/" + repo + "/actions/workflows/ci.yml")
+              if (type(run.get("workflow_id")) is not int or run["workflow_id"] != workflow.get("id")
+                  or workflow.get("path") != ".github/workflows/ci.yml"):
+                  fail()
+              branch = api("repos/" + repo + "/branches/main")
               if branch["commit"]["sha"] != sha:
                   fail()
-              checks = api("repos/" + os.environ["REPOSITORY"] + "/commits/" + sha + "/check-runs?filter=latest&per_page=100")
+              checks = api("repos/" + repo + "/commits/" + sha + "/check-runs?filter=latest&per_page=100")
               required = {
                   "Offline geographic queries and public boundary",
                   "Offline CloudFormation schemas",

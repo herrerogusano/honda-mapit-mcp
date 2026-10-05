@@ -314,3 +314,96 @@ def test_release_workflow_is_readiness_gated_and_never_uses_deploy_action():
     assert "AWS_ACCESS_KEY_ID" not in workflow and "AWS_SECRET_ACCESS_KEY" not in workflow
     assert "GITHUB_OUTPUT" in workflow
     assert "MAPIT_CD_BINDING_JSON" in workflow
+
+
+def _source_gate_script():
+    from pathlib import Path
+    import textwrap
+
+    lines = Path(".github/workflows/cd-release.yml").read_text(encoding="utf-8").splitlines()
+    start = lines.index("          python - <<'PY'") + 1
+    end = lines.index("          PY", start)
+    return textwrap.dedent("\n".join(line[10:] for line in lines[start:end]))
+
+
+def _source_gate_documents():
+    sha = "a" * 40
+    repo = "herrerogusano/honda-mapit-mcp"
+    run_id = 37357964963
+    checks = [
+        "Offline geographic queries and public boundary", "Offline CloudFormation schemas",
+        "Offline shutdown SDK contract", "ubuntu-latest / Python 3.11",
+        "ubuntu-latest / Python 3.12", "ubuntu-latest / Python 3.13",
+        "windows-latest / Python 3.13", "Known dependency advisories",
+    ]
+    return sha, repo, run_id, {
+        f"repos/{repo}/actions/runs/{run_id}": {
+            "id": run_id, "head_sha": sha, "event": "push", "head_branch": "main",
+            "conclusion": "success", "name": "CI", "path": ".github/workflows/ci.yml",
+            "workflow_id": 365146925,
+            "head_repository": {"full_name": repo, "id": 7654321},
+        },
+        f"repos/{repo}/actions/workflows/ci.yml": {"id": 365146925, "path": ".github/workflows/ci.yml"},
+        f"repos/{repo}/branches/main": {"commit": {"sha": sha}},
+        f"repos/{repo}/commits/{sha}/check-runs?filter=latest&per_page=100": {
+            "total_count": 8,
+            "check_runs": [
+                {"name": name, "app": {"id": 15368}, "conclusion": "success",
+                 "status": "completed", "head_sha": sha}
+                for name in checks
+            ],
+        },
+    }
+
+
+def _execute_source_gate(monkeypatch, tmp_path, *, mutate_rest=None):
+    import json
+    import subprocess
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    sha, repo, run_id, documents = _source_gate_documents()
+    if mutate_rest is not None:
+        mutate_rest(documents[f"repos/{repo}/actions/runs/{run_id}"])
+    # Deliberately omit webhook path, name, head_repository, and workflow_id:
+    # those fields are taken from the authoritative REST run record.
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps({
+        "workflow_run": {"id": run_id, "head_sha": sha},
+        "repository": {"id": 7654321, "owner": {"id": 1234567}},
+    }), encoding="utf-8")
+    output_path = tmp_path / "output.txt"
+    for name, value in {
+        "EVENT_PATH": str(event_path), "REPOSITORY": repo,
+        "REPOSITORY_ID": "7654321", "REPOSITORY_OWNER_ID": "1234567",
+        "WORKFLOW_RUN_ID": str(run_id), "DEFAULT_SHA": sha,
+        "GITHUB_OUTPUT": str(output_path),
+    }.items():
+        monkeypatch.setenv(name, value)
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args[-1])
+        payload = documents.get(args[-1])
+        return SimpleNamespace(returncode=0 if payload is not None else 1,
+                               stdout=json.dumps(payload) if payload is not None else "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    exec(compile(_source_gate_script(), "cd-release-source-gate", "exec"), {})
+    return calls, output_path.read_text(encoding="utf-8")
+
+
+def test_source_gate_uses_rest_run_when_webhook_omits_optional_metadata(monkeypatch, tmp_path):
+    calls, output = _execute_source_gate(monkeypatch, tmp_path)
+    assert calls[0] == "repos/herrerogusano/honda-mapit-mcp/actions/runs/37357964963"
+    assert output == "source_sha=" + "a" * 40 + "\n"
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda run: run.update(id=37357964964),
+    lambda run: run.update(head_sha="b" * 40),
+    lambda run: run["head_repository"].update(id=99999999),
+])
+def test_source_gate_fails_closed_on_rest_run_id_sha_or_repository_mismatch(monkeypatch, tmp_path, mutate):
+    with pytest.raises(SystemExit):
+        _execute_source_gate(monkeypatch, tmp_path, mutate_rest=mutate)
