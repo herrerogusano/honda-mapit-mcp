@@ -34,11 +34,14 @@ remain outside GitHub artifacts/logs and this public repository.
 2. Review and approve the protected `prod` update job. Candidate acceptance and
    scoped OIDC precede conditional publication and the closed one-shot update.
 3. After exact update readbacks, approve the separate `prod` reopen job. The
-   original one-hour authority and 900-second closed interval are not extended.
+   original one-hour authority and 900-second reopening allowance are not extended.
+   Approval, runner setup and verification consume that allowance. Expiry requires
+   fresh recovery; it is not a guaranteed maximum outage duration.
 4. For recovery, dispatch `cd-recovery.yml` on current green `main` with the exact
    retained ZIP and manifest SHA-256 values, then review its two protected jobs.
-   A fresh run/journal is required; never rerun consumed write intents. A failed
-   verification remains closed until a separately verified recovery succeeds.
+   A fresh run/journal is required; never rerun consumed write intents. After
+   closure, failed verification does not authorize reopening: use a fresh approved
+   recovery. A preflight failure can leave an already-open service unchanged.
 
 `develop` has protected CI/promotion and identity validation, not a retained dev
 application deployment. The deleted synthetic dev rehearsal was not recreated.
