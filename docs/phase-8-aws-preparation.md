@@ -1,0 +1,1373 @@
+# Phase 8 — AWS preparation and next gate
+
+Current status — 2026-10-03 Europe/Madrid: permanent private single-owner
+production is approved within the scope recorded below. Session-only handoff,
+closed production bootstrap, independent real shutdown rehearsal, retained
+private artifact storage and the existing-owner production OAuth client are
+verified. The exact real-binding ZIP passed five network-disabled ARM guards;
+the same runtime source passed twelve synthetic ARM checks including all ten
+tools, independently reproduced after bounded-output hardening. Full offline
+tests pass 1,777 with five skipped; the model-free evaluator passes 12/12.
+The closed runtime stack update has been requested. Activation, production
+OAuth login and the two approved real MAPIT tool calls are still pending;
+no usable always-on service or final phase completion is claimed yet. See
+[persistent identity and E2E evidence](phase-8-persistent-identity.md) for final
+owned-resource cleanup status and the observed UpdateApi HTTP-201 contract fix.
+The permanent owner/MFA remains reusable. Historical dev-test acceptance alone
+did not authorize production; the subsequent explicit permanent-production
+approval applies only to the bounded single-owner scope. Multiuser isolation,
+historical-data transfer, automatic MAPIT synchronization and paid inference
+remain outside scope. Phase 8 as a whole is not yet complete.
+
+The following dated sections retain their historical scope and evidence.
+
+### Production preparation: read-only secret reader (offline)
+
+The user requested continuing toward permanent MAPIT hosting. The next bounded
+implementation is an injected-client Parameter Store reader, not a production
+entrypoint, credential exporter or deployment. It must construct no SDK/session,
+read no local keyring/environment credential, and use only fake/Stubber tests.
+
+- One fixed prod parameter path in this project's namespace, exact eu-west-1
+  account ARN and mandatory positive version binding; no path scan or fallback.
+- One logical GetParameter with decryption and a fixed version selector, exact
+  HTTP-200 SecureString/name/ARN/version/text readback, bounded UTF-8 value.
+- Explicit Standard/Advanced size policy (4096/8192 bytes). The local store's
+  8192-byte ceiling is not evidence that an actual token fits Standard.
+- Secret material excluded from repr/errors/safe diagnostics; SDK exceptions
+  become closed categories without raw messages or responses.
+- Absolute monotonic caller deadline capped to five seconds for the read;
+  expired/invalid/rollback clocks reject before dispatch or before returning.
+  This is cooperative; the later SDK composition must separately enforce one
+  wire attempt and bounded connect/read timeouts.
+- No save/delete/list/automatic rotation, no use of SessionManager's automatic
+  persistence, no default local-session loading and no MCP tool exposure.
+
+GetParameter does not attest parameter Tier/KeyId. Operator-owned parameter
+creation/readback, KMS/least-privilege IAM, secure session handoff, identity-to-
+MAPIT binding, live upstream deadlines, distributed refresh behavior and a
+retained-resource monthly cost envelope remain separate reviewed prerequisites.
+No production activation or private credential transfer follows from this block.
+Independent review accepted the final reader with **41 focused offline tests**;
+any SourceResult field, including null, is rejected. SDK Stubber coverage makes
+no wire call. This reader is not yet wired into a production entrypoint.
+Sources: [GetParameter](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_GetParameter.html),
+[parameter tiers](https://docs.aws.amazon.com/systems-manager/latest/userguide/parameter-store-advanced-parameters.html).
+
+### Invocation-local live-provider contract
+
+Accepted progress: independent reader review passed 41 focused tests, create-only
+publication passed 34 (including an independent SDK Stubber), and the final live-
+provider/direct-transport/production-runtime composition passed 62 offline tests.
+The production runtime uses a distinct exact policy type; dev factories still
+reject it and remain synthetic. Authorization-negative/metadata requests read no
+MAPIT secret and make no MAPIT calls; each tool invocation gets a fresh provider.
+
+Approved live preparation verified the same non-root account, unchanged regional
+quota 10 and a public MAPIT configuration snapshot, recorded only in protected
+operator state outside Git/OneDrive. One native keyring-to-SSM create-only handoff
+succeeded with exact versioned decrypted readback. The first operator run stopped
+before publication intent; its journal confirmed no publication attempt. A narrow
+diagnostic-stage repair preceded the successful single PutParameter. No secret
+file/argument/output, password transfer, MAPIT read, endpoint activation or history
+migration occurred. The stored session is Standard SecureString under aws/ssm.
+
+The approved session handoff uses a separate injected-client create-only
+publisher: exactly one PutParameter for the fixed prod path, SecureString,
+Standard, alias/aws/ssm, Overwrite=false, text and project/prod ownership tags.
+Require a 1..4096-byte UTF-8 value and exact HTTP-200/version-1/Standard write
+acknowledgement, then one pinned decrypted readback with the reader above and
+constant-time value comparison. No secret appears in result/projection; no
+overwrite, retry, list, delete or compensation is allowed. An ambiguous outcome
+is unknown, not absence. Record an acknowledged write even if readback/deadline
+fails. The caller must preverify account/region/client IAM, and wire timeouts;
+the whole cooperative handoff has at most ten seconds. This component cannot
+load the Windows keyring itself and is not an MCP tool.
+
+The next composition accepts a pinned explicit MAPIT config, an injected secret
+reader and deadline-bound transports. It constructs neither an AWS client nor a
+local session manager. Require eu-west-1, the canonical Core/Geo URLs, explicit
+validated MAPIT Cognito identifiers, discovery disabled, no email/password and
+finite timeout at most two seconds. Do not read env/keyring/files or discover
+configuration during a tool request.
+
+For each request use one fresh provider, one secret read and direct refresh-token
+authentication; cache services only inside that request. Secrets, identity and
+temporary credentials remain in memory. Reject an unexpectedly changed refresh
+token rather than silently persisting it or proceeding with a stale parameter.
+Wrap the authenticator's in-memory refresh callback with the same policy and
+deadline. No automatic SSM writes, session logging or local ledger access.
+
+All transport attempts share a finite absolute monotonic deadline. Cap socket
+timeouts to two seconds and remaining time, check rollback/expiry before open,
+before/after each bounded body read and before return. Core/Geo are GET-only;
+Cognito POST is restricted to InitiateAuth REFRESH_TOKEN_AUTH, GetId and
+GetCredentialsForIdentity with fixed endpoints/targets. Disable proxies and
+redirects; cap auth JSON at 256 KiB and MAPIT bodies at 2 MiB. Keep a finite
+per-request attempt ceiling and do not add retries. The existing client's one
+auth recovery is allowed only within these same bounds. Errors must be generic.
+
+Socket timeout is not a hard total deadline (notably DNS/thread cancellation).
+The eventual Lambda hard timeout and adapter serialization reserve must be
+verified separately; do not claim an asyncio timeout forcibly cancels urllib.
+Use fake transports/clocks/openers and network-denied tests for this block.
+Neither its acceptance nor a unit test authorizes private upstream execution.
+
+Production packaging/entrypoint must be separate from the dev entrypoint and
+must leave all dev guards unchanged. Reuse the pinned ARM wheel/source archive
+validation, include only a fixed prod source allowlist and a bounded non-secret
+manifest plus public JWKS. The manifest binds prod/eu-west-1, exact account,
+parameter version 1/Standard, canonical one-owner OAuth policy, JWKS hash and
+validated public MAPIT config (never email/password/token). Require strict JSON
+duplicate/field/type checks and an environment-pinned manifest SHA-256.
+Validate `AWS_LAMBDA_FUNCTION_NAME=honda-mapit-mcp-prod-handler`, AWS_REGION and
+MAPIT_MCP_ENV before any SDK construction. No dev execution-window removal.
+
+Only the production entrypoint may lazily construct an SSM client under its
+Lambda execution role: explicit eu-west-1, no proxies, one wire attempt and
+one-second connect/read timeouts. Cache no MAPIT secret/session/services across
+invocations; a cached AWS role client/public runtime is not a MAPIT session.
+Each invocation builds a fresh CloudDirectTransport/CloudServicesProvider and
+reader. No local keyring/env MAPIT credentials, discovery, arbitrary providers,
+SSM writes or SDK operations other than GetParameter belong in the runtime.
+Package testing must use fake SDK factories or a network-denied ARM container.
+Lambda hard timeout 15s, provider deadline at most 14s and serialization reserve
+are distinct controls; no hard wall-clock claim for blocking DNS/thread work.
+
+### Permanent single-owner service: decisions before activation
+
+On 2026-10-03 the user explicitly approved retaining a private production service
+in eu-west-1, securely transferring only the MAPIT session (no password or
+historical database), and a bounded real check of vehicle status and current-
+month distances. The agreed monthly gross spending target is USD 1, with
+controls/alerts but no guaranteed billing hard cap; exact regional estimation
+remains pending. Keep Lambda quota 10 and exclude paid models. This supersedes
+the earlier no-production authority for that stated scope, not the technical
+acceptance requirements or other-project isolation. Do not broaden the smoke
+into historical scans, route details, Telegram or automatic ledger collection.
+
+Production would reuse the retained owner and TOTP enrollment, with its own
+OAuth client and explicit owner-subject binding. It must use a new live-provider
+composition; the accepted dev entrypoint remains synthetic, time-bounded and
+fail-closed. Do not turn that experiment into production by deleting its guards.
+
+The initial proposal is Lambda ARM and HTTP API in eu-west-1, the existing
+Cognito identity, one pinned SecureString, short-retention sanitized logs and
+an independent control-plane shutdown. Keep the regional shared pool at 10.
+No NAT gateway, RDS, paid model, persistent Telegram worker or private route
+database migration is included. Shared capacity is not a per-project concurrency
+guarantee; request bounds and a separately tested shutdown remain necessary.
+
+Public pricing gives a directional illustration, not a billing guarantee:
+10,000 requests/month, 256 MiB and one second average duration, one active direct
+Cognito user, one SSM read per request, 2 KiB sanitized logging per request and
+one ordinary metric alarm total roughly USD 0.20/month before egress, storage,
+tax, retries and unpriced extras. A custom metric could add approximately
+USD 0.30/month; an alarm has a retained cost even with no traffic. Several public
+examples were initially US-region prices. Subsequent bounded direct public
+Price List reads verified eu-west-1 ARM duration (USD 0.0000133334/GB-second),
+requests (USD 0.20/million), HTTP API (USD 1.11/million at the first tier),
+Cognito Essentials direct MAU (USD 0.015), ordinary metric alarms (USD 0.10/month),
+custom metrics (USD 0.30/month first tier), Standard log ingestion (USD 0.57/GB)
+and log storage (USD 0.03/GB-month). Step Functions' regional rate and egress
+remain outside that verification. The revised illustration is about USD 0.203.
+Do not assume free-tier eligibility or credits, or represent this as a billing
+hard cap. Advanced Parameter Store would add USD 0.05 per parameter-month and
+USD 0.05 per 10,000 interactions; Standard is eligible only if the actual UTF-8
+value fits its 4 KiB ceiling. After handoff approval, a native Windows keyring
+preflight confirmed only `saved_session_present=true` and `fits_standard=true`;
+no token or exact length was returned, stored in a file or transferred to AWS.
+The audit venv lacked keyring, so this read-only check used the existing Python
+installation with the native backend; no fallback store or package was installed.
+
+Before activation, obtain a stated monthly gross spending envelope and retained-
+resource policy, approve the private refresh-token handoff, and independently
+accept exact IAM/KMS binding, direct upstream timeouts, owner isolation and a
+bounded real MAPIT read. The secret must not appear in chat, Git, tool responses,
+logs or command arguments. No password transfer or ledger/geometry upload is
+proposed. Local ledger-based answers will not silently become cloud features.
+Refresh-token rotation is not yet established for MAPIT; no automatic SSM write
+is allowed. Parameter Store PutParameter has no expected-version CAS, and a
+pinned read is not a distributed refresh lock.
+
+Public primary sources:
+[Lambda](https://aws.amazon.com/lambda/pricing/),
+[HTTP API](https://aws.amazon.com/api-gateway/pricing/),
+[Cognito](https://aws.amazon.com/cognito/pricing/),
+[SSM](https://aws.amazon.com/systems-manager/pricing/),
+[KMS](https://aws.amazon.com/kms/pricing/),
+[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/),
+[Step Functions](https://aws.amazon.com/step-functions/pricing/),
+[PutParameter](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_PutParameter.html),
+[Cognito refresh rotation](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-refresh-token.html).
+
+Regional offer snapshots (public, no account API):
+[Lambda](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/current/eu-west-1/index.json),
+[API Gateway](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/current/eu-west-1/index.json),
+[CloudWatch](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/eu-west-1/index.json),
+[Cognito](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCognito/current/eu-west-1/index.json).
+
+Current status — 2026-10-02: local synthetic runtime and exact ARM package are
+accepted. The user chose the regional shared pool of 10, with independent
+control-plane shutdown. There is no pending quota-increase decision. A renewed
+two-hour dev gate allowed the [closed infrastructure rehearsal](phase-8-closed-rehearsal.md):
+six app and twelve control resources were created, scheduled shutdown and scoped
+scheduled app deletion passed, and all operational resources were verified
+removed by approximately 14:27 UTC. API activation, handler invocation, human
+OAuth and private-data/model operations were not part of that rehearsal.
+Remaining work is the real runtime artifact/configuration and OAuth owner/callback
+flow, followed by bounded synthetic interoperability. Phase 8 is not complete.
+
+### Private runtime binding and artifact preparation — 2026-10-02
+
+The runtime builder now accepts `--binding-file` for the exact four-string JSON
+object containing `user_pool_id`, `api_id`, `client_id` and `owner_subject`.
+Use this option for real bindings rather than placing identifiers in terminal
+arguments/history. The file must be outside Git and OneDrive, at most 4 KiB,
+without symlink/reparse ancestors; duplicate/extra keys and invalid policies are
+rejected. The operator must separately verify private filesystem ACLs: path
+validation is not an ACL check. This file contains identifiers, never passwords,
+tokens or signing keys. Legacy flags remain for synthetic compatibility and
+cannot be mixed with the file. Errors do not echo supplied values or paths.
+The ZIP format and runtime source allowlist are unchanged. Independent binding
+review passed; no real binding file or AWS package was created by these tests.
+The resulting full offline suite passed **1,290 tests with five Windows skips**;
+compilation and the model-free evaluator (**12/12**) also passed.
+
+The next approved local block is a small injected-client S3 publisher, not a
+deployment runner or an MCP tool. Its contract is one content-addressed key
+`runtime/<ZIP SHA-256>.zip`, conditional `PutObject` with `IfNoneMatch="*"`,
+SSE-S3, expected account owner and Base64 SHA-256, followed by exact size/checksum
+readback. Existing-object conflicts may only succeed after the same readback;
+ambiguous writes and other failures stop without retry or overwrite. All tests
+use synthetic bytes and fake/SDK-stubbed clients. No upload is authorized by
+passing these tests. The operator must independently bind the newly created
+private, unversioned bucket to this project's stack/account/region before
+injecting a single-attempt client. `ExpectedBucketOwner` does not establish
+project ownership or privacy. Object retirement and empty-bucket verification
+remain separate from this publication-only block; never add S3 rights to the
+Lambda execution role or empty/adopt another project's artifact bucket.
+
+Publication core accepted independently: **26 focused tests passed**, including
+the pinned SDK's offline request shapes. It reads at most the existing builder's
+50 MiB ZIP ceiling, verifies the local bytes before the first request, and
+requires HEAD HTTP 200 plus exact integer size, SHA-256 and AES256. Only a known
+`PreconditionFailed` exception with consistent 412 permits idempotent readback;
+other PUT outcomes remain conservatively unknown, never evidence of absence.
+A confirmed PUT 200 remains recorded even when subsequent HEAD verification
+fails. No bucket was created and no object was uploaded by these tests.
+
+Primary API contracts: [S3 PutObject](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/put_object.html),
+[S3 HeadObject](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/head_object.html),
+[conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html).
+
+### Next closed composition contract — 2026-10-02
+
+Inspection found a concrete gap beyond the eventual human login: the accepted
+six-resource runtime candidate has no OAuth resources, Lambda environment or
+public protected-resource metadata route. The next local-only block composes
+these from the existing scaffold, with explicit validated development bindings,
+an exact loopback callback, separate ZIP/JWKS hashes and an execution window of
+at most 300 seconds. Add only the unauthenticated metadata GET alongside the
+JWT/scope-protected MCP POST, with separate exact invoke permissions. Keep
+endpoint disabled, reserve zero, fixed synthetic runtime and log-only handler
+IAM. `AWS_REGION` is supplied by Lambda and is reserved: validate eu-west-1 via
+the deployment condition, never set this key in `Environment.Variables`.
+
+This is a review-only final-composition candidate, not a deployment command.
+All generated real-ID templates would belong outside Git/OneDrive under private
+ACLs. Observed pool/API/client identities must match the supplied binding before
+any update; callback syntax validation does not discover or prove the client's
+effective redirect URI. The existing six-resource cleanup role does not cover
+new Cognito/API child resources. Its reviewed permission delta, exact object
+retirement and empty-bucket verification remain mandatory before provisioning
+this composition. No new live session or login is part of this block.
+
+Primary references: [Lambda reserved environment variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html),
+[Cognito callback contract](https://docs.aws.amazon.com/botocore/latest/reference/services/cognito-idp/client/create_user_pool_client.html).
+
+The corresponding cleanup review used cfn-lint 1.57.1's pinned eu-west-1
+resource-provider schemas, not just API names. A separate disabled cleanup
+candidate can extend the accepted bootstrap role only with:
+
+- `DeleteUserPoolDomain`, `DeleteResourceServer`, `DeleteUserPoolClient` and
+  `DeleteManagedLoginBranding` under `cognito-idp`, on the exact pool ARN;
+- `DescribeUserPoolDomain` on `*`, constrained to eu-west-1 because this action
+  has no resource-level authorization;
+- API Gateway GET/DELETE on the exact observed authorizer, integration and two
+  route ARNs, in addition to the existing API/stage targets;
+- `lambda:RemovePermission` on the exact handler function for both invoke grants.
+
+Keep the exact stack UUID and deletion RoleARN, disabled schedule and original
+bounded timing contract. Do not add S3, KMS or broad IAM writes. The domain
+schema also lists KMS operations and the app-client schema lists IAM policy
+writes; these appear related to optional custom-domain/analytics features that
+are absent here, but the provider schema alone does not prove execution branches.
+This is an explicit acceptance uncertainty for a later closed deletion rehearsal,
+not permission to grant all listed actions preemptively. Static validation does
+not prove cloud deletion. Separate object/bucket cleanup is still required.
+
+Sources: [Cognito IAM action scopes](https://docs.aws.amazon.com/de_de/service-authorization/latest/reference/list_amazoncognitouserpools.html),
+[API Gateway exact ARNs](https://docs.aws.amazon.com/apigateway/latest/developerguide/arn-format-reference.html).
+
+The closed composition and cleanup factories are now independently accepted
+offline: **41 composition tests** and **59 cleanup/base-control tests** passed.
+All **twelve fixed synthetic templates** passed the pinned regional schema
+checker with zero findings and Python networking disabled. Independent review
+found that copying extra domain/analytics properties could expand cleanup scope;
+the composition now requires exact resource/property/dependency allowlists.
+These results do not close the live provider-branch, owner/callback or artifact
+retirement requirements and do not modify the completed rehearsal's resources.
+
+### Exact artifact retirement contract — 2026-10-02
+
+The next local-only operator core must require `app_deleted is True`, supplied
+by fresh verified ownership/deletion readback, before any request. This flag is
+an internal orchestration precondition, not evidence obtainable from an MCP
+argument. The caller also confirms the fresh owned/private bucket and injects
+a bounded single-attempt client. The core must verify bucket versioning is
+unconfigured; no enabled/suspended versioning or MFA-delete handling is allowed.
+For the sole derived `runtime/<ZIP SHA-256>.zip` key, validate HEAD size/checksum,
+AES256 and a non-wildcard ETag before one conditional `DeleteObject`. Verify
+absence afterwards; a 403, timeout or ambiguous write is not absence and must
+not trigger retries or bulk deletion. If the exact object is already confirmed
+absent, skip the write.
+
+Only after confirmed object absence, bounded listings of one object and one
+multipart upload must be empty and untruncated before reporting the bucket as
+empty. Do not follow pagination or delete unknown contents. The core cannot
+delete a bucket/stack or create an SDK session. A later operator must separately
+delete the owned artifact stack after fresh ownership/empty checks; this is
+not an atomic bucket lock or an automated cleanup guarantee. Tests are synthetic
+and offline; no S3 object exists from this turn's completed rehearsal.
+The operator must exclude concurrent writers and versioning changes during this
+bounded retirement; an object listing alone cannot detect historical versions.
+
+The retirement core is independently accepted offline: **61 focused tests**
+passed, including the pinned SDK's request shapes and independent race/filter/
+partial-readback regressions. Full checkpoint: **1,434 passed, five Windows
+skips**, successful compilation and model-free evaluator **12/12**. No object
+or bucket was actually deleted by these tests. The separate bucket-stack
+deletion/integration procedure and cloud interoperability remain pending.
+
+Final offline integration checkpoint: **1,436 passed, five Windows skips**,
+successful compilation and model-free evaluator **12/12**. Two independently
+accepted stateful synthetic lifecycle tests connect publication, the closed
+OAuth template's exact ZIP key (distinct from the JWKS hash), and retirement.
+They verify that a false application-deletion precondition makes no request and
+retains the object, and that checksum drift prevents deletion. The true
+precondition is explicitly simulated: neither these tests nor template schema
+acceptance proves expanded CloudFormation deletion or real OAuth interoperability.
+All twelve synthetic schema fixtures had passed the pinned checker; no template
+changed in this final test-only block. No additional cloud operation occurred.
+
+Primary contracts: [conditional object deletion](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/delete_object.html),
+[bucket versioning](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/get_bucket_versioning.html),
+[multipart listing](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/list_multipart_uploads.html).
+
+### Closed OAuth setup sequencing — 2026-10-02 evening
+
+The earlier two-hour AWS allowance expired at 15:29 UTC. Resumed work is local
+only; no resource recreation or renewed account operations follow from it.
+Review found a sequencing gap: the final runtime composition requires a real
+client ID and owner subject, but the six-resource bootstrap creates neither.
+The next bounded implementation adds an intermediate ten-resource setup factory:
+the six bootstrap resources unchanged plus the existing Cognito domain,
+resource server, public app client and managed-login branding. It accepts the
+observed bootstrap API ID and exact confirmed loopback callback, not placeholder
+client/owner identifiers. Its output exposes the generated client through Ref.
+
+Keep the API disabled, the inline 503 handler reserved at zero, and no routes,
+invoke permissions, runtime environment, S3 package, user or enrollment-scope
+expansion. Preserve stable logical IDs and OAuth settings when moving to the
+final runtime template. This setup candidate is for an update to the owned
+bootstrap after readback, not independent initial deployment. The unchanged
+six-resource rehearsal runner cannot create/check/delete it. Expanded cleanup,
+readback integration and actual human enrollment remain prerequisites.
+
+Implemented and independently accepted offline: the setup factory preserves
+all six bootstrap resources and shares exact OAuth parameters/resources with
+the final stage. Short integer token lifetimes and revocation are now explicitly
+guarded against source drift. Thirteen fixed templates pass the pinned regional
+schema checker with zero findings. Callback validation establishes syntax only,
+not real registration or ownership. No AWS operation or runner expansion occurred.
+Final local regression: **1,450 passed, five Windows skips**; compilation and
+the model-free evaluator (**12/12**) also passed.
+Next: integrate exact owned-stack and generated-client readbacks before preparing
+the bounded closed-update/cleanup workflow; do not deploy this candidate directly.
+
+The next local readback core accepts injected clients and an already owned exact
+stack identity. Its ten bounded reads verify the stack/run tag, ten logical
+resources, unchanged API/pool, generated client output and singleton client
+listing, exact callback/scope/short token lifetimes, resource server and managed
+domain. It also requires no users/routes and endpoint disabled/concurrency zero.
+The operator supplies single-attempt clients with bounded timeouts; the core
+does not construct an SDK session, follow pagination, update resources or extend
+the original runner. Client IDs remain private results, excluded from diagnostics.
+This confirms observed configuration only, not effective OAuth/PKCE, owner
+enrollment, branding rendering, handler permissions or expanded cleanup.
+The client output uses CloudFormation's documented
+[UserPoolClient Ref contract](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-userpoolclient.html#aws-resource-cognito-userpoolclient-return-values),
+which returns the generated client ID. No compound physical-ID format is inferred
+for the domain, resource server or branding resources.
+
+Readback core independently accepted: **23 focused tests** including real pinned
+botocore Stubber shapes and pagination/error/privacy regressions. The full local
+checkpoint passed **1,473 tests with five Windows skips**, compilation and the
+model-free evaluator **12/12**. Every service response requires integer HTTP 200;
+exceptions and malformed values stop without retry. The private client ID is
+returned only after all ten checks succeed. The SDK CI job includes this core.
+No SDK session, account read, resource change or real OAuth login occurred.
+The existing six-resource runner remains unchanged; orchestration and expanded
+cleanup acceptance still precede a future closed cloud update.
+
+### Closed setup update and cleanup integration — local continuation
+
+The next integration connects the owned six-resource bootstrap to the ten-resource
+OAuth setup. Prepare the exact Cognito cleanup permissions first, preserving the
+same stack UUID, deletion RoleARN, schedules and twelve control resources. This
+stage needs no authorizer/integration/route IDs and must not add their permissions.
+The coordinator is separate from the accepted six-resource rehearsal runner.
+It records intent before each single CloudFormation update, stops on ambiguity,
+arms cleanup through that control-stack update, verifies the expanded deletion
+role and actual enabled cleanup schedule, then
+requests the closed setup update and runs the accepted ten-read checker.
+
+The cleanup schedule must target the exact stack/deletion role and the original
+first-resource epoch +45 minutes. The old rehearsal's accelerated +120-second
+cleanup cannot be reused for this flow. Never reset the resource clock while
+preparing OAuth. Require sufficient remaining time and current external authority
+before any update. Local tests use injected clients/journals only; no cloud
+execution, login, activation or deletion-permission acceptance is implied.
+The generated static factories stay disabled. Only the coordinator's working
+control template changes the cleanup schedule to ENABLED, together with the
+reviewed Cognito deletion policy. It must verify CloudFormation completion plus
+actual IAM and Scheduler readbacks before updating the app. Shutdown schedules,
+request tripwire and endpoint remain unchanged throughout this closed setup.
+
+This block is independently accepted offline: setup-only cleanup, twelve-resource
+control composition and the five-step injected coordinator. The actual IAM policy
+is compared after resolving the fixed account/region pseudo-parameters; stack
+UUID, resource types, template digest, schedule target and immutable timing are
+bound before the app update. Update intent and a unique request token are saved
+before dispatch; an uncertain result is reconciled by reads, never blind replay.
+Both elapsed-time and external-authority checks run before success is persisted.
+The full offline checkpoint and final CI result are recorded in AGENTS.md.
+
+Fifteen synthetic schema fixtures pass with networking blocked; compilation and
+the model-free evaluator (12/12) pass. These checks do not prove real Cognito
+deletion permissions or real OAuth/PKCE/MFA interoperability. Expanded setup
+deletion/absence verification and the bounded operator execution path remain
+pending before a renewed cloud gate. No cloud call or human login occurred here.
+
+Primary contracts: [CloudFormation UpdateStack](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_UpdateStack.html)
+and [Scheduler schedule return values](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-scheduler-schedule.html#aws-resource-scheduler-schedule-return-values).
+
+### Remaining execution order and callback evidence — 2026-10-02
+
+Official OpenAI documentation now explicitly describes a server-specific
+callback identifier derived from the full MCP URL, including path/query.
+For a fixed loopback URL port, the server's `oauth.callback_port` must also
+select that listener port; the URL alone does not select it. Retain the exact
+callback displayed for the actual MCP URI, not an inferred suffix. The installed
+CLI's read-only `mcp add --help` confirms pre-registered-client/resource options;
+no configuration or login was changed during this check.
+Sources: [Codex MCP callbacks](https://learn.chatgpt.com/docs/extend/mcp),
+[server-specific configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+The next operator session still needs reviewed integration/readback steps,
+not simply deployment of a static template:
+
+1. Confirm user availability, account, private journal and remaining authority
+   before creating resources. Reuse the accepted closed-bootstrap approach;
+   preserve the first-resource timestamp throughout all later steps.
+2. Read actual API/pool IDs and provider metadata; establish the actual callback
+   and closed OAuth client/resources. Complete the owner's first enrollment/MFA
+   through a reviewed browser/PKCE flow without putting secrets in chat or Git.
+   This enrollment procedure and provider interoperability remain unverified.
+3. Bind actual client/owner/JWKS values; build and verify the real ARM artifact,
+   publish it to the independently verified owned bucket, and update the closed
+   app. Verify literal runtime bindings against observed resource IDs.
+4. Bind the full app's cleanup permissions to observed children and verify armed
+   independent controls before the separate five-minute synthetic MCP window.
+   Do not begin that window while waiting for human enrollment. Abort/clean up
+   if insufficient resource lifetime remains; login does not reset its clock.
+5. Verify shutdown, exact app deletion and artifact retirement, then remove
+   control/artifact stacks and the temporary MCP connection. Record independent
+   absence checks and any cost/cleanup uncertainty.
+
+The rehearsal runner intentionally accepts only its six-resource bootstrap;
+it must not be repurposed to activate or delete the expanded app without an
+independently reviewed integration change. No such live integration was run.
+
+The sections below retain the chronological evidence and decisions. Later dated
+decisions supersede earlier alternatives; old test counts are historical.
+The user authorized design, public price research and offline infrastructure as
+code on 2026-09-30, then the bounded local HTTP/auth tests on 2026-10-01; see
+[local HTTP contract](phase-8-local-http-contract.md). Phase 7 is complete. A later
+user-authorized read-only billing-console review confirmed active credits and
+eligibility of core proposed services; exact balances and private identifiers
+are not recorded in Git. The Free Tier view had no usage data, which is not
+proof of eligibility or zero charges. Before the dev gate below, no account
+SDK/inventory operation, resource creation, deployment, credential transfer or
+paid inference occurred.
+The local [Lambda composition block](phase-8-lambda-local-contract.md) is now
+independently accepted offline: 42 focused tests and 754 full tests pass (3
+skipped), compilation succeeds and the model-free evaluator passes 12/12.
+Phase 8 exit criteria remain open.
+
+## Approved dev gate and preflight — 2026-10-01
+
+The user approved dev in `eu-west-1`, synthetic data/tools only, resources for
+at most one hour, endpoint active at most five minutes, a USD 1 gross allowance
+expected against credits (not an AWS-enforced billing cap), and shutdown plus
+deletion of newly created resources. Prod, real MAPIT data/session migration,
+Telegram and paid model inference remain excluded. The window has not opened;
+the resource-lifetime clock starts only with the first resource creation.
+
+Two bounded read-only CLI operations were made: one STS identity check and one
+Lambda account-settings read, each with one attempt and short timeouts. Only
+booleans/categories and quota counts were emitted, not identities or credentials.
+Authentication succeeded with a non-root identity. Lambda reported regional
+concurrency limit **10** and unreserved concurrency **10**. No resources,
+identities, alarms or schedules were created, and no function was invoked.
+
+AWS currently documents positive reserved concurrency as at most the unreserved
+pool minus 100. The observed reduced quota therefore offers no positive reserve
+for the intended one-execution cap. This is a documented-rule inference; no
+concurrency mutation was attempted. See [reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html)
+and [reduced account quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
+
+Provisioning is suspended pending reviewed independent controls and a coordinated
+quota decision; the user selected separate project limits, not shared-pool fallback.
+Removing reserve
+0 during activation would use the shared account pool rather than enforce one
+execution per function. Stage throttling is not an equivalent concurrency cap.
+Do not silently remove the reserve, request a quota increase or change region.
+A fallback, if approved, still needs bounded requests, independently armed
+shutdown, restoration of reserve 0, post-close verification and complete cleanup.
+The historical vault example's retained pool of 10 must not be treated as AWS's
+currently documented general rule of 100; recheck effective settings before any
+activation.
+
+Other prerequisites remain: a separate synthetic-only runtime policy for real
+Cognito issuer/resource/owner (no weakening of the accepted `.invalid` factories),
+Linux ARM Python 3.13 package/import tests, exact client callback and owner
+binding, reviewed creation/cleanup orchestration and independent shutdown.
+The existing inline-503 template remains unchanged and must not be deployed as
+if it were a working MCP artifact. No CloudFormation validation or OAuth E2E
+was performed by this preflight.
+
+## Proposed minimal service
+
+### Time-bounded coordination and next offline runtime block
+
+On 2026-10-01 the user authorized proceeding through gates of the agreed work
+for two hours, ending about 17:53 Europe/Madrid. This does not extend the dev
+endpoint's five-minute limit, the one-hour resource lifetime or USD 1 gross
+allowance. Prod, MAPIT data/session migration and paid inference remain outside
+this work. Authorization must be rechecked after that time before new external
+actions. No resource-creation window has begun.
+
+The existing `aws-remote-mcp` owner chat was explicitly authorized to prepare
+and independently review its own offline switch from shared-pool dependence to
+reserved concurrency. It reported its local preparation complete with 280 tests,
+fixed MCP reserve 1, fail-closed capacity preflight, independently armed shutdown
+and post-close audit. No commit, deployment or AWS operation was performed there.
+The historical quota/pool-10 fallback remains explicit opt-in in that project;
+it is not selected here. Honda must not mutate that repository or activate its service.
+An additional single-attempt Service Quotas read confirmed applied quota 10,
+adjustable=true. No increase request was submitted. Do not use a shared-pool
+fallback; review independent project controls before any coordinated increase.
+
+Approve the next bounded offline implementation: a separately named dev-only
+Cognito policy and synthetic runtime composition, with injected public keys
+and strictly derived/bounded JWKS parsing. Keep immutable `.invalid` public
+factories closed. Reuse private transport helpers where necessary without
+adding general provider injection. Always construct `SyntheticServicesProvider`;
+no local credential/session/ledger lookup, AWS SDK, secret read or MAPIT client.
+Require exact eu-west-1 Cognito issuer, owner/client/access-token claims,
+canonical execute-api `/mcp` audience and its `/use` scope. For this five-minute
+synthetic test, use a fixed public-key snapshot; unknown/rotated keys fail closed
+rather than trigger unbounded discovery. Tests use generated keys/JWKS fixtures
+only, never contact Cognito. Real JWKS retrieval, env entrypoint, ARM artifact,
+runtime IAM and independent shutdown are separate reviewed steps, not implied
+by this factory. Do not wire or activate the disabled scaffold yet.
+
+The supervisor's final local tree passes **800 tests, 3 skipped**; compilation
+and the model-free evaluator (12/12) succeed. Independent review accepted the
+final tree with 110 focused tests and the same 800-test full result. The new factory is an offline
+composition, not a Lambda environment entrypoint or proof of Cognito interoperability.
+It checks identifier format, not whether a shaped identifier exists in AWS.
+
+A local dependency-only packaging probe used the official Lambda Python 3.13 ARM
+image pinned to digest `sha256:69b91b6e0b637c459f80bc103c2e566be76cbeb934f32bf2d8c14e028ce57719`.
+Linux ARM wheels installed successfully. A subsequent container with networking
+disabled imported MCP, cryptography, pydantic-core, JWT and httpx2 on `aarch64`:
+38,257,691 dependency bytes, four native shared objects, no Windows `.pyd` files.
+This is not a final artifact, dependency vulnerability acceptance or deployed test.
+`httpx2` is a core dependency of the pinned MCP SDK, not an optional extra to remove.
+
+For two one-execution MCP reservations, the structural regional floor is
+`Q >= R + 2 + max(100, C + S)`, with other allocated reservations `R`, bounded
+shared workload demand `C` and shutdown demand `S`. A floor of 102 only applies
+when `R=0` and `C+S<=100`; no present workload bound has been established.
+Shutdown Lambdas in the shared pool are not guaranteed capacity under saturation.
+Fresh allocation inventory, explicit shutdown-capacity review and intended-account
+verification must precede a precise increase request. No request has been submitted.
+
+A subsequent bounded read-only inventory found 15 regional Lambda functions and
+four matching the existing remote-MCP project prefix. Both MCP handlers report
+reserve 0. The two shutdown functions' concurrency reads did not yield a parsed
+configuration, so their reservation remains unverified rather than inferred.
+Both matching HTTP APIs have their default execute-api endpoints disabled.
+Regional limit/unreserved limit remain 10/10. The CLI JSON query was made explicit
+after an initial output-parse failure; no raw account payload was emitted. These
+checks neither activate that project nor prove custom-domain closure, workload
+demand, credentials-to-billing-account binding or guaranteed shutdown capacity.
+No AWS mutation, quota request or function invocation occurred.
+
+Sources: [Lambda packaging](https://docs.aws.amazon.com/lambda/latest/dg/python-package.html),
+[reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html),
+[concurrency metrics](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-concurrency.html).
+
+Next approved offline block: a separately named synthetic-dev Lambda entrypoint.
+Load only explicit dev/eu-west-1 identity parameters and a public JWKS snapshot
+from a fixed sibling artifact file, bounded before reading/parsing, bound by an
+expected SHA-256 plus exact derived issuer/JWKS URI manifest. Generated manifests,
+real identifiers and bundles remain outside Git. Missing/malformed/prod/mismatched
+configuration yields a constant unavailable response, never a local default.
+Cache only a successfully initialized synthetic runtime; do not fetch/refresh keys,
+read secrets, accept an arbitrary path/provider or add runtime network/AWS SDK use.
+Unknown rotated keys remain denied. No infra, IAM or activation edits in this block.
+Tests use only generated synthetic snapshot files; independent review and testing
+of the exact staged source in the network-disabled ARM image precede acceptance.
+Operator retrieval of actual public Cognito keys is a later bounded action, not
+implied by this entrypoint. Avoid storing the 32 KiB snapshot in Lambda's aggregate
+4 KiB environment allowance.
+
+This entrypoint block is independently accepted: 30 focused tests, **830 passed,
+3 skipped** overall, compilation and the model-free evaluator 12/12. The exact
+staged synthetic-fixture ZIP was extracted and tested in the pinned official ARM
+image with networking disabled. ZIP size: 9,397,697 bytes; SHA-256:
+`c3cee4bab4f08bc2e57fc28e639624ed1792a4655c13e2fe187090961ccc8bb4`.
+Its actual imported entrypoint passed initialize, discovery of all ten tools,
+all ten tool calls and a warm repeated call. Unknown key, changed warm owner,
+snapshot hash mismatch and missing environment were denied. Generated keys and
+identifiers were synthetic; private signing material existed only in probe memory.
+The dependency directory passed a strict known-advisory audit on 2026-10-01;
+this is not proof of absence of unknown vulnerabilities. SDK lifecycle logging
+was generic; no real identity, token, route or account payload was used or logged.
+The probe ZIP and fixture data remain outside Git and are not an actual Cognito
+deployment artifact. Actual public-key retrieval, final reproducible packaging,
+IaC/shutdown wiring and authenticated cloud interoperability remain open.
+
+The other project's follow-up offline design recommends a static reserve 1 for
+its DEV shutdown rather than mutating capacity dynamically. Two MCP reserves plus
+two dedicated DEV shutdown reserves imply a structural floor of 104, before any
+other allocations. This is a design figure, not an approved/submitted quota request
+or a guarantee against control-plane/IAM/handler failures. Reserving PROD shutdowns
+is not part of this dev test. An alternative Step Functions control-plane closure
+adds complexity/roles/cost and remains unverified, not selected for implementation.
+
+The shutdown design investigation confirms direct CloudWatch alarm-to-Lambda
+actions can avoid SNS. Scope invocation permission to the alarm principal,
+account and exact alarm ARN; the Scheduler role invokes only the dedicated
+shutdown function. The shutdown role needs exact-resource update/readback rights
+for the owned API and MCP function, not access to secrets or either data provider.
+Attempt both closing actions even if API disablement fails, then verify both.
+Use a separate pinned Boto3 artifact, not the MCP dependency bundle. This is
+design evidence only for IAM/template/wiring. The subsequently accepted offline
+shutdown core below is not a deployed shutdown function.
+
+HTTP API Count is available by API/stage in one-minute periods. CloudWatch alarm
+actions fire on state transitions, Scheduler precision is 60 seconds, and API
+throttling is best-effort. Scheduling at exactly five minutes does not establish
+an at-most-five-minute endpoint guarantee. The opener needs advance closure,
+verified readback and an application-level absolute tool-use expiry as defense
+in depth. Tool expiry alone does not disable/bill-cap the endpoint; no strict
+availability or spend guarantee should be claimed under control-plane failure.
+Operator `finally` cleanup does not guarantee deletion if the operator dies;
+independent resource-lifetime cleanup and failure recovery remain unresolved
+before provisioning. Missing first login/MFA and exact callback/owner/account
+binding remain additional prerequisites, not permission requests already supplied
+by the time-bounded authorization.
+
+Sources: [alarm Lambda actions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarms-and-actions-Lambda.html),
+[alarm transitions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarm-actions.html),
+[HTTP API metrics](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-metrics.html),
+[Scheduler precision](https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html),
+[best-effort throttling](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-throttling.html).
+
+One private, single-owner read-only MCP per environment in `eu-west-1`
+(Ireland): HTTP API Gateway, ARM Lambda, Cognito authorization-code/PKCE login,
+and short-retention redacted CloudWatch logs. No hosted LLM, Bedrock, persistent
+Telegram worker, remote ledger, realtime worker, database, NAT gateway, purchased
+domain or frontend. Codex supplies the conversational client; hosting tools does
+not require a project-owned inference API.
+
+Dev and prod would have separate stacks, pools, app clients, IAM roles, logs,
+secrets and canonical resource URLs. Isolation is designed, not demonstrated in
+an account. GitHub environment names do not substitute for enforced protection;
+the known GitHub-plan limitation remains documented in environments-and-ci.md.
+
+The offline [template](../infra/aws/template.json) is a guardrail scaffold, not
+a deploy-ready MCP. Its Lambda is a constant unavailable response, concurrency
+is zero, and the default execute-api endpoint is disabled. It contains no MAPIT
+session or IAM access to one. It must not be deployed as a way of testing it:
+creating even disabled resources can have costs. Local template tests and the
+separately bounded synthetic HTTP/auth block are within the current approval.
+
+## Transport feasibility, not interoperability acceptance
+
+The installed MCP SDK exposes stateless Streamable HTTP with JSON responses.
+This suggests a buffered Lambda adaptation, without an always-running process.
+The local synthetic stateless JSON handshake and all ten tool calls are now
+accepted, with cryptographic token verification and negative tests; see the
+local contract. The synthetic Lambda/payload-v2 adapter is independently
+accepted locally, not in AWS. No actual OAuth login E2E has been accepted.
+HTTP API integration timeout is at most 30 seconds; the proposed
+Lambda budget is 20 seconds. Existing upstream timeout/recovery can exceed that
+combined budget, so an end-to-end deadline is a prerequisite, not something the
+scaffold fixes. HTTP API response streaming is not assumed: API Gateway's
+documented response transfer streaming is for REST APIs. If tested clients need
+SSE/session continuity, reconsider the runtime before provisioning.
+
+Sources: [HTTP API quotas](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-quotas.html),
+[API Gateway streaming](https://docs.aws.amazon.com/apigateway/latest/developerguide/response-transfer-mode.html),
+[MCP Streamable HTTP specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+
+## Identity and credential design
+
+Codex documents Streamable HTTP and stored OAuth with a pre-registered client
+ID. This lets us propose Cognito without building a dynamic-client-registration
+server. The actual callback URI must be obtained from the intended Codex
+configuration, then registered exactly. Cognito's HTTP loopback exceptions are
+for testing and accept custom ports; an arbitrary ephemeral port is not assumed
+to match the allowlist. Configure and verify a fixed listener port and the exact
+client callback path/query before dev activation. No client settings were changed
+or account login attempted during preparation.
+
+Sources: [Codex MCP/OAuth documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli),
+[Cognito app-client callbacks](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-client-apps.html).
+
+Admin-only signup, a public client without a client secret, code-only PKCE,
+Managed Login v2 and narrow resource-bound scope are proposed. No owner user is
+created by the scaffold. Managed Login branding is included; account ownership,
+password setup/recovery and the draft's mandatory TOTP MFA require a deliberate
+operator workflow and acceptance at the dev identity gate.
+The future implementation must publish OAuth protected-resource metadata,
+bind access tokens to the canonical resource URI and scope, verify claims at
+the gateway AND enforce owner subject/issuer/audience/expiry/token-use in the
+application. An audience check alone is not single-owner authorization.
+Unrecognized identities must never inherit the local default MAPIT session.
+
+Sources: [resource-bound access tokens](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-define-resource-servers.html),
+[OAuth guidance](https://developers.openai.com/plugins/build/auth).
+
+Proposed MAPIT refresh-session storage: a separate Standard SSM SecureString
+per environment, encrypted using the AWS-managed SSM KMS key; no email/password
+in infrastructure parameters or model-visible arguments. CloudFormation's SSM
+Parameter resource does not support SecureString, so a future approved secure
+out-of-band provision/rotation flow is required. Exact secret/key ARNs and
+least-privilege read/decrypt permissions must be verified before adding them.
+Refresh-token rotation, concurrent refresh ownership, expiry, revocation and
+re-authentication are unresolved operational requirements. Windows Credential
+Manager and the local SQLite/alias key are not silently migrated or uploaded.
+
+Sources: [SSM parameters](https://docs.aws.amazon.com/systems-manager/latest/userguide/what-is-a-parameter.html),
+[CloudFormation SSM limitations](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ssm-parameter.html),
+[SSM encryption](https://docs.aws.amazon.com/systems-manager/latest/userguide/secure-string-parameter-kms-encryption.html).
+
+## Offline scaffold boundaries
+
+- Resource names derive from an explicit dev/prod parameter. Placeholder resource
+  URI and callback must be replaced only through a reviewed future patch.
+- The protected POST `/mcp` route has JWT audience and required resource scope.
+  There is no anonymous MCP route or default wildcard route. GET handling/405 and
+  public OAuth metadata are locally tested but remain unwired in the AWS scaffold.
+- Reserved concurrency is literally zero; there is no activation toggle. Lambda
+  cannot currently read secrets or MAPIT, and its code does not log request data.
+- Seven-day application log retention is proposed. No payload/token/location
+  logging is permitted; future error paths and API access logging need review.
+- Offline tests can check JSON relationships and security invariants, not AWS
+  service-side acceptance, OAuth security or remote availability.
+
+## Cost estimate — illustrative gross subtotal, not a cap
+
+Independent offline review accepted the disabled scaffold. Its seven focused
+tests pass; the full Windows Python 3.13 suite has **638 passed, 3 skipped**,
+compilation succeeds and the model-free evaluator passes 12/12 synthetic cases.
+No CloudFormation service validation or AWS interoperability test was run.
+
+Public regional price lists checked on 2026-09-30, published Sep 11–25, 2026.
+No account lookup, credits, free tier or currency conversion assumed. USD,
+before taxes. Example: 10,000 total requests/month (not conversation count),
+256 MiB ARM Lambda, 1 billed second/request, 1 Cognito Essentials MAU,
+0.01 GB log ingestion and 0.01 GB-month storage, 20,000 standard symmetric KMS
+operations. These are assumptions, not measured usage.
+
+| Component | Regional rate | Example USD/month |
+| --- | --- | ---: |
+| HTTP API | $1.11/million requests | 0.0111 |
+| Lambda requests | $0.20/million | 0.0020 |
+| ARM Lambda compute | $0.0000133334/GB-second | 0.0333 |
+| Cognito Essentials | $0.015/MAU | 0.0150 |
+| Standard log ingestion | $0.57/GB | 0.0057 |
+| Standard log storage | $0.03/GB-month | 0.0003 |
+| Standard symmetric KMS | $0.03/10,000 operations | 0.0600 |
+| **Listed subtotal** | | **0.1274** |
+
+At 20 billed seconds/request, the same listed subtotal becomes about $0.76.
+Neither number is a total bill estimate or spending guarantee. Excluded costs
+include outbound transfer, extra retries/protocol/auth calls, alarms, extra log
+queries, any chosen budget features, packaging/storage and configuration-dependent
+charges. Provisioning/teardown verification must quantify these before approval.
+No private route payload size or latency measurement was performed for AWS.
+
+Source files: [API Gateway](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/current/eu-west-1/index.json),
+[Lambda](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/current/eu-west-1/index.json),
+[Cognito](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCognito/current/eu-west-1/index.json),
+[CloudWatch](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/eu-west-1/index.json),
+[KMS](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/awskms/current/eu-west-1/index.json).
+
+Budget alerts are delayed, not a hard spending cap. Future activation must
+combine bounded upstream work, throttling, tested shutdown/teardown and alarm
+ownership. Zero reserved concurrency prevents Lambda execution but not every
+stack charge; disabling execute-api alone would not disable a custom domain.
+Regional reserved-concurrency quotas must be checked under a later account-read
+approval; do not silently drop the kill switch if the chosen account rejects it.
+
+Sources: [budget latency](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html),
+[Lambda concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html),
+[execute-api endpoint setting](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-api.html).
+
+## Next gates
+
+### Renewed bounded authority — 2026-10-02
+
+The user renewed authorization for two hours and requested continuous work and
+display wakefulness. The recorded window is 09:32:29–11:32:29 UTC
+(11:32:29–13:32:29 Europe/Madrid). Retain dev/eu-west-1, synthetic tools only,
+USD 1 gross envelope, at most five minutes endpoint exposure and one hour resource
+lifetime, with shutdown/deletion; no production, live MAPIT/Telegram or paid
+model inference. This renewal permits proceeding through the agreed gates, not
+silently increasing the scope or selecting a shared-pool fallback.
+
+A fresh single-attempt STS read succeeded with a non-root identity; one Lambda
+account-settings read still reports regional/unreserved concurrency 10/10.
+No AWS mutation or resource creation was made by that check. A temporary native
+execution-state helper requests display/system wakefulness for 7,200 seconds
+without changing permanent power settings; normal settings resume on exit.
+Next bounded local block: dedicated SDK shutdown entrypoint/package followed
+by reviewed IAM/independent closure and crash-safe cleanup preparation. Keep the
+current disabled scaffold unchanged until the replacement is independently
+reviewed. No bootstrap resource creation before its cleanup is planned.
+
+Capacity decision later in this window: a single request for 104 was rejected
+because the Service Quotas path required a value greater than the service
+default of 1,000. No larger request was made or approved, and no quota changed.
+After discussing shared concurrency, the user explicitly selected keeping 10
+and continuing. Prepare the bounded synthetic-dev shared-pool alternative with
+independent control-plane shutdown that does not require a Lambda execution
+slot. Preserve IAM/OAuth/data/resource isolation; do not change the other
+project, production or the regional quota. Activation must still require fresh
+regional/unreserved quota 10/10, reviewed/armed closure and cleanup, the exact
+owner/callback and the original time/spend limits. A permanent shared-pool
+production service is not approved by this temporary-dev decision.
+
+Dedicated SDK shutdown preparation is independently accepted offline. The
+entrypoint validates dev/region/fixed targets before SDK construction, ignores
+event-supplied targets, configures one total attempt and bounded socket timeouts,
+and uses the previously reviewed four-call core. The component template keeps
+its Lambda reservation at zero, has no trigger, and is not a deployable shutdown
+system. In particular, this Lambda component cannot be the independent kill
+mechanism when using the shared pool of ten; it remains an unused alternative.
+
+The separate seven-package pinned SDK archive builder rejects unknown staging
+roots, links, extra launchers and inconsistent launcher records; metadata and
+files are read with explicit size limits. The exact permitted jmespath launcher
+is validated then omitted. Pins and records are not wheel provenance or a
+supply-chain guarantee. The SDK advisory audit found no known vulnerabilities.
+CI adds a credential-free SDK job using real botocore models with offline
+Stubber responses; no AWS request is made by those tests.
+
+The exact SDK ZIP (16,619,909 bytes; SHA-256
+`dc7c7d67abc2e9f1ebaac3b3b985188ad00a8ea087209bb7a65fc49357545c4e`)
+passed extraction/import, all four real SDK stubs, verified closure and prod
+denial in the pinned official Lambda Python 3.13 ARM image with networking
+disabled. This is an artifact/SDK-shape probe, not cloud interoperability or
+actual shutdown acceptance. The generated ZIP and staging directory remain
+outside Git; the minimal package initializer loads no MAPIT credentials.
+
+The shared-pool replacement under preparation uses Step Functions AWS SDK tasks
+to perform control-plane API disable, Lambda reserve zero and both readbacks,
+without invoking a shutdown Lambda. A separate pre-armed schedule/control stack
+can survive the operator session or application stack. It does not guarantee
+successful cleanup: DeleteStack is asynchronous, control-plane calls can fail,
+and the control stack itself still needs a reviewed removal plan. No resource
+may be created while this prerequisite or owner/first-login binding is missing.
+Standard workflow execution history can retain provider responses/resource
+metadata even with CloudWatch logging disabled; sanitized final output is not
+erasure of internal AWS history.
+
+Cleanup research: a separate Scheduler universal target can initiate deletion
+of a fixed application stack through `cloudformation:deleteStack`, using the
+CloudFormation service role previously associated with that stack. The schedule
+role needs only DeleteStack on that exact stack, not broad resource permissions.
+This is a documented design candidate, not an account-validated target. One
+schedule has one target; DeleteStack starts asynchronous deletion and cannot
+confirm completion. A second fixed-time deletion of the control stack could
+remove the safety anchor before application deletion succeeds. A workflow must
+not delete its own state machine before it finishes: deletion can terminate
+running executions on their next transition. The accepted planning boundary is
+therefore application shutdown/deletion scheduling plus operator readback and
+control-stack removal, not guaranteed self-cleanup. `DELETE_FAILED` or retained
+resources require explicit investigation. No bootstrap creation yet.
+
+Primary references: [SDK integration syntax](https://docs.aws.amazon.com/step-functions/latest/dg/supported-services-awssdk.html),
+[Choice guards](https://docs.aws.amazon.com/step-functions/latest/dg/state-choice.html),
+[catch limitations](https://docs.aws.amazon.com/step-functions/latest/dg/concepts-error-handling.html),
+[Scheduler universal targets](https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-targets-universal.html),
+[DeleteStack semantics](https://docs.aws.amazon.com/AWSCloudFormation/latest/APIReference/API_DeleteStack.html),
+[CloudFormation service roles](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html),
+[state-machine deletion](https://docs.aws.amazon.com/step-functions/latest/apireference/API_DeleteStateMachine.html).
+
+The pure `aws_dev_shutdown_workflow.py` generator is independently accepted as
+an offline artifact. It replaces caller input, fixes the development targets,
+has four SDK tasks (5-second task / 45-second workflow timeouts), no Retry,
+explicit DataLimitExceeded and ALL catches, typed presence-guarded readbacks and
+a closed final projection. Uncatchable runtime/top-level failures still exist;
+this is not a guarantee that all attempts always complete. One single-attempt
+`ValidateStateMachineDefinition` call in eu-west-1 returned OK with zero error
+diagnostics and no truncation. That validation used a synthetic API ID and did
+not create a state machine, execute tasks or validate the intended IAM/targets,
+schedule, cleanup or real interoperability. No quota change or activation follows.
+
+Independent synthetic flow tests cover poisoned caller input, exact four-call
+order, write/readback failures including task timeouts and data-limit errors,
+missing/null/wrong-type values, and ambiguous writes confirmed by readbacks.
+Their minimal Pass/Task/Choice interpreter is not an AWS runtime emulator.
+Acceptance checkpoint: **980 passed, 4 skipped** overall, compilation succeeded,
+model-free evaluator **12/12**. The added skip is the unavailable Windows symlink
+fixture; the actual staged SDK ZIP was exercised by the explicit ARM probe above.
+
+Added closure cost basis: the official regional price list for `AmazonStates`
+in EU (Ireland), published 2026-09-11, lists `EU-StateTransition` at USD
+0.000025 per transition (USD 0.025 per 1,000). A conservative 40-transition
+single closure estimate is USD 0.001 before other services, taxes or retries;
+no free-tier/credits deduction is assumed. This is not the total deployment
+estimate or a billing cap. Source: [regional price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonStates/current/eu-west-1/index.json).
+
+The pure `aws_dev_shutdown_control.py` component generator is independently
+accepted. Five resources describe exact-scope workflow/Scheduler roles, Standard
+workflow, owned schedule group and a DISABLED one-time UTC schedule. It creates
+no Lambda and has no general event/target input. API PATCH alone requires the
+disable=true request condition; GET is separate. Lambda IAM cannot restrict the
+concurrency value to zero: the reviewed fixed definition supplies that value.
+Schedule time is syntax/calendar-validated, not yet accepted against a clock.
+CloudFormation currently does not expose the Scheduler API ActionAfterCompletion
+field; it is omitted with the default retention intent recorded in metadata,
+and must be checked by readback before activation. Logs/tracing are off, not
+execution-history erasure. This draft adds neither app deletion nor control-stack
+cleanup and does not replace the unchanged disabled application scaffold.
+
+Final local acceptance: **1013 passed, 4 skipped** (Windows symlink fixtures),
+compilation succeeded, model-free evaluator **12/12**. IAM, trust, resource scope,
+region, disabled schedule, wrong types/manipulated policies and synthetic ASL
+failure/dataflow tests are independently covered. A second categorical STS
+identity check remained non-root; the intended billing-account match still needs
+the operator's confirmation. The user is available for first login/MFA; that is
+not proof of account binding or completed OAuth interoperability. No resources
+have been created, activated or invoked. Keep quota 10 and stop before creation
+until account/owner/callback and complete reviewed timing/cleanup wiring exist.
+
+The user subsequently confirmed that the available AWS session belongs to the
+intended account. Retain only this categorical confirmation in Git, not the
+account number or financial balances. This resolves the account-match question,
+not owner subject/callback, completed first login, IAM execution or cleanup.
+
+### Vault reuse audit and additional local preparation — 2026-10-02
+
+The canonical vault MCP deployment guide and the existing AWS Remote MCP auth
+and shutdown runbooks were consulted, not duplicated or executed. The Honda
+scaffold already includes Managed Login v2, default managed branding, Essentials
+and exact resource/scope/audience binding. Reuse those contracts, not the other
+project's current WorkOS provider, PLUS tier, Retain or deletion protection:
+those differ from this disposable synthetic dev window. For user-driven TOTP
+enrollment, reuse the transient administrative scope with finally/readback
+closure; the actual enrollment method and interactive acceptance remain open.
+
+The independent-capacity pattern also requires a request tripwire (CloudWatch
+alarm to an exact EventBridge/Step Functions target) in the surviving control
+stack. That trigger and its bounded threshold/period contract are still missing;
+the scheduled close alone is not acceptance of the complete activation workflow.
+Do not delete the control anchor on a second fixed timer while application-stack
+deletion is asynchronous. Verify app absence or handle DELETE_FAILED first.
+
+One account-side CloudFormation syntax check rejected object-valued ASL
+`Definition` because of required `ResultPath: null`. The independently reviewed
+fix serializes `DefinitionString`, preserving the nulls; one subsequent bounded
+ValidateTemplate call accepted the control component. A separate syntax check
+accepted the disabled fixed-app cleanup schedule. Neither created resources nor
+proved runtime IAM, alarm delivery, deletion completion or OAuth interoperability.
+
+The pure cleanup component schedules only the fixed dev application stack for
+DeleteStack through a dedicated scoped Scheduler role. It remains DISABLED and
+requires a reviewed preassociated CloudFormation service role. UTC dates are
+calendar/syntax validated, not lifetime-guarded. Control-stack cleanup and final
+verification remain operator responsibilities, not guaranteed automatic deletion.
+
+The offline runtime builder consumes exactly 28 locally supplied hash-locked
+ARM wheels, fourteen allowlisted project modules and an empty package initializer.
+It neither invokes pip nor constructs a credential/network provider. The required
+public-only JWKS snapshot is parsed and paired with a hash/issuer manifest beside
+the entrypoint under `mapit/`, not at the ZIP root. Wheels, snapshot and output
+must be outside the repository and OneDrive (including business folder names);
+the builder rejects extra wheels, hashes/metadata mismatches, links, path escapes,
+collisions, `.pth` and unsupported `.data` installation paths. Dependency test
+files are omitted. Inputs, entry counts and archive sizes have explicit bounds.
+Hashes bind the selected download bytes, not independently authenticated wheel
+publisher provenance. A synthetic artifact is not a real Cognito key snapshot.
+The separate advisory-only audit of all 28 pins found no known vulnerabilities.
+Independent review accepted the builder and control serialization fix after
+reproducing and correcting both business-OneDrive and misplaced sibling-artifact
+defects. The independent test reads the extracted snapshot/manifest through the
+actual fixed-sibling loader. Focused builder/control checks: **53 passed**.
+Full final-source suite: **1062 passed, 4 skipped**, compilation and model-free
+evaluator **12/12**. Exact extracted-ZIP ARM acceptance is recorded separately
+once complete; an earlier handwritten fixture ZIP does not substitute for it.
+
+Commit `021cbb7` passed all six CI jobs. The two-hour external authority ended
+at **2026-10-02 11:32:29 UTC**, with no resources created or activated. Further
+account reads/provisioning need renewed authority; local and public preparation
+may continue. An isolated tooling environment installed `cfn-lint==1.57.1` (not
+the runtime). Static lint with socket construction denied and user/project lint
+configuration replaced by the null device found E1029 for interpolation-looking
+documentation text in metadata, and E3012 for Stage Tags. The latter conflicts
+with the consulted public Stage documentation and needs schema/source research,
+not an unsupported ignored warning or a premature deploy-ready claim. Exact ARM
+probe acceptance also remains pending after an initial synthetic-case failure.
+
+The subsequent exact ARM probe passed on a builder-produced synthetic archive:
+9,242,365 bytes, 949 entries, SHA-256
+`4b12fd799ed949d02fc3407114ffde28c32780b79ff591608bf7b7ba62b4bf5c`.
+The pinned official ARM image above ran with networking disabled and imported
+the extracted ZIP without relocating artifacts. Initialize/list, all ten tools,
+warm repeat, missing bearer/unknown kid/wrong audience (401), wrong scope (403),
+prod isolation and missing API configuration (503) passed. The supervisor verified
+the exact ZIP hash, empty initializer, fourteen modules, sibling placement and
+snapshot/manifest digest binding. Private fixture keys remained in host memory;
+synthetic tokens crossed Docker stdin only, not files, logs or Git. This remains
+synthetic offline acceptance, not a real Cognito login or AWS execution.
+
+The two preceding harness failures were fail-closed behavior: a fixture window
+expired during ARM startup, and the harness supplied the ZIP hash instead of the
+raw public-JWKS hash. The corrected harness selects its test window at container
+dispatch and binds the raw snapshot digest; runtime guards were not weakened.
+Persist a reusable probe for this distinction rather than relying on handwritten
+test assembly for future packaging changes.
+
+The schema/docs conflict was avoided without choosing an unconfirmed Stage Tags
+shape or suppressing E3012: omit that optional field and place identical
+project/environment tags on the API parent. No stage inheritance is claimed and
+IAM, closure targets, API throttling and disabled defaults are unchanged. The
+metadata prose now describes placeholders without interpolation-looking tokens.
+All four drafts passed `cfn-lint==1.57.1` with zero findings under the Python
+socket/DNS guard and null-device config. This is a static check, not an OS sandbox,
+IAM/service acceptance or activation gate. The isolated lint-tool pins are kept
+out of Lambda and passed a separate advisory audit. The new checker/CI block
+is independently accepted with **24 focused tests**; public package/advisory downloads are
+separate from static validation. Sources: [API tag contract](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-api.html),
+[optional Stage Tags](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-stage.html),
+[AWS static-lint documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-lint.html).
+
+Schema-block acceptance checkpoint: **1079 passed, 4 skipped** in the complete
+offline suite, compilation succeeded and model-free evaluator **12/12**. This
+checkpoint precedes the separate reusable ARM probe helper and does not include
+that helper's acceptance. The new isolated schema CI job must also pass before
+claiming its hosted result.
+
+The schema CI result for commit `24411b7` is accepted: **seven green jobs**,
+including the isolated actual four-template lint and the separate tooling audit.
+
+#### Reproducible local ARM probe — 2026-10-02
+
+`scripts/probe_aws_dev_runtime_arm.py --wheel-dir <external-local-wheel-directory>`
+rebuilds the fixed runtime ZIP from the 28 locked local ARM wheels and a fresh
+synthetic public JWKS. The pinned official image must already exist locally:
+`--pull=never`, `--network none`, ARM64, one read-only runtime ZIP mount and no
+host credential mounts. A validated local Docker context is used explicitly;
+TCP/SSH contexts are rejected. This command does not download dependencies or
+read an AWS account. Signing keys stay in host memory, synthetic tokens go only
+through stdin, and temporary public fixtures/ZIPs are removed on exit.
+
+Each run has a unique container name, ownership/run labels and bounded CID file.
+Following completion or a CLI timeout, cleanup checks the exact container's
+identity before removal and verifies absence. An inaccessible daemon or unknown
+ownership returns `cleanup_unverified`, never success; it does not prune or
+delete other containers. Unexpected preparation failures are reduced to closed
+categories without tracebacks. The 8 KiB output check occurs after capture; it
+is not an OS-level memory limit, and cleanup cannot be guaranteed if Docker is
+unreachable or the host process is forcibly terminated.
+
+The supervisor repeated the helper successfully against the exact generated ZIP:
+9,242,365 bytes, 949 entries, 28 wheels and 14 source modules; SHA-256
+`33354c42201ca3a39ac4d8c350cbbc55349c24b8dd70aad273efa678cb8a90d1`.
+Initialize, the exact ten tools, all ten calls, warm reuse, missing auth, unknown
+key, wrong audience/scope and prod/missing-config rejection all passed. Fresh
+synthetic RSA keys mean different runs have different ZIP digests. The execution
+window is established inside the container, not before slow ARM startup; its
+digest binding uses the raw JWKS hash, not the ZIP hash. This is synthetic local
+runtime acceptance only, not real Cognito, Codex OAuth or AWS deployment.
+
+Independent review accepted the frozen helper: 41 focused probe/builder tests.
+The supervisor's final full run passed **1,097 tests, with four Windows symlink
+skips**, compilation and the 12/12 model-free evaluator. The four-template static
+schema check also passed again. Hosted CI for this new checkpoint must be checked
+separately; the seven-job result above belongs to `24411b7`.
+
+#### Implemented offline request tripwire (not activated)
+
+Reuse the official AWS CDK **HTTP Stage** request metric, not a guessed statistic:
+`AWS/ApiGateway`, `Count`, dimensions fixed `ApiId` and `Stage=$default`,
+`Statistic=SampleCount`, `Period=60`, threshold `>=100`, one evaluation/one
+datapoint, `TreatMissingData=notBreaching`. Do not add a unit filter without
+publication evidence. This is 100 requests in one minute, not a cumulative
+five-minute budget. The alarm's actions stay off and an initially DISABLED
+EventBridge rule matches only the exact owned alarm's ALARM event, account,
+region and ARN. CloudWatch state events are independent of alarm actions;
+events emitted while the rule is disabled are not replayed.
+
+Use static `{}` target input, an exact existing Standard shutdown machine ARN,
+a dedicated StartExecution-only role and exact rule SourceArn/SourceAccount
+trust. A static ARN derived from the fixed rule name avoids a role/rule CFN
+dependency cycle. Delivery retry count is zero and maximum age 60
+seconds; failures need the separately armed time-based shutdown fallback.
+No Lambda execution capacity is used by this control path.
+
+Collection/evaluation is delayed; missing datapoints cannot trip the alarm, and
+excessive throttled requests may lack metrics. This is best-effort early closure,
+not a request, availability or billing hard cap. Actual metric publication,
+IAM/event delivery, closure readbacks and activation sequencing still require
+accepted cloud tests under renewed authority. Generating this component creates
+no resource or trigger. The extension adds an alarm, EventBridge rule and role to
+the existing five resources; independent component/workflow/checker review passed
+84 focused tests. The actual pinned static schema check also passed. Primary reuse basis:
+[pinned CDK HttpStage metric](https://github.com/aws/aws-cdk/blob/818574f2026c4a31f51e7bc03c0079fb9fd76478/packages/aws-cdk-lib/aws-apigatewayv2/lib/http/stage.ts#L130-L132),
+[pinned stage dimensions](https://github.com/aws/aws-cdk/blob/818574f2026c4a31f51e7bc03c0079fb9fd76478/packages/aws-cdk-lib/aws-apigatewayv2/lib/common/base.ts#L88-L91),
+[HTTP API metrics](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-metrics.html),
+[alarm state events](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch-and-eventbridge.html).
+
+#### Combined control timing
+
+`build_dev_control_bundle` composes the eight shutdown/tripwire resources and
+three app-cleanup resources in one disabled review template. It requires explicit
+positive integer UTC epochs. The first-resource timestamp cannot be in the future;
+planned activation must be 120–300 seconds after the supplied current-time
+snapshot. Runtime expiry is activation +300 seconds; shutdown is scheduled 120
+seconds before expiry. The planning allowance is 60 seconds Scheduler precision,
+45 seconds workflow timeout and 15 seconds additional margin. These are planning
+budgets, not guarantees against delivery failures or propagation delays.
+
+Application deletion is requested at first resource +45 minutes, leaving a nominal
+15 minutes for readback and control/artifact cleanup within the one-hour target.
+The runtime window must end before that deletion request. A new clock snapshot
+and the original first-resource timestamp are required when preparing the actual
+activation; delaying login cannot reset the resource-lifetime clock. The factory
+does not read a live clock, arm schedules, open the endpoint or verify deletion.
+All schedules and the EventBridge rule remain disabled. The combined template is
+now included as a fifth fixed synthetic document in the schema-checking CI job.
+Source: [Scheduler precision](https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html).
+
+Independent review accepted the composition with 100 focused tests. The local
+checkpoint passed 1,136 tests (four Windows symlink skips), compilation and the
+12/12 model-free evaluator; all five fixed templates passed the pinned schema
+check. This result does not validate actual event delivery or deletion permissions.
+
+#### Closed infrastructure rehearsal preparation
+
+The next concrete gate is documented in [the closed rehearsal runbook](phase-8-closed-rehearsal.md).
+The fixed dev-only bootstrap contains six resources, with no OAuth client,
+runtime artifact or live provider. Its API is disabled and handler reserve is
+zero. The independent twelve-resource control bundle includes exact generated
+API/pool/stack targets and an explicit scoped CloudFormation deletion role.
+All triggers remain disabled in the generated drafts.
+
+Independent review added inherited-Cognito-integration rejection regressions,
+exact-role/stack-target checks and resolved synthetic scheduled-input checks.
+The checkpoint passed 1,197 tests (five Windows symlink skips), compilation,
+the 12/12 model-free evaluator and all eight pinned synthetic schema checks.
+This is offline acceptance only: no AWS operation occurred. Renew authority
+before the closed creation/scheduled-shutdown/deletion rehearsal; actual IAM
+and scheduling acceptance, followed later by OAuth/runtime interoperability,
+remain unproven.
+
+#### Bootstrap identity ordering
+
+The offline `scripts/build_aws_dev_runtime_template.py` now prepares a separate
+temporary artifact-bucket stack and a closed runtime candidate. The bucket has
+no fixed name or versioning, blocks public access, enforces bucket-owner
+ownership and TLS, and uses SSE-S3. The candidate changes only the bootstrap
+handler/code reference and readiness metadata, retaining API disabled/reserve
+zero and the original execution role without S3 permissions. The object key is
+`runtime/<ZIP SHA-256>.zip`; this digest is distinct from the manifest's JWKS hash.
+Independent synthetic review passed; all ten fixed templates passed the pinned
+offline schema checker. No bucket was created and no package was uploaded.
+
+This is not a publisher or automatic cleanup implementation. A future uploader
+must bind the observed owned bucket/key/hash, avoid overwriting conflicting
+content, verify the stored object and remove that exact object after app deletion.
+Verify the bucket is empty before deleting its stack; never empty an unrelated
+bucket or reuse the other project's retained SAM bucket. Real runtime environment,
+owner/client/JWKS binding and actual package acceptance remain separate.
+Primary references: [Lambda S3 code](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-lambda-function-code.html),
+[S3 bucket deletion](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-s3-bucket.html).
+
+An API ID, Cognito pool/client IDs and owner subject are generated during closed
+bootstrap. Requiring those generated values before any resource creation would
+be circular. Before bootstrap, review the exact resource/configuration procedure,
+intended owner, cleanup and artifact plan. Before creating the OAuth client,
+obtain its actual callback for the real MCP resource URI. Before activation,
+require observed IDs, exact URI/issuer/client/subject binding, owner enrollment,
+public JWKS snapshot, accepted runtime ZIP, fresh quota and armed control readbacks.
+This clarifies ordering; it does not renew AWS authority or make the current
+placeholder application template deploy-ready.
+
+The user additionally approved preparing a temporary Codex connection for this
+development MCP only, and removing it after the test. Do not change other MCPs
+or global defaults. An installed-CLI loopback-only OAuth-URL preparation probe
+used command-local overrides and a predefined synthetic client; it performed
+no successful login, code exchange, model call or persistent config edit. With
+issuer identification unsupported, two distinct synthetic resource paths
+produced distinct callback suffixes. No authentication URL/state/verifier/token
+belongs in Git. A callback placeholder is not adequate registration evidence.
+The effective callback for the actual AWS connection remains to be established;
+do not infer its suffix algorithm from this small diagnostic.
+Official settings: [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference),
+[OpenAI MCP authentication](https://developers.openai.com/plugins/build/auth).
+
+### Resumed offline preparation — 2026-10-01
+
+The user asked to resume work after the premature stop. The two-hour AWS gate
+has expired; this continuation is local implementation/testing only, not renewed
+AWS reads, quota mutation, resource creation, activation or paid calls.
+Approve two sequential bounded blocks with independent review:
+
+1. Add a required immutable dev execution window to the environment entrypoint:
+   explicit UTC epoch start/end, positive span at most 300 seconds, no defaults,
+   reject before start/at-or-after end and on malformed configuration/clock,
+   including warm invocations. Bind the cached runtime to the same window and
+   cap each invocation's remaining-time budget to the window. Deny late results.
+   This bounds synthetic tool use, not endpoint availability or billing.
+2. Implement an offline shutdown core with injected fake clients for tests:
+   fixed validated dev API/function targets, disable API then put MCP reserve 0,
+   attempt both even if the first fails, read back both states independently,
+   emit only closed error categories. Never enable/delete/invoke anything, accept
+   event-supplied targets or load AWS credentials. The core has no AWS SDK/network
+   construction; a real SDK entrypoint/package and IAM wiring remain separate.
+
+No modification of the other project, production, live MAPIT or Telegram is
+included. The disabled infrastructure scaffold remains unchanged for these blocks.
+
+Both blocks are independently accepted locally: **177 focused tests; 896 passed,
+3 skipped overall**, compilation and model-free evaluator 12/12. The required
+environment names are `MAPIT_DEV_EXECUTION_START_EPOCH` and
+`MAPIT_DEV_EXECUTION_END_EPOCH`; canonical UTC epoch strings define `[start,end)`.
+Successful warm-cache identity includes the exact window, policy and JWKS digest.
+The invocation budget never increases, even on wall-clock rollback; monotonic
+capture precedes potentially slow context reads. Context checks, immediate
+pre-dispatch checks and post-result checks reject an inactive window. These are
+cooperative execution guards, not thread termination or a billing hard cap.
+
+`aws_dev_shutdown.py` makes four logical calls without retries: API disable,
+Lambda reserve zero, API readback, Lambda readback. Each failure leaves the other
+attempts intact. It requires exact `DisableExecuteApiEndpoint is True` and an
+integer `ReservedConcurrentExecutions` of zero; `False` is not an integer zero.
+Readbacks determine verification, not successful write returns. Ambiguous writes
+retain safe warning categories even if both readbacks confirm closed. Tests use
+fake injected clients only; no SDK session or account call was made. Real SDK
+packaging, exact IAM grants, independent trigger/capacity, deployment wiring and
+crash-safe resource cleanup remain prerequisites, not accepted by this core.
+
+Final-source ARM probe: the generated-fixture ZIP (9,400,705 bytes; SHA-256
+`fc6874b7225954d1ab5b11754b2f57fbb1de378db71cb729bb42e019e06f22b0`)
+was extracted and imported in the same pinned official ARM image with networking
+disabled. Initialize, all ten tools, warm invocation and prior negative cases
+passed, including before-window, expired-window and warm-window rearming denials.
+This supersedes the earlier probe for the updated source, not a real Cognito
+deployment artifact or a live shutdown test. Private signing keys existed only
+in probe memory; the fixture bundle remains outside Git.
+
+Primary API shapes: [API update](https://docs.aws.amazon.com/boto3/latest/reference/services/apigatewayv2/client/update_api.html),
+[API readback](https://docs.aws.amazon.com/boto3/latest/reference/services/apigatewayv2/client/get_api.html),
+[Lambda update](https://docs.aws.amazon.com/boto3/latest/reference/services/lambda/client/put_function_concurrency.html),
+[Lambda readback](https://docs.aws.amazon.com/boto3/latest/reference/services/lambda/client/get_function_concurrency.html).
+
+1. **Bounded dev deployment/cost/identity gate**: the short synthetic dev window
+   above was approved temporarily; that authority has expired. Before creation,
+   finish the runtime/package/shutdown prerequisites and confirm the intended
+   account/operator and exact owner/callback binding. For any later live-data
+   expansion, approve region, minimal service
+   scope, account read/provisioning authority, a defined gross spend envelope and
+   test duration, operator/owner identity, exact callback/resource URI, secret
+   handoff/rotation and cleanup. First complete synthetic transport/deadline,
+   authorization-negative tests and deployment validation; a disabled stub is
+   not permission to activate or a successful service test. No production,
+   MAPIT credential migration or live MAPIT call is implied by preparing IaC.
+2. **Prod gate**: only after accepted bounded dev interoperability/security,
+   operational controls, measured costs and independent review. Decide production
+   retention, monitoring, ownership, credential rotation and recovery explicitly.
+3. **Optional managed-agent/model gate**: a separately selected provider/model,
+   evaluation scope and explicit inference spend approval. Not required to use
+   this MCP from Codex. No paid model evaluation is currently approved.
+
+Do not ask for credentials pasted into chat or Git. Implementation remains
+offline; the separately authorized billing-console review was read-only. The
+temporary gate authority does not supply a missing operator identity, exact
+callback or first interactive login/MFA. Do not start the one-hour resource
+lifetime while waiting for the operator to return. Complete offline prerequisites
+first; actual provisioning remains suspended until those checks can be satisfied,
+and authority must be renewed if the two-hour approval has expired.
+### Permanent private production acceptance (2026-10-03)
+
+The user approved retained private single-owner production in eu-west-1, a
+USD 1 gross/month target (not a hard billing ceiling), session-only transfer,
+and one vehicle-status/current-UTC-month distance smoke. Lambda quota remains
+10; no paid inference, password transfer or historical ledger migration.
+
+The saved refresh session was published once as Standard SecureString with the
+AWS-managed SSM key. Version-one readback and metadata/ownership checks passed;
+no secret values were recorded in this repository. The five-resource production
+bootstrap is created and verified with API disabled and Lambda reservation zero.
+The five-resource independent Step Functions stop controller is created. A real
+closed rehearsal succeeded and independently verified both shutdown targets.
+
+Offline production reader/publication/provider/transport/runtime/packaging
+changes passed independent focused review; the full suite passed 1,777 tests
+with five skipped, compilation succeeded and the model-free evaluator passed
+12/12. The exact real-bound production ZIP passed five network-denied ARM
+metadata/negative guards; its eighteen source modules matched the accepted
+runtime. Twelve synthetic production ARM checks were independently reproduced.
+The private retained artifact-bucket factory additionally passed its focused
+test and offline pinned cfn-lint with zero findings.
+
+One cost-allocation metadata read found Project inactive; no account billing
+setting was changed and no project-specific monthly Budget alert is claimed.
+Emergency request-pressure shutdown is not a monthly spending hard cap.
+The closed runtime stack update and exact configuration/package readbacks
+passed. The request-pressure alarm and its independently provisioned shutdown
+controller were armed before activation. The definitive owner/MFA was preserved.
+The permanent Codex connection uses its own loopback callback; other MCP and
+global configuration remained unchanged.
+
+After an interrupted login handoff, a fresh bounded OAuth/PKCE login completed
+with CLI exit zero and verified credential storage. The single authorized
+model-free production smoke then succeeded: six app-server requests and two
+successful tool calls, only vehicle status and current-UTC-month distance.
+No model turn, paid inference, Telegram operation, historical scan or ledger
+migration occurred. Operational production resources and the permanent Codex
+connection are retained within the approved private single-owner scope.
+This is not multiuser acceptance, evidence of physical GPS accuracy, measured
+monthly cost, or a guaranteed billing cap. Project-tag activation and a monthly
+Budget notification remain a separate unanswered account-settings decision.

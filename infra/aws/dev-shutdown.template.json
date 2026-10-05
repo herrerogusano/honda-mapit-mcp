@@ -1,0 +1,74 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "OFFLINE REVIEWED COMPONENT ONLY: disabled synthetic-dev shutdown function. Not a complete deployment or independent-cleanup system.",
+  "Metadata": {
+    "Readiness": "COMPONENT_NOT_DEPLOY_READY",
+    "Region": "eu-west-1",
+    "NoActivation": true,
+    "MissingPrerequisites": ["independent triggers", "verified reserved capacity", "owned-resource cleanup", "operator/account binding"]
+  },
+  "Parameters": {
+    "ApiId": {"Type": "String", "AllowedPattern": "^[a-z0-9]{10}$"},
+    "ArtifactBucket": {"Type": "String", "AllowedPattern": "^honda-mapit-mcp-dev-[a-z0-9][a-z0-9-]{1,39}$"},
+    "ArtifactKey": {"Type": "String", "AllowedPattern": "^shutdown/[a-f0-9]{64}\\.zip$"},
+    "ArtifactVersion": {"Type": "String", "MinLength": 1, "MaxLength": 1024}
+  },
+  "Conditions": {
+    "SupportedRegion": {"Fn::Equals": [{"Ref": "AWS::Region"}, "eu-west-1"]}
+  },
+  "Resources": {
+    "ShutdownLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Condition": "SupportedRegion",
+      "DeletionPolicy": "Delete",
+      "UpdateReplacePolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/honda-mapit-mcp-dev-shutdown",
+        "RetentionInDays": 7,
+        "Tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"}]
+      }
+    },
+    "ShutdownRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "SupportedRegion",
+      "Properties": {
+        "RoleName": "honda-mapit-mcp-dev-shutdown-role",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+        },
+        "Policies": [{
+          "PolicyName": "close-owned-dev-runtime",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": "apigateway:PATCH", "Resource": {"Fn::Sub": "arn:${AWS::Partition}:apigateway:eu-west-1::/apis/${ApiId}"}, "Condition": {"Bool": {"apigateway:Request/DisableExecuteApiEndpoint": "true"}}},
+              {"Effect": "Allow", "Action": "apigateway:GET", "Resource": {"Fn::Sub": "arn:${AWS::Partition}:apigateway:eu-west-1::/apis/${ApiId}"}},
+              {"Effect": "Allow", "Action": ["lambda:PutFunctionConcurrency", "lambda:GetFunctionConcurrency"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:lambda:eu-west-1:${AWS::AccountId}:function:honda-mapit-mcp-dev-handler"}},
+              {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:eu-west-1:${AWS::AccountId}:log-group:/aws/lambda/honda-mapit-mcp-dev-shutdown:*"}}
+            ]
+          }
+        }],
+        "Tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"}]
+      }
+    },
+    "ShutdownFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Condition": "SupportedRegion",
+      "DependsOn": ["ShutdownLogs"],
+      "Properties": {
+        "FunctionName": "honda-mapit-mcp-dev-shutdown",
+        "Architectures": ["arm64"],
+        "Runtime": "python3.13",
+        "Handler": "mapit.aws_dev_shutdown_entrypoint.handler",
+        "MemorySize": 128,
+        "Timeout": 30,
+        "ReservedConcurrentExecutions": 0,
+        "Role": {"Fn::GetAtt": ["ShutdownRole", "Arn"]},
+        "Code": {"S3Bucket": {"Ref": "ArtifactBucket"}, "S3Key": {"Ref": "ArtifactKey"}, "S3ObjectVersion": {"Ref": "ArtifactVersion"}},
+        "Environment": {"Variables": {"MAPIT_MCP_ENV": "dev", "MAPIT_API_ID": {"Ref": "ApiId"}}},
+        "Tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"}]
+      }
+    }
+  }
+}

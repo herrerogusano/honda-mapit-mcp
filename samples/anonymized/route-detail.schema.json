@@ -1,0 +1,162 @@
+{
+  "fields": {
+    "avgSpeed": {
+      "nullable": false,
+      "type": "number"
+    },
+    "complete": {
+      "nullable": false,
+      "type": "boolean"
+    },
+    "continues": {
+      "nullable": true,
+      "type": "null"
+    },
+    "createdAt": {
+      "nullable": false,
+      "type": "string"
+    },
+    "device": {
+      "fields": {
+        "id": {
+          "nullable": false,
+          "type": "string"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "distance": {
+      "nullable": false,
+      "type": "number"
+    },
+    "endedAt": {
+      "nullable": false,
+      "type": "string"
+    },
+    "geoJSON": {
+      "fields": {
+        "features": {
+          "items": {
+            "fields": {
+              "geometry": {
+                "fields": {
+                  "coordinates": {
+                    "items": {
+                      "nullable": false,
+                      "type": "mixed",
+                      "types": [
+                        "array",
+                        "number"
+                      ]
+                    },
+                    "nullable": false,
+                    "type": "array"
+                  },
+                  "type": {
+                    "nullable": false,
+                    "type": "string"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              },
+              "properties": {
+                "fields": {
+                  "avgSpeed": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "distance": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "inferred": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "label": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "maxSpeed": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "name": {
+                    "nullable": false,
+                    "type": "string"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              },
+              "type": {
+                "nullable": false,
+                "type": "string"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "nullable": false,
+          "type": "array"
+        },
+        "type": {
+          "nullable": false,
+          "type": "string"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "id": {
+      "nullable": false,
+      "type": "string"
+    },
+    "maxSpeed": {
+      "nullable": false,
+      "type": "number"
+    },
+    "merged": {
+      "nullable": false,
+      "type": "boolean"
+    },
+    "odometerEnd": {
+      "nullable": true,
+      "type": "null"
+    },
+    "odometerStart": {
+      "nullable": true,
+      "type": "null"
+    },
+    "startTz": {
+      "nullable": false,
+      "type": "string"
+    },
+    "startedAt": {
+      "nullable": false,
+      "type": "string"
+    },
+    "startsAtLastKnown": {
+      "nullable": false,
+      "type": "boolean"
+    },
+    "updatedAt": {
+      "nullable": false,
+      "type": "string"
+    },
+    "vehicle": {
+      "fields": {
+        "id": {
+          "nullable": false,
+          "type": "string"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    }
+  },
+  "nullable": false,
+  "type": "object"
+}

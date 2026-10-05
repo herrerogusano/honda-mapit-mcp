@@ -1,0 +1,86 @@
+{
+  "fields": {
+    "battery": {
+      "nullable": false,
+      "type": "number"
+    },
+    "batteryConnectionStatus": {
+      "nullable": true,
+      "type": "null"
+    },
+    "batteryConnectionStatusTs": {
+      "nullable": true,
+      "type": "null"
+    },
+    "data": {
+      "nullable": true,
+      "type": "null"
+    },
+    "detectedCAN": {
+      "nullable": true,
+      "type": "null"
+    },
+    "hdop": {
+      "nullable": false,
+      "type": "number"
+    },
+    "id": {
+      "nullable": false,
+      "type": "string"
+    },
+    "lastBuzzTs": {
+      "nullable": false,
+      "type": "number"
+    },
+    "lastCoordTs": {
+      "nullable": false,
+      "type": "number"
+    },
+    "lastTs": {
+      "nullable": false,
+      "type": "number"
+    },
+    "lat": {
+      "nullable": false,
+      "type": "number"
+    },
+    "lng": {
+      "nullable": false,
+      "type": "number"
+    },
+    "model": {
+      "nullable": false,
+      "type": "string"
+    },
+    "odometer": {
+      "nullable": true,
+      "type": "null"
+    },
+    "speed": {
+      "nullable": true,
+      "type": "null"
+    },
+    "status": {
+      "nullable": false,
+      "type": "string"
+    },
+    "updatedAt": {
+      "nullable": false,
+      "type": "string"
+    },
+    "version": {
+      "nullable": false,
+      "type": "string"
+    },
+    "vin": {
+      "nullable": true,
+      "type": "null"
+    },
+    "voltage": {
+      "nullable": true,
+      "type": "null"
+    }
+  },
+  "nullable": false,
+  "type": "object"
+}

@@ -1,0 +1,79 @@
+name: OIDC claim discovery (no AWS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Inspect the GitHub OIDC subject for this target environment
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+
+permissions: {}
+
+concurrency:
+  group: honda-mapit-oidc-claims-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: Inspect runner-issued claim shape only
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: ${{ inputs.target }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TARGET: ${{ inputs.target }}
+      SOURCE_REF: ${{ github.ref }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - name: Enforce target branch and source identity
+        shell: bash
+        run: |
+          if [[ ! "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Dispatched source identity is invalid"
+            exit 1
+          fi
+          case "${TARGET}:${SOURCE_REF}" in
+            dev:refs/heads/develop|prod:refs/heads/main) ;;
+            *) echo "Target/ref combination is not allowed"; exit 1 ;;
+          esac
+
+      - name: Checkout exact dispatched commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify checkout identity
+        shell: bash
+        run: |
+          if [[ "$(git rev-parse HEAD)" != "${SOURCE_SHA}" ]]; then
+            echo "Checked out commit does not match the dispatched source"
+            exit 1
+          fi
+
+      - name: Reject ambient AWS credential sources
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_SECURITY_TOKEN|AWS_BEARER_TOKEN_BEDROCK|AWS_PROFILE|AWS_DEFAULT_PROFILE|AWS_ROLE_ARN|AWS_ROLE_SESSION_NAME|AWS_WEB_IDENTITY_TOKEN_FILE|AWS_CONTAINER_CREDENTIALS_FULL_URI|AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|AWS_CONTAINER_AUTHORIZATION_TOKEN|AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE|AWS_SHARED_CREDENTIALS_FILE|AWS_CONFIG_FILE|AWS_REGION|AWS_DEFAULT_REGION|AWS_ENDPOINT_URL|AWS_CA_BUNDLE)$/ || $1 ~ /^AWS_ENDPOINT_URL_/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "AWS credentials or credential sources must not be present"
+            exit 1
+          fi
+          if [[ -n "${HOME:-}" && ( -e "${HOME}/.aws/credentials" || -e "${HOME}/.aws/config" ) ]]; then
+            echo "AWS profile files must not be present"
+            exit 1
+          fi
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+
+      - name: Request one GitHub OIDC token and inspect claims only
+        run: python scripts/github_oidc_claims.py

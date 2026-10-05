@@ -1,0 +1,23 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+.env
+.env.*
+!.env.example
+
+# Private opt-in ledger belongs in LOCALAPPDATA, never the checkout.
+distance-history.sqlite3
+distance-history.sqlite3-journal
+distance-history.sqlite3-wal
+distance-history.sqlite3-shm
+history-operation.lock
+
+# Generated clean-environment security audit input.
+audit-requirements.txt

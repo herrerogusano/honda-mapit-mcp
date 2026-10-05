@@ -1,0 +1,93 @@
+name: CD readiness (no deployment)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Readiness target (this workflow does not deploy)
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+
+permissions:
+  contents: read
+
+concurrency:
+  group: honda-mapit-cd-readiness-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    name: Offline readiness checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+      TARGET: ${{ inputs.target }}
+      SOURCE_REF: ${{ github.ref }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - name: Enforce target branch
+        shell: bash
+        run: |
+          if [[ ! "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Dispatched source identity is invalid"
+            exit 1
+          fi
+          case "${TARGET}:${SOURCE_REF}" in
+            dev:refs/heads/develop|prod:refs/heads/main) ;;
+            *) echo "Target/ref combination is not allowed"; exit 1 ;;
+          esac
+
+      - name: Checkout exact dispatched commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify checkout identity
+        shell: bash
+        run: |
+          if [[ ! "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || [[ "$(git rev-parse HEAD)" != "${SOURCE_SHA}" ]]; then
+            echo "Checked out commit does not match the dispatched source"
+            exit 1
+          fi
+
+      - name: Reject provider credentials and AWS credential sources
+        shell: bash
+        run: |
+          if env | awk -F= '$1 ~ /^(MAPIT_EMAIL|MAPIT_PASSWORD|OPENAI_API_KEY|ANTHROPIC_API_KEY|TELEGRAM_BOT_TOKEN|MAPIT_TELEGRAM_BOT_TOKEN|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_SECURITY_TOKEN|AWS_BEARER_TOKEN_BEDROCK|AWS_PROFILE|AWS_DEFAULT_PROFILE|AWS_ROLE_ARN|AWS_ROLE_SESSION_NAME|AWS_WEB_IDENTITY_TOKEN_FILE|AWS_CONTAINER_CREDENTIALS_FULL_URI|AWS_CONTAINER_CREDENTIALS_RELATIVE_URI|AWS_CONTAINER_AUTHORIZATION_TOKEN|AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE|AWS_SHARED_CREDENTIALS_FILE|AWS_CONFIG_FILE|AWS_REGION|AWS_DEFAULT_REGION|AWS_ENDPOINT_URL|AWS_CA_BUNDLE)$/ || $1 ~ /^AWS_ENDPOINT_URL_/ { found=1 } END { exit found ? 0 : 1 }'; then
+            echo "Provider credentials or AWS credential sources must not be present"
+            exit 1
+          fi
+          if [[ -n "${HOME:-}" && ( -e "${HOME}/.aws/credentials" || -e "${HOME}/.aws/config" ) ]]; then
+            echo "AWS profile files must not be present in readiness checks"
+            exit 1
+          fi
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+
+      - name: Install public test dependencies
+        run: python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test,agent,realtime]"
+
+      - name: Compile source and tests
+        run: python -m compileall -q src tests scripts
+
+      - name: Run full offline test suite
+        run: python -m pytest -q
+
+      - name: Run model-free evaluator
+        run: python scripts/evaluate_agent_dataset.py
+
+      - name: Record readiness only
+        shell: bash
+        run: |
+          {
+            printf '%s\n' '## CD readiness (no deployment)' ''
+            printf '%s\n' "- Target: ${TARGET}" "- Source commit: ${SOURCE_SHA}" '- Result: offline checks passed; no artifact built or deployed.'
+          } >> "$GITHUB_STEP_SUMMARY"

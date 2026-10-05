@@ -1,0 +1,822 @@
+{
+  "fields": {
+    "account": {
+      "fields": {
+        "address": {
+          "fields": {
+            "addressLocality": {
+              "nullable": false,
+              "type": "string"
+            },
+            "addressNumber": {
+              "nullable": false,
+              "type": "string"
+            },
+            "addressRegion": {
+              "nullable": false,
+              "type": "string"
+            },
+            "country": {
+              "nullable": false,
+              "type": "string"
+            },
+            "postalCode": {
+              "nullable": false,
+              "type": "string"
+            },
+            "streetAddress": {
+              "nullable": false,
+              "type": "string"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "dob": {
+          "nullable": false,
+          "type": "string"
+        },
+        "document": {
+          "fields": {
+            "number": {
+              "nullable": false,
+              "type": "string"
+            },
+            "type": {
+              "nullable": false,
+              "type": "string"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "email": {
+          "nullable": false,
+          "type": "string"
+        },
+        "firstName": {
+          "nullable": false,
+          "type": "string"
+        },
+        "id": {
+          "nullable": false,
+          "type": "string"
+        },
+        "lastName": {
+          "nullable": false,
+          "type": "string"
+        },
+        "ownedVehicles": {
+          "items": {
+            "fields": {
+              "id": {
+                "nullable": false,
+                "type": "string"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "nullable": false,
+          "type": "array"
+        },
+        "paymentMethods": {
+          "items": {
+            "fields": {
+              "default": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "id": {
+                "nullable": false,
+                "type": "string"
+              },
+              "info": {
+                "fields": {
+                  "brand": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "expMonth": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "expYear": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "funding": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "last4": {
+                    "nullable": false,
+                    "type": "string"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              },
+              "type": {
+                "nullable": false,
+                "type": "string"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "nullable": false,
+          "type": "array"
+        },
+        "pendingOnboardingMilestones": {
+          "items": {
+            "nullable": false,
+            "type": "unknown"
+          },
+          "nullable": false,
+          "type": "array"
+        },
+        "phone": {
+          "nullable": false,
+          "type": "string"
+        },
+        "preferences": {
+          "fields": {
+            "locale": {
+              "nullable": false,
+              "type": "string"
+            },
+            "marketingConsent": {
+              "nullable": false,
+              "type": "boolean"
+            },
+            "theme": {
+              "nullable": false,
+              "type": "string"
+            },
+            "timezone": {
+              "nullable": false,
+              "type": "string"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "review": {
+          "fields": {
+            "happy": {
+              "nullable": true,
+              "type": "null"
+            },
+            "score": {
+              "nullable": true,
+              "type": "null"
+            },
+            "shown": {
+              "nullable": false,
+              "type": "boolean"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "stripeId": {
+          "nullable": false,
+          "type": "string"
+        },
+        "stripePublishableKey": {
+          "nullable": false,
+          "type": "string"
+        },
+        "stripeTenant": {
+          "nullable": false,
+          "type": "string"
+        },
+        "subscriptionBalanceDays": {
+          "nullable": false,
+          "type": "number"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "productCatalog": {
+      "fields": {
+        "MapitDevice": {
+          "fields": {
+            "prices": {
+              "fields": {
+                "ES": {
+                  "fields": {
+                    "amount": {
+                      "nullable": false,
+                      "type": "number"
+                    },
+                    "currency": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                },
+                "PT": {
+                  "fields": {
+                    "amount": {
+                      "nullable": false,
+                      "type": "number"
+                    },
+                    "currency": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                },
+                "US": {
+                  "fields": {
+                    "amount": {
+                      "nullable": false,
+                      "type": "number"
+                    },
+                    "currency": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        },
+        "Subscription": {
+          "fields": {
+            "prices": {
+              "fields": {
+                "ES": {
+                  "fields": {
+                    "amount": {
+                      "nullable": false,
+                      "type": "number"
+                    },
+                    "currency": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                },
+                "PT": {
+                  "fields": {
+                    "amount": {
+                      "nullable": false,
+                      "type": "number"
+                    },
+                    "currency": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                },
+                "US": {
+                  "fields": {
+                    "amount": {
+                      "nullable": false,
+                      "type": "number"
+                    },
+                    "currency": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                }
+              },
+              "nullable": false,
+              "type": "object"
+            }
+          },
+          "nullable": false,
+          "type": "object"
+        }
+      },
+      "nullable": false,
+      "type": "object"
+    },
+    "vehicles": {
+      "items": {
+        "fields": {
+          "branch": {
+            "nullable": false,
+            "type": "string"
+          },
+          "cancelled": {
+            "nullable": false,
+            "type": "boolean"
+          },
+          "capabilities": {
+            "fields": {
+              "deviceTransfer": {
+                "fields": {
+                  "dealerTransfer": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "otherTransfer": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "privateTransfer": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "supported": {
+                    "nullable": false,
+                    "type": "boolean"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              },
+              "finance": {
+                "fields": {
+                  "mode": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "supported": {
+                    "nullable": false,
+                    "type": "boolean"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              },
+              "hondaPlus": {
+                "fields": {
+                  "mode": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "supported": {
+                    "nullable": false,
+                    "type": "boolean"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              },
+              "maintenance": {
+                "nullable": false,
+                "type": "boolean"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "dealerData": {
+            "fields": {
+              "headerS3Key": {
+                "nullable": true,
+                "type": "null"
+              },
+              "logoAppS3Key": {
+                "nullable": true,
+                "type": "null"
+              },
+              "name": {
+                "nullable": false,
+                "type": "string"
+              },
+              "shop": {
+                "fields": {
+                  "address": {
+                    "fields": {
+                      "addressCountry": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "addressLocality": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "addressRegion": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "postalCode": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "streetAddress": {
+                        "nullable": false,
+                        "type": "string"
+                      }
+                    },
+                    "nullable": false,
+                    "type": "object"
+                  },
+                  "contactPoint": {
+                    "fields": {
+                      "email": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "name": {
+                        "nullable": false,
+                        "type": "string"
+                      }
+                    },
+                    "nullable": false,
+                    "type": "object"
+                  },
+                  "email": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "name": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "openingHours": {
+                    "items": {
+                      "nullable": false,
+                      "type": "string"
+                    },
+                    "nullable": false,
+                    "type": "array"
+                  },
+                  "telephone": {
+                    "nullable": false,
+                    "type": "string"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "dealerId": {
+            "nullable": false,
+            "type": "string"
+          },
+          "device": {
+            "fields": {
+              "deadSim": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "id": {
+                "nullable": false,
+                "type": "string"
+              },
+              "imei": {
+                "nullable": false,
+                "type": "string"
+              },
+              "model": {
+                "nullable": false,
+                "type": "string"
+              },
+              "state": {
+                "fields": {
+                  "battery": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "batteryConnectionStatus": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "batteryConnectionStatusTs": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "commsCheckRequestAt": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "commsCheckRequestId": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "createdAt": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "createdBy": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "data": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "detectedCan": {
+                    "nullable": false,
+                    "type": "boolean"
+                  },
+                  "deviceId": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "hdop": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "id": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "lastBuzzTs": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "lastCoordTs": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "lastTs": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "lat": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "lng": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "location": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "model": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "odometer": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "prevCommsCheckRequestAt": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "prevCommsCheckRequestId": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "prevStatus": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "speed": {
+                    "nullable": false,
+                    "type": "number"
+                  },
+                  "status": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "updatedBy": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "version": {
+                    "nullable": false,
+                    "type": "string"
+                  },
+                  "vin": {
+                    "nullable": true,
+                    "type": "null"
+                  },
+                  "voltage": {
+                    "nullable": false,
+                    "type": "number"
+                  }
+                },
+                "nullable": false,
+                "type": "object"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "firebaseKey": {
+            "nullable": false,
+            "type": "string"
+          },
+          "flags": {
+            "fields": {
+              "canAccessAccidentAlert": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "canAccessFallAlert": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "canAccessHibernationMode": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "canAccessIgnitionOnDetectedAlert": {
+                "nullable": false,
+                "type": "boolean"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "id": {
+            "nullable": false,
+            "type": "string"
+          },
+          "km": {
+            "nullable": false,
+            "type": "number"
+          },
+          "legacyDealerId": {
+            "nullable": false,
+            "type": "number"
+          },
+          "legacyId": {
+            "nullable": false,
+            "type": "number"
+          },
+          "model": {
+            "nullable": false,
+            "type": "string"
+          },
+          "name": {
+            "nullable": false,
+            "type": "string"
+          },
+          "notificationSettings": {
+            "fields": {
+              "accidentDetectedAlert": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "accidentDetectedAlertCritical": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "geofenceAlertCritical": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "id": {
+                "nullable": false,
+                "type": "string"
+              },
+              "ignitionOnDetectedAlert": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "ignitionOnDetectedAlertCritical": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "motorbikeFallAlert": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "motorbikeFallAlertCritical": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "motorbikeFallAlertSound": {
+                "nullable": false,
+                "type": "string"
+              },
+              "movementAlert": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "movementAlertCritical": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "movementAlertCriticalSchedule": {
+                "items": {
+                  "fields": {
+                    "days": {
+                      "items": {
+                        "nullable": false,
+                        "type": "string"
+                      },
+                      "nullable": false,
+                      "type": "array"
+                    },
+                    "endTime": {
+                      "nullable": false,
+                      "type": "string"
+                    },
+                    "startTime": {
+                      "nullable": false,
+                      "type": "string"
+                    }
+                  },
+                  "nullable": false,
+                  "type": "object"
+                },
+                "nullable": false,
+                "type": "array"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "pending": {
+            "nullable": false,
+            "type": "boolean"
+          },
+          "product": {
+            "nullable": false,
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "nullable": false,
+              "type": "string"
+            },
+            "nullable": false,
+            "type": "array"
+          },
+          "registrationCompletedAt": {
+            "nullable": false,
+            "type": "string"
+          },
+          "registrationId": {
+            "nullable": false,
+            "type": "string"
+          },
+          "registrationNumber": {
+            "nullable": false,
+            "type": "string"
+          },
+          "saleDate": {
+            "nullable": false,
+            "type": "string"
+          },
+          "subscription": {
+            "fields": {
+              "autoRenew": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "cancelled": {
+                "nullable": false,
+                "type": "boolean"
+              },
+              "id": {
+                "nullable": false,
+                "type": "string"
+              },
+              "retryingRenewal": {
+                "nullable": false,
+                "type": "boolean"
+              }
+            },
+            "nullable": false,
+            "type": "object"
+          },
+          "transferable": {
+            "nullable": false,
+            "type": "boolean"
+          },
+          "vin": {
+            "nullable": false,
+            "type": "string"
+          }
+        },
+        "nullable": false,
+        "type": "object"
+      },
+      "nullable": false,
+      "type": "array"
+    }
+  },
+  "nullable": false,
+  "type": "object"
+}
