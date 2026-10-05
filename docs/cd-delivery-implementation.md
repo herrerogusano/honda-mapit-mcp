@@ -182,3 +182,26 @@ permit readback reconciliation, never a repeated write. Independent offline
 checks cover drift, identity, clock reversal and post-write boundary mismatch.
 See [Lambda encryption permissions](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars-encryption.html)
 and [service/context restrictions](https://docs.aws.amazon.com/kms/latest/developerguide/conditions-kms.html).
+
+## First real release and recovery polling observation
+
+The fresh four-resource delivery-role correction was read back successfully.
+[Release 37387644931](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37387644931)
+passed source/CI, the synthetic ARM probe and all nine exact-candidate ARM checks.
+Its twelve-read core preflight, independent close, actual CloudFormation update
+and separate protected reopening succeeded. Parent readbacks confirmed the exact
+new code/template, attached service role, open API, unreserved function and
+terminal journal tag. The first-association opt-in was then disabled for future
+deliveries with a fresh secret-update intent; no application credentials changed.
+
+[Recovery 37388126973](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37388126973)
+restored the previous package, but its polling job stopped during the brief
+`UPDATE_COMPLETE_CLEANUP_IN_PROGRESS` transition. CloudFormation events place
+cleanup at 23:24:48.811 UTC and completion at 23:24:49.443 UTC, overlapping the
+failed step at 23:24:49. The service remained closed. The proposed narrow fix
+treats this owned intermediate state as pending only during update polling;
+identity/ownership checks still run first and final acceptance still requires
+`UPDATE_COMPLETE` plus exact template/resource/function/control readbacks.
+Stable preflight, failed rollback states and opening remain fail-closed. A fresh
+same-artifact recovery, not a replay of the failed intent, is being used for
+restoration. Operational recovery acceptance is not yet complete.
