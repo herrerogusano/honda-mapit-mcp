@@ -39,3 +39,18 @@ exact artifact/change presentation and recovery procedure.
 Primary references: [STS web-identity API](https://docs.aws.amazon.com/boto3/latest/reference/services/sts/client/assume_role_with_web_identity.html),
 [caller identity](https://docs.aws.amazon.com/STS/latest/APIReference/API_GetCallerIdentity.html),
 and [explicit SDK credentials](https://docs.aws.amazon.com/boto3/latest/guide/credentials.html).
+
+## Offline implementation accepted
+
+The pure injected proof core and separate runner/workflow are independently
+accepted offline. The runner rejects all ambient `AWS_*` variables except its
+exact role-ARN secret, rejects profile/config files and debug sources, and
+constructs direct regional single-attempt SDK clients with TLS verification.
+The web-identity request is unsigned; the second client uses only the returned
+credential trio. Both are closed without credential export or persistence.
+The workflow invokes the module from the exact checked-out source, installs
+the pinned public SDK lock and retains environment approval. Tests include
+real SDK Stubber/configuration/no-chain checks, a clean subprocess import and
+transport redirect denial. The dedicated SDK CI job runs these tests with
+pinned dependencies. No actual token request, STS proof, environment-secret
+binding or workflow dispatch follows from this offline acceptance.
