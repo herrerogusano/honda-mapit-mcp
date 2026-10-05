@@ -152,8 +152,12 @@ def prove_github_sts_identity(
     subject_digest = ""
     if type(subject) is str and len(subject) <= 1024:
         subject_digest = hashlib.sha256(subject.encode("utf-8")).hexdigest()
+    expected_provider_arn = (
+        f"arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com"
+    )
     if (
-        provider != ISSUER
+        type(provider) is not str
+        or provider not in {ISSUER, expected_provider_arn}
         or audience != AUDIENCE
         or not _same_digest(subject_digest, claims.subject_sha256)
         or not isinstance(assumed, Mapping)

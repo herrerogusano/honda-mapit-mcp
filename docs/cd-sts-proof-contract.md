@@ -168,3 +168,22 @@ role/session/caller checks; reject other accounts/providers and malformed forms.
 This read-only authorization did not approve that implementation or another
 proof. Independent offline acceptance and a new dev-only attempt allowance
 remain separate before verifying actual SDK interoperability.
+
+## Strict provider compatibility authorization
+
+The owner approved the proposed implementation, offline validation and exactly
+one new dev-only proof. Accept only a string exactly equal to the fixed issuer
+URL or the exact IAM OIDC-provider ARN constructed from the already validated
+expected account and fixed issuer host. Do not normalize paths/schemes, accept
+the bare host, other accounts/providers or change token/role/session/caller
+checks. No environment/IAM/workflow/dependency mutation or prod proof is included.
+Require independent offline acceptance, eight exact source CI checks, fresh
+closed IAM/provider and GitHub-protection readbacks, then normal dev approval.
+The earlier proof and audit allowances remain consumed.
+
+The compatibility increment passed independent offline acceptance; the combined
+focused regression passed 75 tests, including dev/prod synthetic positives and
+cross-account/path/scheme/non-string/missing-provider negatives before caller
+access. Compilation and diff checks passed. No other proof check, workflow,
+dependency or IAM setting changed. Live acceptance remains pending until exact
+source CI and the separately authorized one-attempt dev proof complete.

@@ -105,6 +105,12 @@ audit payload retained. AWS's CloudTrail OIDC example confirms ARN representatio
 the actual SDK payload was not retained. A strict URL-or-exact-owned-ARN repair
 is proposed, not implemented/approved by that read-only gate; another dev proof
 requires a new bounded allowance. See docs/cd-sts-proof-contract.md.
+The user subsequently approved the strict Provider URL-or-owned-ARN correction,
+offline validation and one new dev-only proof. The ARN must use the already
+validated expected account and fixed GitHub issuer host; no normalization,
+other account/provider, bare host, IAM expansion or prod proof is included.
+Require independent review and fresh eight-check/protection/closed-role gates
+before the single normally approved dev attempt. Older allowances stay consumed.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
