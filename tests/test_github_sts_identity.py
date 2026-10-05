@@ -166,6 +166,12 @@ def test_wrong_role_binding_fails_before_any_exchange(role_arn):
 
 @pytest.mark.parametrize(("field", "value"), [
     ("provider", "https://attacker.example"),
+    ("provider", f"arn:aws:iam::123456789013:oidc-provider/token.actions.githubusercontent.com"),
+    ("provider", f"arn:aws:iam::{ACCOUNT}:oidc-provider/token.actions.githubusercontent.com/"),
+    ("provider", f"arn:aws:iam::{ACCOUNT}:oidc-provider/attacker.example"),
+    ("provider", {"iss": ISSUER}),
+    ("provider", [ISSUER]),
+    ("provider", None),
     ("audience", "other-audience"),
     ("subject", "repo:other/repository:environment:dev"),
     ("assumed_arn", f"arn:aws:sts::{ACCOUNT}:assumed-role/other/{SESSION_NAME}"),
@@ -178,6 +184,23 @@ def test_mismatched_sts_bindings_fail_closed(field, value):
     args = {field: value}
     assume, caller = _responses(**args)
     with pytest.raises(StsProofError):
+        _run(assume, caller)
+
+
+@pytest.mark.parametrize("provider", [
+    ISSUER,
+    f"arn:aws:iam::{ACCOUNT}:oidc-provider/token.actions.githubusercontent.com",
+])
+def test_owned_oidc_provider_url_or_exact_account_arn_is_accepted(provider):
+    assume, caller = _responses(provider=provider)
+    result, _unsigned, _calls = _run(assume, caller)
+    assert result.status == "aws_identity_verified"
+
+
+def test_missing_sts_provider_is_rejected():
+    assume, caller = _responses()
+    del assume["Provider"]
+    with pytest.raises(StsProofError, match="identity_mismatch"):
         _run(assume, caller)
 
 

@@ -119,3 +119,71 @@ focused run passed 46 tests, including
 all nine failure stages, bounded call counts, client closure and canary-safe
 main serialization. The source increment is prepared in PR #9. No live proof
 was repeated and the original two-run allowance remains consumed.
+
+## One separately authorized dev diagnostic attempt
+
+The diagnostic PR #9 merged normally into develop at
+`bae697e9fd47a1687fab980314430024ce24621a`; all eight source CI checks passed
+in run 37340654012. Fresh branch/environment/owner/secret metadata checks and a
+separate sixteen-read exact closed-stack/IAM/provider probe passed.
+
+The owner then authorized one dev-only attempt, normally approved in the
+protected environment: [run 37341041504](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37341041504).
+It failed with `identity_mismatch` at `assume_role_response_validation`.
+This establishes that token acquisition, local claim validation and the AWS
+web-identity exchange returned successfully with HTTP 200, but an exact returned
+identity-field check failed. It does not identify the field or establish a
+successful end-to-end identity proof. The signed caller-identity request was not
+reached. No deployment, MAPIT call, role-permission change or prod attempt occurred.
+
+The one-attempt allowance is consumed. Do not guess a Provider-format repair,
+relax identity checks, replay this run or request another token automatically.
+The next diagnostic choice is a separately bounded read of the existing AWS
+audit event, filtering in memory to this exact role/session/time and emitting
+only field-match booleans; this is proposed, not authorized or performed.
+
+## Authorized existing-event audit read
+
+The owner subsequently authorized the bounded audit investigation. One regional
+STS account-identity read and two single-attempt CloudTrail lookups inspected the
+same narrow job-time interval in eu-west-1, at most ten events each with no
+pagination. Each query matched exactly the requested role/session event; neither
+was truncated. Responses remained in process memory and only comparison
+booleans were emitted. No new web-identity exchange was requested.
+
+The successful event's audience, subject digest, assumed-role ARN and session-ID
+suffix matched; a credentials object was present. Its `provider` matched exactly
+the privately verified owned OIDC-provider ARN, not the issuer URL or bare host.
+This is concrete audit evidence of the representation mismatch. The primary
+[CloudTrail STS documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/cloudtrail-integration.html)
+states that these events contain response elements except the secret access key,
+and its OIDC example represents `provider` as an IAM OIDC-provider ARN. The STS
+API reference's issuer wording differs. Do not expose raw audit data, which can
+include temporary session tokens; the actual SDK response was not retained.
+
+Proposed correction: accept only the exact configured issuer URL or the exact
+owned IAM OIDC-provider ARN derived from the already validated expected account
+and fixed GitHub issuer. Retain exact token issuer/audience/subject and all
+role/session/caller checks; reject other accounts/providers and malformed forms.
+This read-only authorization did not approve that implementation or another
+proof. Independent offline acceptance and a new dev-only attempt allowance
+remain separate before verifying actual SDK interoperability.
+
+## Strict provider compatibility authorization
+
+The owner approved the proposed implementation, offline validation and exactly
+one new dev-only proof. Accept only a string exactly equal to the fixed issuer
+URL or the exact IAM OIDC-provider ARN constructed from the already validated
+expected account and fixed issuer host. Do not normalize paths/schemes, accept
+the bare host, other accounts/providers or change token/role/session/caller
+checks. No environment/IAM/workflow/dependency mutation or prod proof is included.
+Require independent offline acceptance, eight exact source CI checks, fresh
+closed IAM/provider and GitHub-protection readbacks, then normal dev approval.
+The earlier proof and audit allowances remain consumed.
+
+The compatibility increment passed independent offline acceptance; the combined
+focused regression passed 75 tests, including dev/prod synthetic positives and
+cross-account/path/scheme/non-string/missing-provider negatives before caller
+access. Compilation and diff checks passed. No other proof check, workflow,
+dependency or IAM setting changed. Live acceptance remains pending until exact
+source CI and the separately authorized one-attempt dev proof complete.

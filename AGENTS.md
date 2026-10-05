@@ -88,6 +88,29 @@ That allowance is consumed. The user approved offline diagnostic improvements,
 not automatic repetition: retain exact validation/IAM and add only allowlisted
 failure stages/categories before requesting a new bounded live proof allowance.
 See docs/cd-sts-proof-contract.md. No deployment or MAPIT operation occurred.
+The offline diagnostic increment passed independent review, 46 focused tests,
+the full 2256-test checkpoint and eight CI jobs; PR #9 merged to develop at
+bae697e. After a new one-attempt dev authorization and fresh exact controls/IAM
+readbacks, run 37341041504 failed at assume_role_response_validation with
+identity_mismatch. AWS exchange returned HTTP 200; caller-identity was not reached.
+The failing field remains unknown. This dev allowance is consumed; no prod
+attempt or blind format repair is approved. A bounded existing-audit-event read
+is proposed as the next gate, not performed or authorized.
+That audit gate was subsequently approved and completed: one regional account
+identity read plus two bounded, single-attempt lookups of the same dev job-time
+interval, without pagination or another token exchange. Both matched one exact
+event. Audience/subject/role/session checks matched; provider matched the exact
+owned OIDC-provider ARN rather than URL/host. Only booleans were emitted, no raw
+audit payload retained. AWS's CloudTrail OIDC example confirms ARN representation;
+the actual SDK payload was not retained. A strict URL-or-exact-owned-ARN repair
+is proposed, not implemented/approved by that read-only gate; another dev proof
+requires a new bounded allowance. See docs/cd-sts-proof-contract.md.
+The user subsequently approved the strict Provider URL-or-owned-ARN correction,
+offline validation and one new dev-only proof. The ARN must use the already
+validated expected account and fixed GitHub issuer host; no normalization,
+other account/provider, bare host, IAM expansion or prod proof is included.
+Require independent review and fresh eight-check/protection/closed-role gates
+before the single normally approved dev attempt. Older allowances stay consumed.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
