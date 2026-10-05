@@ -133,3 +133,14 @@ historical writes and expired cutoffs are never replayed or widened.
 Independent offline review accepted 100 focused tests; the full suite passed
 2,457 tests with ten environment skips. Actual deployment and recovery remain
 pending. CD is still IN PROGRESS, not operationally complete.
+
+The subsequent source-gate diagnosis confirmed that the expression-based event
+path was empty in Actions. The gate now uses the standard `GITHUB_EVENT_PATH`
+runtime variable and BOM-tolerant JSON loading; its real source gate passed on
+`89e31f3`. That run then stopped before OIDC at locked-wheel download: requesting
+only manylinux2014 selected a different cryptography wheel than the existing
+hash lock. Official PyPI metadata and independent actual downloads verified all
+30 unchanged locks with the explicit ARM platform sequence manylinux 2.34,
+2.28 and 2014. The workflow retains CPython 3.13, binary-only/no-dependency
+downloads, exact hashes and pinned-image import acceptance. No AWS application
+write occurred in either failure; actual release and recovery remain pending.
