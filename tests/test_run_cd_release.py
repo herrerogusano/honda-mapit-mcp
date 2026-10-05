@@ -343,6 +343,15 @@ def test_release_downloads_use_the_locked_al2023_arm_platforms():
         assert command[command.index("--python-version") + 1] == "3.13"
 
 
+def test_core_preflight_diagnostic_is_fixed_category_and_bounded_count_only(capsys):
+    release._report_core_preflight({"category": "aws_call_failed", "calls": 9,
+                                   "private": "PRIVATE_PROVIDER_CANARY"})
+    assert json.loads(capsys.readouterr().out) == {"core_preflight": {"category": "aws_call_failed", "calls": 9}}
+    for count in (True, -1, 101, "PRIVATE_PROVIDER_CANARY"):
+        release._report_core_preflight({"category": "PRIVATE_PROVIDER_CANARY", "calls": count})
+        assert json.loads(capsys.readouterr().out) == {"core_preflight": {"category": "upgrade_internal_error", "calls": 0}}
+
+
 def _source_gate_documents():
     sha = "a" * 40
     repo = "herrerogusano/honda-mapit-mcp"

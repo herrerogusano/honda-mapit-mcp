@@ -260,6 +260,7 @@ class CDRecoveryRunner(ordinary.CDReleaseRunner):
                 wall_clock=self.clock, retained_recovery=True,
             )
             preflight = core.run_step("preflight")
+            ordinary._report_core_preflight(preflight)
             if preflight.get("category") != "preflight_verified":
                 raise ordinary.ReleaseError("core_preflight_failed")
         except ordinary.ReleaseError:

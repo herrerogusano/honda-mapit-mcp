@@ -597,6 +597,7 @@ class CDReleaseRunner:
                 wall_clock=self.clock,
             )
             result = core.run_step("preflight")
+            _report_core_preflight(result)
             if result.get("category") != "preflight_verified":
                 raise ReleaseError("core_preflight_failed")
             if not _verify_private_artifact_bucket(
@@ -837,6 +838,17 @@ class CDReleaseRunner:
             )
         except Exception:
             return False
+
+
+def _report_core_preflight(result: Mapping[str, Any]) -> None:
+    from mapit.aws_prod_geography_upgrade import _CATEGORIES
+
+    category = result.get("category")
+    calls = result.get("calls")
+    print(json.dumps({"core_preflight": {
+        "category": category if type(category) is str and category in _CATEGORIES else "upgrade_internal_error",
+        "calls": calls if type(calls) is int and 0 <= calls <= 100 else 0,
+    }}, sort_keys=True))
 
 
 def _emit_outputs(result: Mapping[str, Any], environ: Mapping[str, str]) -> None:
