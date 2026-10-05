@@ -12,6 +12,12 @@ previous two-hour external-operation window has expired; no new window was grant
 Owner-only Telegram still needs reviewed application-session renewal, durable
 receipt behavior and transport/cost acceptance before permanent activation.
 
+The next local MCP integration is accepted separately in
+[`mcp-multiuser-local-contract.md`](mcp-multiuser-local-contract.md): actual
+SDK/ASGI dispatch with synthetic A/B tenants and per-operation authenticated
+context. Full offline checkpoint: 2,014 passed, five Windows fixture skips;
+compilation and the model-free evaluator passed. Production remains single-owner.
+
 Status: **offline library accepted; hosted linking/deployment pending**. This document records existing seams and a
 bounded direction for a later implementation. It does not authorize account
 creation, public signup, deployment, credential collection, new paid services,

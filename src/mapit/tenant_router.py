@@ -106,6 +106,18 @@ class InvitedTenantAuthority:
             raise TenantIsolationError("tenant_unauthorized")
         self._active.discard(key)
 
+    def matches_token_policy(self, policy: CognitoProdPolicy) -> bool:
+        """Check the shared issuer/resource/client/scope without exposing owners."""
+        if type(policy) is not CognitoProdPolicy or not self._policies:
+            return False
+        selected = next(iter(self._policies.values()))
+        return (
+            policy.issuer_url == selected.issuer_url
+            and policy.audience == selected.audience
+            and policy.client_id == selected.client_id
+            and policy.required_scope == selected.required_scope
+        )
+
     async def authenticate(self, token: str) -> AuthenticatedTenant:
         for key, verifier in self._verifiers.items():
             if key not in self._active:
@@ -199,6 +211,10 @@ class TenantServicesRouter:
 
     def __repr__(self) -> str:
         return "TenantServicesRouter(<redacted>)"
+
+    def is_bound_to(self, authority: InvitedTenantAuthority) -> bool:
+        """Return identity equality; a matching policy is not interchangeable."""
+        return self._authority is authority
 
     @contextmanager
     def bind(self, grant: AuthenticatedTenant) -> Iterator[None]:

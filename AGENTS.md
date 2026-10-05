@@ -9,6 +9,17 @@ renewed external-operation window, hosted signup/storage/IAM expansion or live
 Telegram/MAPIT operation follows from the continuation request. Preserve the
 single-owner production runtime until separately reviewed hosted acceptance.
 
+The separate opt-in HTTP/MCP composition in `src/mapit/invited_mcp.py` is now
+independently accepted offline. SDK-authenticated context supplies a private,
+sealed invitation grant per operation; the router must be tied to the exact
+authority and common issuer/resource/client/scope. No grant/provider is cached
+globally or in an escaping proxy. Actual ASGI/MCP synthetic A/B dispatch and
+authorization/revocation/provenance negatives passed, with 2,014 full-suite
+tests and five Windows skips, compilation and model-free evaluator 12/12.
+The production builder/entrypoints and owner-only Telegram are unchanged.
+Real onboarding/MAPIT identity proof, durable invitation/revocation state,
+tenant secret publication/IAM and hosted Lambda composition remain pending.
+
 On 2026-10-03 the user renewed a two-hour work window, 15:51:57–17:51:57 UTC,
 with temporary display/system wakefulness and restoration before final handoff.
 Scope: extend geographic queries across Spain if practical, otherwise Barcelona
