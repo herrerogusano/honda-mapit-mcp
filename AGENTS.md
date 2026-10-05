@@ -2,6 +2,17 @@
 
 ## Scope
 
+On 2026-10-05 the user requested preparing CD alongside AWS deployments.
+The separate manual `cd-readiness.yml` checks dev/develop or prod/main at the
+exact dispatched commit, with read-only repository permission and no AWS/OIDC,
+secrets, runtime artifact upload or deployment. It is preparation, not accepted
+continuous delivery. The default branch is main; both target branches were
+observed unprotected. Actual required checks/environment approvals, narrowly
+bound OIDC/IAM, private artifact packaging and a fresh deployment/recovery
+executor remain prerequisites. Never replay the expired geography operators or
+publish real owner/account bindings in GitHub artifacts. Production is unchanged;
+see `docs/cd-contract.md`.
+
 On 2026-10-05 the user selected multi-user MCP access and owner-only Telegram.
 Telegram expansion to other users is deferred until incremental cost is known
 and separately approved. Continue bounded offline MCP composition/testing; no
