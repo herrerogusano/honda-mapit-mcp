@@ -91,8 +91,9 @@ def test_exact_source_derived_caller_role_session_is_required_before_owned_stack
         assert owned_calls == []
 
 
-def _stack_readback(core, role_arn):
-    expected_resources = core.old_template["Resources"]
+def _stack_readback(core, role_arn, template=None):
+    template = core.old_template if template is None else template
+    expected_resources = template["Resources"]
     resource_rows = []
     for logical_id, resource in expected_resources.items():
         physical = {
@@ -115,7 +116,7 @@ def _stack_readback(core, role_arn):
     }
     responses = {
         "describe_stacks": {"Stacks": [stack]},
-        "get_template": {"TemplateBody": core.old_template},
+        "get_template": {"TemplateBody": template},
         "describe_stack_resources": {"StackResources": resource_rows},
     }
     calls = []
@@ -141,6 +142,44 @@ def test_owned_stack_requires_exact_cfn_service_role_readback():
         with pytest.raises(ProdGeographyUpgradeError, match="stack_not_owned"):
             core._owned_stack(state, core.old_template)
         assert [name for name, _ in calls] == ["describe_stacks"]
+
+
+def test_initial_attachment_is_only_allowed_for_exact_old_template_before_update():
+    auth = authorization(initial_service_role_attachment=True)
+    core, _journal = fresh_core(auth)
+    state = {"prod_run_id": core.prod_run_id}
+
+    # The explicitly authorized initial update may attach the role when the
+    # currently owned stack has no service role at all.
+    core._call, calls = _stack_readback(core, None)
+    assert core._owned_stack(state, core.old_template)["RoleARN"] is None
+    assert [method for method, _kwargs in calls] == [
+        "describe_stacks", "get_template", "describe_stack_resources"
+    ]
+
+    # A wrong existing role is never treated as unattached, even in this mode.
+    core._call, calls = _stack_readback(core, _service_role() + "/wrong")
+    with pytest.raises(ProdGeographyUpgradeError, match="stack_not_owned"):
+        core._owned_stack(state, core.old_template)
+    assert [method for method, _kwargs in calls] == ["describe_stacks"]
+
+    # The post-update template must always read back the exact fixed role.
+    core._call, calls = _stack_readback(core, None, core.new_template)
+    with pytest.raises(ProdGeographyUpgradeError, match="stack_not_owned"):
+        core._owned_stack(state, core.new_template, allow_in_progress=True)
+    assert [method for method, _kwargs in calls] == ["describe_stacks"]
+
+    core._call, calls = _stack_readback(core, _service_role(), core.new_template)
+    assert core._owned_stack(state, core.new_template)["RoleARN"] == _service_role()
+
+
+def test_attachment_false_keeps_exact_role_required_before_update():
+    core, _journal = fresh_core(authorization(initial_service_role_attachment=False))
+    state = {"prod_run_id": core.prod_run_id}
+    core._call, calls = _stack_readback(core, None)
+    with pytest.raises(ProdGeographyUpgradeError, match="stack_not_owned"):
+        core._owned_stack(state, core.old_template)
+    assert [method for method, _kwargs in calls] == ["describe_stacks"]
 
 
 def test_update_stack_passes_only_exact_reviewed_cfn_service_role():
@@ -184,4 +223,5 @@ def test_update_stack_passes_only_exact_reviewed_cfn_service_role():
     assert journal.load()["delivery_binding"] == {
         "source_sha": "a" * 40,
         "service_role_arn": _service_role(),
+        "initial_service_role_attachment": False,
     }

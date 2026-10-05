@@ -33,7 +33,7 @@ _FIELDS = frozenset({
     "production_open_verified",
 })
 _NESTED = {
-    "delivery_binding": {"source_sha", "service_role_arn"},
+    "delivery_binding": {"source_sha", "service_role_arn", "initial_service_role_attachment"},
     "close_intent": {"execution_name", "execution_arn"},
     "update_intent": {"client_request_token"},
 }
@@ -124,10 +124,16 @@ class S3DeliveryJournal:
             if key in _NESTED:
                 if type(value) is not dict or set(value) != _NESTED[key]:
                     return False
-                if any(type(v) is not str or not v or len(v) > 1024 for v in value.values()):
-                    return False
-                if key == "delivery_binding" and value["service_role_arn"] != (
-                        f"arn:aws:iam::{self.account_id}:role/honda-mapit-mcp-prod-cfn-update"):
+                if key == "delivery_binding":
+                    if (type(value["source_sha"]) is not str
+                            or re.fullmatch(r"[0-9a-f]{40}", value["source_sha"]) is None
+                            or value["source_sha"] != self.source_sha
+                            or type(value["service_role_arn"]) is not str
+                            or value["service_role_arn"] != (
+                                f"arn:aws:iam::{self.account_id}:role/honda-mapit-mcp-prod-cfn-update")
+                            or type(value["initial_service_role_attachment"]) is not bool):
+                        return False
+                elif any(type(v) is not str or not v or len(v) > 1024 for v in value.values()):
                     return False
                 if key == "close_intent" and (re.fullmatch(_UUID, value["execution_name"]) is None
                         or value["execution_arn"] != (f"arn:aws:states:eu-west-1:{self.account_id}:"

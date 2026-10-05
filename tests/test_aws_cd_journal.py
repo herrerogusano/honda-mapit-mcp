@@ -137,6 +137,32 @@ def test_wrong_run_or_source_cannot_load_existing_journal():
             changed.load()
 
 
+@pytest.mark.parametrize("attachment", [False, True])
+def test_initial_service_role_attachment_is_persisted_as_an_exact_boolean(attachment):
+    s3 = S3()
+    store = journal(s3)
+    value = state()
+    value["delivery_binding"]["initial_service_role_attachment"] = attachment
+    with store.locked():
+        assert store.load() is None
+        store.save(value)
+    recovered = journal(s3)
+    with recovered.locked():
+        assert recovered.load()["delivery_binding"]["initial_service_role_attachment"] is attachment
+
+
+def test_journal_rejects_non_boolean_initial_role_attachment():
+    s3 = S3()
+    store = journal(s3)
+    value = state()
+    value["delivery_binding"]["initial_service_role_attachment"] = 1
+    with store.locked():
+        assert store.load() is None
+        with pytest.raises(DeliveryJournalError, match="journal_invalid"):
+            store.save(value)
+    assert not any(name == "put" for name, _ in s3.calls)
+
+
 def test_unknown_absence_is_not_treated_as_empty():
     s3 = S3()
     s3.get_object = lambda **kw: (_ for _ in ()).throw(Failure("AccessDenied", 403))

@@ -1,5 +1,12 @@
 # Next delivery gate: private code-only production updates
 
+Historical architecture proposal: the owner subsequently approved the two-role
+bootstrap, permanent CFN association and private terminal-only journal retention.
+The operational runner and workflows are now implemented and independently
+reviewed offline; current execution evidence is recorded in
+[CD integration status](cd-delivery-implementation.md). The remaining text is
+the original proposal, not the current implementation inventory.
+
 Implementation has begun at the owner's explicit request; see
 [the component/integration status](cd-delivery-implementation.md). Offline
 components do not satisfy the remaining live gates or constitute completed CD.
