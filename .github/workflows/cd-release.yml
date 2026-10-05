@@ -177,8 +177,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$WHEEL_DIR" "$GEO_WHEEL_DIR"
-          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/runtime-requirements.txt --dest "$WHEEL_DIR"
-          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/geography-runtime-requirements.txt --dest "$GEO_WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux_2_34_aarch64 --platform manylinux_2_28_aarch64 --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/runtime-requirements.txt --dest "$WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux_2_34_aarch64 --platform manylinux_2_28_aarch64 --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/geography-runtime-requirements.txt --dest "$GEO_WHEEL_DIR"
       - name: Pull the pinned public Lambda ARM image
         shell: bash
         run: |
@@ -241,8 +241,8 @@ jobs:
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[geography]"
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
           mkdir -p "$WHEEL_DIR" "$GEO_WHEEL_DIR"
-          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/runtime-requirements.txt --dest "$WHEEL_DIR"
-          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/geography-runtime-requirements.txt --dest "$GEO_WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux_2_34_aarch64 --platform manylinux_2_28_aarch64 --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/runtime-requirements.txt --dest "$WHEEL_DIR"
+          python -m pip download --disable-pip-version-check --retries 0 --timeout 20 --only-binary=:all: --no-deps --require-hashes --platform manylinux_2_34_aarch64 --platform manylinux_2_28_aarch64 --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 --abi cp313 -r infra/aws/geography-runtime-requirements.txt --dest "$GEO_WHEEL_DIR"
       - name: Pull pinned ARM image and validate the real-bound candidate without network
         shell: bash
         run: |
