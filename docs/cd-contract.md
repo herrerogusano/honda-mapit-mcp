@@ -50,7 +50,10 @@ production update, present the exact change and recovery procedure. Preserve
 owner/MFA, quota 10, MAPIT data and single-owner production; this approval does
 not authorize hosted multiuser or paid inference. Operational CD still requires
 actual claim discovery, separately accepted IAM/update wiring and a real
-approved release-branch proof; readiness alone is not deployment.
+approved release-branch proof; readiness alone is not deployment. The two
+owner-approved claim-discovery runs subsequently passed on the exact promoted
+develop/main commits. They establish observed claim shape only, not AWS STS
+acceptance; see [the bounded receipts](cd-oidc-claims.md).
 
 Read-only AWS preflight under that approval matched a non-root session to the
 existing owned production stack in eu-west-1 and verified the existing GitHub
