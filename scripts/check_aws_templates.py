@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import socket
@@ -68,6 +69,7 @@ def fixed_documents() -> dict[str, str]:
         build_prod_oauth_template, build_prod_runtime_template,
     )
     from mapit.aws_prod_runtime import CognitoProdPolicy
+    from scripts.build_cd_identity_bootstrap import build_cd_identity_bootstrap
 
     documents = {}
     for label, filename in (
@@ -182,6 +184,35 @@ def fixed_documents() -> dict[str, str]:
         prod_policy, bucket="honda-mapit-prod-runtime-artifacts",
         zip_sha256="a" * 64, manifest_sha256="b" * 64,
     ))
+    identity_account_id = "123456789012"
+    identity_owner_id = "1234567"
+    identity_repository_id = "7654321"
+    identity_provider_arn = (
+        f"arn:aws:iam::{identity_account_id}:oidc-provider/"
+        "token.actions.githubusercontent.com"
+    )
+    for subject_format in ("legacy_environment", "immutable_environment"):
+        observed_subjects = {}
+        for target in ("dev", "prod"):
+            if subject_format == "legacy_environment":
+                subject = f"repo:herrerogusano/honda-mapit-mcp:environment:{target}"
+            else:
+                subject = (
+                    f"repo:herrerogusano@{identity_owner_id}/"
+                    f"honda-mapit-mcp@{identity_repository_id}:environment:{target}"
+                )
+            observed_subjects[target] = {
+                "format": subject_format,
+                "sha256": hashlib.sha256(subject.encode("ascii")).hexdigest(),
+            }
+        label = "cd_identity_legacy_draft" if subject_format == "legacy_environment" else "cd_identity_immutable_draft"
+        documents[label] = json.dumps(build_cd_identity_bootstrap(
+            account_id=identity_account_id,
+            provider_arn=identity_provider_arn,
+            owner_id=identity_owner_id,
+            repository_id=identity_repository_id,
+            observed_subjects=observed_subjects,
+        ))
     return documents
 
 

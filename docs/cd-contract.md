@@ -52,6 +52,14 @@ not authorize hosted multiuser or paid inference. Operational CD still requires
 actual claim discovery, separately accepted IAM/update wiring and a real
 approved release-branch proof; readiness alone is not deployment.
 
+Read-only AWS preflight under that approval matched a non-root session to the
+existing owned production stack in eu-west-1 and verified the existing GitHub
+OIDC provider with the STS audience. The provider will be reused without edits;
+the proposed target CD roles were absent. No IAM policy/role/provider or runtime
+was mutated. A separately reviewed identity-only bootstrap is prepared, not
+deployed; its real generated template must remain private. See
+[the bootstrap contract](cd-identity-bootstrap.md).
+
 This workflow intentionally does not implement any deployment path. A future
 proposal requires separate review and approval of all of the following before
 adding a deploy-capable workflow:
