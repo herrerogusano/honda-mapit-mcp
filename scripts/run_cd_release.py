@@ -528,6 +528,7 @@ class CDReleaseRunner:
             journal = S3DeliveryJournal(
                 services["s3"], bucket=bindings["artifact_bucket"], account_id=bindings["account_id"],
                 run_id=run_id, source_sha=source_sha,
+                initialize_new=phase == "build-update",
             )
             if phase == "build-update":
                 assert candidate is not None

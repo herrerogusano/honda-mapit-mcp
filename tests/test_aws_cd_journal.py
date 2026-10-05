@@ -73,6 +73,66 @@ def test_initial_and_subsequent_writes_are_conditional_and_read_back():
         assert other.load() == value
 
 
+def test_create_only_initialization_never_needs_missing_key_read_permission():
+    class NoListBucket(S3):
+        def get_object(self, **kw):
+            if self.object is None:
+                raise Failure("AccessDenied", 403)
+            return super().get_object(**kw)
+
+    s3, value = NoListBucket(), state()
+    store = journal(s3, initialize_new=True)
+    with store.locked():
+        assert store.load() is None
+        assert not s3.calls
+        store.save(value)
+        assert store.load() == value
+    assert [name for name, _ in s3.calls] == ["put", "get", "get"]
+    assert s3.calls[0][1]["IfNoneMatch"] == "*"
+    ordinary = journal(NoListBucket())
+    with ordinary.locked(), pytest.raises(DeliveryJournalError, match="journal_read_failed"):
+        ordinary.load()
+
+
+def test_create_only_collision_cannot_overwrite_or_retry_existing_journal():
+    s3, value = S3(), state()
+    existing = journal(s3)
+    with existing.locked():
+        existing.load()
+        existing.save(value)
+    original = s3.object
+    candidate = journal(s3, initialize_new=True)
+    with candidate.locked():
+        assert candidate.load() is None
+        with pytest.raises(DeliveryJournalError, match="journal_write_ambiguous"):
+            candidate.save(value)
+        assert s3.object == original
+        assert candidate.load() == value
+        with pytest.raises(DeliveryJournalError, match="journal_write_blocked"):
+            candidate.save(value)
+    assert sum(name == "put" for name, _ in s3.calls) == 2
+
+
+def test_create_only_ambiguous_write_reconciles_with_real_read_and_stays_fenced():
+    s3, value = S3(), state()
+    s3.ambiguous = True
+    store = journal(s3, initialize_new=True)
+    with store.locked():
+        store.load()
+        with pytest.raises(DeliveryJournalError, match="journal_write_ambiguous"):
+            store.save(value)
+        assert store.load() == value
+        with pytest.raises(DeliveryJournalError, match="journal_write_blocked"):
+            store.save(value)
+    assert [name for name, _ in s3.calls] == ["put", "get"]
+
+
+@pytest.mark.parametrize("value", [None, 1, "true"])
+def test_create_only_mode_requires_an_explicit_boolean(value):
+    with pytest.raises(DeliveryJournalError, match="journal_inputs_invalid"):
+        journal(S3(), initialize_new=value)
+
+
 def test_two_writers_cannot_dispatch_after_losing_cas():
     s3 = S3()
     a, b = journal(s3), journal(s3)
