@@ -314,8 +314,8 @@ def discover_from_environment(
     ):
         raise OidcClaimError("invalid_source")
     if (
-        not _positive_decimal_id(environment.get("EXPECTED_REPOSITORY_ID"))
-        or not _positive_decimal_id(environment.get("EXPECTED_OWNER_ID"))
+        not _positive_decimal_id(environment.get("GITHUB_REPOSITORY_ID"))
+        or not _positive_decimal_id(environment.get("GITHUB_REPOSITORY_OWNER_ID"))
     ):
         raise OidcClaimError("invalid_source")
     token = request_runner_oidc_token(
@@ -328,8 +328,8 @@ def discover_from_environment(
         token,
         target=target,
         source_sha=source_sha,
-        expected_repository_id=environment.get("EXPECTED_REPOSITORY_ID"),
-        expected_owner_id=environment.get("EXPECTED_OWNER_ID"),
+        expected_repository_id=environment.get("GITHUB_REPOSITORY_ID"),
+        expected_owner_id=environment.get("GITHUB_REPOSITORY_OWNER_ID"),
     )
 
 

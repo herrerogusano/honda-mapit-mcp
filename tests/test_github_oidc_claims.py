@@ -251,13 +251,34 @@ def test_environment_discovery_validates_ref_before_requesting_token() -> None:
                 "SOURCE_REF": "refs/heads/develop",
                 "GITHUB_REF": "refs/heads/develop",
                 "GITHUB_SHA": SOURCE_SHA,
-                "EXPECTED_REPOSITORY_ID": REPOSITORY_ID,
-                "EXPECTED_OWNER_ID": OWNER_ID,
+                "GITHUB_REPOSITORY_ID": REPOSITORY_ID,
+                "GITHUB_REPOSITORY_OWNER_ID": OWNER_ID,
                 "ACTIONS_ID_TOKEN_REQUEST_URL": "https://pipelines.actions.githubusercontent.com/token",
                 "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "r" * 40,
             },
             opener=opener,
         )
+    assert error.value.category == "invalid_source"
+    assert opener.calls == []
+
+
+@pytest.mark.parametrize("missing_id", ["GITHUB_REPOSITORY_ID", "GITHUB_REPOSITORY_OWNER_ID"])
+def test_environment_discovery_requires_runner_default_ids_before_request(missing_id) -> None:
+    environment = {
+        "TARGET": "prod",
+        "SOURCE_SHA": SOURCE_SHA,
+        "SOURCE_REF": "refs/heads/main",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_SHA": SOURCE_SHA,
+        "GITHUB_REPOSITORY_ID": REPOSITORY_ID,
+        "GITHUB_REPOSITORY_OWNER_ID": OWNER_ID,
+        "ACTIONS_ID_TOKEN_REQUEST_URL": "https://pipelines.actions.githubusercontent.com/token",
+        "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "r" * 40,
+    }
+    environment.pop(missing_id)
+    opener = _Opener(_Response(json.dumps({"value": _jwt(_claims())}).encode()))
+    with pytest.raises(OidcClaimError) as error:
+        discover_from_environment(environment, opener=opener)
     assert error.value.category == "invalid_source"
     assert opener.calls == []
 
@@ -273,8 +294,8 @@ def test_environment_discovery_returns_only_safe_projection() -> None:
             "SOURCE_REF": "refs/heads/main",
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_SHA": SOURCE_SHA,
-            "EXPECTED_REPOSITORY_ID": REPOSITORY_ID,
-            "EXPECTED_OWNER_ID": OWNER_ID,
+            "GITHUB_REPOSITORY_ID": REPOSITORY_ID,
+            "GITHUB_REPOSITORY_OWNER_ID": OWNER_ID,
             "ACTIONS_ID_TOKEN_REQUEST_URL": "https://pipelines.actions.githubusercontent.com/token",
             "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "runner-secret-canary-123456",
         },
@@ -296,16 +317,16 @@ def test_environment_discovery_rejects_conflicting_ref_sha_or_repository_binding
         "SOURCE_REF": "refs/heads/main",
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_SHA": SOURCE_SHA,
-        "EXPECTED_REPOSITORY_ID": REPOSITORY_ID,
-        "EXPECTED_OWNER_ID": OWNER_ID,
+        "GITHUB_REPOSITORY_ID": REPOSITORY_ID,
+        "GITHUB_REPOSITORY_OWNER_ID": OWNER_ID,
         "ACTIONS_ID_TOKEN_REQUEST_URL": "https://pipelines.actions.githubusercontent.com/token",
         "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "r" * 40,
     }
     for key, value in (
         ("GITHUB_REF", "refs/heads/develop"),
         ("GITHUB_SHA", "b" * 40),
-        ("EXPECTED_REPOSITORY_ID", "7654322"),
-        ("EXPECTED_OWNER_ID", "1234568"),
+        ("GITHUB_REPOSITORY_ID", "7654322"),
+        ("GITHUB_REPOSITORY_OWNER_ID", "1234568"),
     ):
         opener = _Opener(_Response(json.dumps({"value": _jwt(_claims())}).encode()))
         env = dict(base, **{key: value})
@@ -343,8 +364,10 @@ def test_workflow_is_target_gated_has_only_job_scoped_oidc_and_no_aws_steps() ->
     assert "permissions: {}" in text
     assert "id-token: write" in text
     assert "contents: read" in text
-    assert "EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}" in text
-    assert "EXPECTED_OWNER_ID: ${{ github.repository_owner_id }}" in text
+    assert "EXPECTED_REPOSITORY_ID" not in text
+    assert "EXPECTED_OWNER_ID" not in text
+    assert "GITHUB_REPOSITORY_ID:" not in text
+    assert "GITHUB_REPOSITORY_OWNER_ID:" not in text
     assert "ref: ${{ github.sha }}" in text
     assert "persist-credentials: false" in text
     assert "python scripts/github_oidc_claims.py" in text

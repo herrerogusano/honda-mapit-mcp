@@ -31,8 +31,6 @@ jobs:
       TARGET: ${{ inputs.target }}
       SOURCE_REF: ${{ github.ref }}
       SOURCE_SHA: ${{ github.sha }}
-      EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}
-      EXPECTED_OWNER_ID: ${{ github.repository_owner_id }}
     steps:
       - name: Enforce target branch and source identity
         shell: bash
