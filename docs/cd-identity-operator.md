@@ -64,3 +64,17 @@ readback. This changes no AWS permission or template. A repaired read-only
 verification records its own reviewed source SHA separately; the original
 creation source, template digest, request token and window remain unchanged.
 An alternate verification source is forbidden for preflight/create steps.
+
+## Final cloud readback accepted — 2026-10-05
+
+After all eight checks passed on
+`3df301af48aa1c2e8c0397cadd9b9c7e99e7877d`, the repaired read-only checker
+passed its complete 16-read verification and a second complete 16-read final
+verification. Exact template/resources/ownership, both role trusts, empty
+attached-policy lists, exact sole inline policies, boundary default versions
+and explicit-deny documents, termination protection and the unchanged existing
+provider URL/audience all passed. The private journal retains its original
+creation source `c044f257128bb60b2a62dc6db990b5dd65cbbc49`, template digest,
+window, run ID and consumed write token; the verifier source is recorded
+separately. No write was replayed or window extended. These are closed-role
+configuration receipts, not successful STS exchange or deployment receipts.

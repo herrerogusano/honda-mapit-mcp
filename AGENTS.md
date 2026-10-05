@@ -64,6 +64,13 @@ regional clients, unsigned exchange and explicit returned credentials only,
 exact context/identity checks, no exports or artifacts. Actual environment
 secret binding and the two new protected-run approvals remain pending;
 never treat the two consumed claim-only approvals as permission for these runs.
+The repaired IAM readback subsequently passed two complete 16-read checks,
+after eight green source checks on 3df301a. Both exact closed roles/boundaries
+and the unchanged shared provider are accepted as configuration, not STS trust
+exchange or deployment. Original creation source c044f25/template/window/run
+and consumed token are preserved; verifier source is recorded separately.
+Local checkpoint is 2251 passed, ten environment skips, compile and evaluator
+12/12. Production, owner/MFA, MAPIT data and quota 10 were not changed.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
