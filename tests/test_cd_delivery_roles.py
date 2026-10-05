@@ -87,6 +87,47 @@ def test_factory_returns_two_separate_bound_roles_and_boundaries():
         assert bstatements[-1]["NotAction"]
 
 
+def test_opt_in_default_lambda_key_is_exact_service_context_and_role_capability():
+    key = f"arn:aws:kms:eu-west-1:{ACCOUNT}:key/11111111-2222-4333-8444-555555555555"
+    base = _build()
+    updated = _build(lambda_environment_key_arn=key)
+    assert base["Metadata"] == updated["Metadata"]
+    assert set(base["Resources"]) == set(updated["Resources"])
+    for title, actions in (("Executor", ["kms:Decrypt"]),
+                           ("CloudFormation", ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"])):
+        role_id, boundary_id = f"ProdCd{title}Role", f"ProdCd{title}Boundary"
+        original = _role_policy(base["Resources"], role_id)
+        current = _role_policy(updated["Resources"], role_id)
+        assert current[:-1] == original
+        assert current[-1] == {
+            "Sid": "FixedLambdaEnvironmentKey", "Effect": "Allow", "Action": actions, "Resource": key,
+            "Condition": {"StringEquals": {"kms:CallerAccount": ACCOUNT,
+                "kms:ViaService": "lambda.eu-west-1.amazonaws.com",
+                "kms:EncryptionContext:aws:lambda:FunctionArn": HANDLER}}}
+        boundary = updated["Resources"][boundary_id]["Properties"]["PolicyDocument"]["Statement"]
+        assert boundary[:-4] == [{k: v for k, v in statement.items() if k != "Sid"} for statement in current]
+        assert boundary[-4:-1] == [
+            {"Effect": "Deny", "Action": actions, "NotResource": key},
+            {"Effect": "Deny", "Action": actions, "Resource": key,
+             "Condition": {"StringNotEquals": {"kms:ViaService": "lambda.eu-west-1.amazonaws.com"}}},
+            {"Effect": "Deny", "Action": actions, "Resource": key,
+             "Condition": {"StringNotEquals": {"kms:EncryptionContext:aws:lambda:FunctionArn": HANDLER}}},
+        ]
+        assert set(boundary[-1]["NotAction"]) == set(base["Resources"][boundary_id]["Properties"]["PolicyDocument"]["Statement"][-1]["NotAction"]) | set(actions)
+        assert updated["Resources"][role_id]["Properties"]["AssumeRolePolicyDocument"] == base["Resources"][role_id]["Properties"]["AssumeRolePolicyDocument"]
+        import json
+        assert len(json.dumps(updated["Resources"][boundary_id]["Properties"]["PolicyDocument"], separators=(",", ":"))) <= 6144
+
+
+@pytest.mark.parametrize("key", ["*", "arn:aws:kms:eu-west-1:123456789012:alias/aws/lambda",
+    "arn:aws:kms:us-east-1:123456789012:key/11111111-2222-4333-8444-555555555555",
+    "arn:aws:kms:eu-west-1:999999999999:key/11111111-2222-4333-8444-555555555555",
+    "arn:aws:kms:eu-west-1:123456789012:key/00000000-0000-0000-0000-000000000000", False, 1])
+def test_default_lambda_key_rejects_unbound_region_account_alias_or_wildcard(key):
+    with pytest.raises(DeliveryRoleError):
+        _build(lambda_environment_key_arn=key)
+
+
 def test_executor_trust_is_exact_observed_prod_subject_and_no_direct_code_write():
     resources = _build()["Resources"]
     trust = resources["ProdCdExecutorRole"]["Properties"]["AssumeRolePolicyDocument"]["Statement"]

@@ -219,7 +219,7 @@ def fixed_documents() -> dict[str, str]:
             "cd_delivery_legacy_draft" if subject_format == "legacy_environment"
             else "cd_delivery_immutable_draft"
         )
-        documents[delivery_label] = json.dumps(build_cd_delivery_roles(
+        delivery_arguments = dict(
             account_id=identity_account_id,
             provider_arn=identity_provider_arn,
             owner_id=identity_owner_id,
@@ -241,7 +241,14 @@ def fixed_documents() -> dict[str, str]:
             tripwire_rule_arn=(f"arn:aws:events:eu-west-1:{identity_account_id}:rule/"
                                "honda-mapit-mcp-prod-request-tripwire-alarm-rule"),
             allow_execution_role_passrole=True,
-        ))
+        )
+        documents[delivery_label] = json.dumps(build_cd_delivery_roles(**delivery_arguments))
+        if subject_format == "immutable_environment":
+            documents["cd_delivery_lambda_key_draft"] = json.dumps(build_cd_delivery_roles(
+                **delivery_arguments,
+                lambda_environment_key_arn=(f"arn:aws:kms:eu-west-1:{identity_account_id}:key/"
+                                            "11111111-2222-4333-8444-555555555555"),
+            ))
     return documents
 
 

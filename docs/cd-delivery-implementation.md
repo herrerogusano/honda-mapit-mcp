@@ -156,3 +156,29 @@ any shutdown/update action. Creation mode is consumed before the first PUT;
 all readbacks and subsequent reads are real, checksum/ETag-bound GETs. Collision,
 ambiguous write or failed readback fences the instance; no 403 is interpreted as
 absence. Default/reopening readers remain unchanged. No IAM expansion is added.
+
+The next run created and read back its initial journal, but still stopped before
+shutdown/publication. CloudTrail identified a service-mediated KMS Decrypt denial
+while reading the Lambda environment. The generated boundary explicitly denies
+unlisted actions, including KMS, even though the AWS-managed default key normally
+supplies access. Three successful corresponding reads independently bound the
+existing `alias/aws/lambda` key and `aws:lambda:FunctionArn` context to this exact
+handler. No customer key is configured.
+
+The opt-in correction adds executor Decrypt and CloudFormation
+Decrypt/Encrypt/GenerateDataKey only for that verified key, caller account,
+regional Lambda service and exact function context. The original no-key factory
+remains unchanged. No key policy, CreateGrant, DescribeKey, re-encryption, SSM or
+other-project capability is granted. A separate fresh, reviewed delivery-role
+stack update is required before the next release; production is still unchanged.
+Core preflight diagnostics expose only a fixed category and bounded call count.
+Three separate explicit boundary denies fence other keys, missing/wrong service
+mediation and missing/wrong function context, including resource-policy grants
+to role sessions. The verified real-input boundary documents are 5,876 and
+2,578 characters, below the 6,144-character limit. The IAM-only operator retains
+both exact templates, records a fresh immutable one-hour window and persists its
+one-shot intent before updating the existing four resources. Ambiguous outcomes
+permit readback reconciliation, never a repeated write. Independent offline
+checks cover drift, identity, clock reversal and post-write boundary mismatch.
+See [Lambda encryption permissions](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars-encryption.html)
+and [service/context restrictions](https://docs.aws.amazon.com/kms/latest/developerguide/conditions-kms.html).
