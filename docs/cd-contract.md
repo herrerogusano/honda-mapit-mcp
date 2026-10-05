@@ -69,3 +69,30 @@ this work.
 Primary GitHub references: [manual workflow dispatch](https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_dispatch),
 [OIDC claim formats](https://docs.github.com/en/actions/reference/security/oidc),
 and [deployment environment protections](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments).
+
+## Hosted protection capability gate — 2026-10-05
+
+Read-only repository inspection confirmed a private repository with default
+branch `main`. Both the rulesets listing and `main` branch-protection read
+returned HTTP 403 with GitHub's explicit upgrade-or-public-repository message.
+This is a capability rejection, not evidence that a protection configuration
+was applied. Existing environments named `dev` and `prod` were readable; both
+had empty protection rules and no deployment branch policy. Their existence
+alone is not an approval boundary. No settings were changed.
+
+GitHub documents protected branches for private repositories on paid plans.
+However, required environment reviewers on Free, Pro and Team are documented
+as public-repository-only: upgrading to Pro alone must not be represented as
+solving the private production-approval requirement. See
+[protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+and [environment protection availability](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+
+Stop before enabling OIDC/deployment permissions. The user must choose between
+retaining private/free CI with a separately approved external manual delivery
+procedure, or reviewing a different hosting/plan/visibility option. External
+operator approval is not equivalent to enforced GitHub branch/environment
+protection, and choosing it revises the earlier deployment contract. Do not
+silently replace a required approval with `workflow_dispatch`, make the
+repository public, purchase a plan, attach AWS credentials to a self-hosted
+runner, or add a deploy-capable IAM role as a workaround. No AWS account read,
+role creation, OIDC token request, merge or deployment occurred in this review.

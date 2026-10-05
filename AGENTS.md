@@ -13,6 +13,15 @@ executor remain prerequisites. Never replay the expired geography operators or
 publish real owner/account bindings in GitHub artifacts. Production is unchanged;
 see `docs/cd-contract.md`.
 
+The subsequent read-only hosted capability review found the repository private:
+rulesets and main branch protection were rejected with HTTP 403 and GitHub's
+upgrade-or-public message. Existing dev/prod environments have no protection
+rules or branch policy. Pro alone does not supply required private-environment
+reviewers under the consulted GitHub documentation. Stop before OIDC/IAM/CD
+activation for the user's delivery/plan/visibility decision; a free private
+manual operator path would be a separately approved contract change, not an
+equivalent GitHub-enforced approval. No account/configuration operation follows.
+
 On 2026-10-05 the user selected multi-user MCP access and owner-only Telegram.
 Telegram expansion to other users is deferred until incremental cost is known
 and separately approved. Continue bounded offline MCP composition/testing; no
