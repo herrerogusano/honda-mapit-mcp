@@ -26,7 +26,37 @@ SDK's authenticated ASGI context is propagated to synchronous handlers through
 AnyIO; protocol tests exercise this exact path with concurrent synthetic
 tenants.
 
-This is not a deployment entrypoint and is not connected to the Lambda runtime,
+This is not a deployment entrypoint and is not connected to the deployed Lambda runtime,
 Codex configuration, Telegram, or a credential store. The HTTP factory has no
 arbitrary provider argument: callers must supply the invitation-scoped router.
 No live MAPIT, AWS, Telegram or model operation is part of its acceptance.
+
+## Offline Lambda payload-v2 composition
+
+Status (2026-10-05): independently accepted offline. The full suite passed
+2,038 tests with five Windows fixture skips; compilation and the model-free
+evaluator passed (12/12). The focused implementation suite passed 80 tests,
+and independent regressions plus Lambda/router tests passed 49. No production
+package, entrypoint, infrastructure or real invitation/session was changed.
+
+`mapit.invited_lambda.create_invited_lambda_runtime` is a separate opt-in
+payload-v2 composition. Its fixed invited policies and public keys are copied
+into one authority; every invocation gets a fresh HTTP/MCP app. A shared router
+uses request-local `ContextVar` scopes and atomically claims provider instances,
+while every tool operation still resolves and validates the current SDK token.
+No provider is created for `initialize` or `tools/list`; an authenticated
+operation's factory receives only an opaque tenant key and a deadline capped by
+both the Lambda budget and token expiry.
+
+The handler samples monotonic time before the single original Lambda-context
+getter, subtracts getter and later processing latency, passes only a bounded
+snapshot context to the existing payload-v2 adapter, and rejects results after
+the fixed deadline. This is cooperative deadline enforcement, not a hard kill
+of a running thread. Tests use an in-memory API Gateway v2 event and an ASGI/
+HTTPX transport adapter; there is no AWS SDK, network, credential lookup,
+entrypoint, builder, or deployed runtime integration.
+
+Primary protocol references checked during preparation:
+[Lambda context remaining-time method](https://docs.aws.amazon.com/lambda/latest/dg/python-context.html)
+and [API Gateway HTTP API payload-v2 format](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html).
+They describe the transport/context contract, not successful cloud acceptance.

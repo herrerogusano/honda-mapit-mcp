@@ -11,6 +11,7 @@ import json
 import math
 import re
 import secrets
+import threading
 import time
 import weakref
 from contextlib import contextmanager
@@ -201,13 +202,23 @@ class TenantServicesRouter:
     child retaining a copied ContextVar is denied after its parent context ends.
     """
 
-    def __init__(self, authority: InvitedTenantAuthority, provider_factory: Callable[[str, float], Any]):
+    def __init__(
+        self,
+        authority: InvitedTenantAuthority,
+        provider_factory: Callable[[str, float], Any],
+        *,
+        deadline_provider: Callable[[], float] | None = None,
+    ):
         if type(authority) is not InvitedTenantAuthority or not callable(provider_factory):
+            raise TenantIsolationError("tenant_configuration_invalid")
+        if deadline_provider is not None and not callable(deadline_provider):
             raise TenantIsolationError("tenant_configuration_invalid")
         self._authority = authority
         self._factory = provider_factory
+        self._deadline_provider = deadline_provider
         self._context: ContextVar[_RequestState | None] = ContextVar("mapit_tenant_request", default=None)
         self._providers: weakref.WeakValueDictionary[int, Any] = weakref.WeakValueDictionary()
+        self._provider_lock = threading.Lock()
 
     def __repr__(self) -> str:
         return "TenantServicesRouter(<redacted>)"
@@ -225,7 +236,14 @@ class TenantServicesRouter:
         remaining = min(14.0, grant.expires_at - wall)
         if not math.isfinite(remaining) or remaining <= 0:
             raise TenantIsolationError("tenant_context_expired")
-        state = _RequestState(grant, mono + remaining, mono, wall)
+        deadline = mono + remaining
+        if self._deadline_provider is not None:
+            ceiling = _clock_sample(self._deadline_provider)
+            deadline = min(deadline, ceiling)
+            remaining = deadline - mono
+            if not math.isfinite(remaining) or remaining <= 0:
+                raise TenantIsolationError("tenant_context_expired")
+        state = _RequestState(grant, deadline, mono, wall)
         token = self._context.set(state)
         try:
             yield
@@ -254,11 +272,15 @@ class TenantServicesRouter:
                 provider = self._factory(state.grant.key, state.deadline)
                 if not callable(getattr(provider, "get", None)):
                     raise TenantIsolationError("tenant_provider_failed")
-                if self._providers.get(id(provider)) is provider:
-                    raise TenantIsolationError("tenant_provider_reused")
-                self._state()
-                self._providers[id(provider)] = provider
-                state.provider = provider
+                # Factory work is deliberately outside the lock. Claiming the
+                # returned object is atomic so concurrent contexts cannot both
+                # pass the reuse check for the same provider instance.
+                with self._provider_lock:
+                    self._state()
+                    if self._providers.get(id(provider)) is provider:
+                        raise TenantIsolationError("tenant_provider_reused")
+                    self._providers[id(provider)] = provider
+                    state.provider = provider
             result = state.provider.get()
             self._state()
             return _RequestServices(self, state, result)

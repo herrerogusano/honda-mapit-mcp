@@ -20,6 +20,20 @@ The production builder/entrypoints and owner-only Telegram are unchanged.
 Real onboarding/MAPIT identity proof, durable invitation/revocation state,
 tenant secret publication/IAM and hosted Lambda composition remain pending.
 
+The separate opt-in Lambda payload-v2 composition in `invited_lambda.py` is
+now independently accepted offline, not deployed or included in the production
+builder. It reuses the unchanged payload adapter with copied invitation/key
+snapshots, one authority/router and a fresh app per invocation. Each operation
+gets a request-local provider; atomic provider-instance claims reject reuse
+across warm or concurrent calls. Its immutable deadline starts before the one
+original Lambda-context getter, debits latency, clamps router/provider budgets
+and rejects late/invalid-clock results. It does not promise thread termination.
+Full checkpoint: 2,038 passed, five Windows fixture skips, compilation and
+model-free evaluator 12/12. Real onboarding/MAPIT identity proof, durable
+invitation/revocation state, secret publication/IAM, packaging and cloud
+acceptance remain separate work. No guests or credentials are needed for these
+synthetic tests; owner-only Telegram and single-owner production are unchanged.
+
 On 2026-10-03 the user renewed a two-hour work window, 15:51:57–17:51:57 UTC,
 with temporary display/system wakefulness and restoration before final handoff.
 Scope: extend geographic queries across Spain if practical, otherwise Barcelona
