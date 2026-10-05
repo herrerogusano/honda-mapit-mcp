@@ -54,3 +54,11 @@ real SDK Stubber/configuration/no-chain checks, a clean subprocess import and
 transport redirect denial. The dedicated SDK CI job runs these tests with
 pinned dependencies. No actual token request, STS proof, environment-secret
 binding or workflow dispatch follows from this offline acceptance.
+
+The actual verified dev/prod role ARNs were subsequently submitted once as
+target-environment metadata secrets after fresh GitHub controls/owner binding
+checks and private write intents. Both writes were acknowledged and their
+metadata presence read back. GitHub does not return plaintext secret values,
+so this is a submission/metadata receipt, not a readable-value attestation.
+No AWS credentials or tokens were uploaded. Do not overwrite/replay these
+bindings; the actual protected STS runs and their approvals remain pending.
