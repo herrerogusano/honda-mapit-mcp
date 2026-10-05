@@ -219,6 +219,20 @@ def test_malformed_claims_fail_before_sts_and_exceptions_are_sanitized():
     assert "credential-canary" not in repr(error.value)
 
 
+def test_proof_errors_report_fixed_stage_and_ignore_mutated_metadata():
+    error = StsProofError("claims_mismatch", stage="claims_validation")
+    assert error.stage == "claims_validation"
+    error.category = {"secret": "canary"}
+    error.stage = ["canary"]
+    with pytest.raises(StsProofError) as raised:
+        # Re-entering the public constructor is the same sanitization boundary
+        # used by the runner when translating proof errors.
+        raise StsProofError(error.category, stage=error.stage)
+    assert raised.value.category == "sts_response_invalid"
+    assert raised.value.stage == "proof_internal"
+    assert "canary" not in repr(raised.value)
+
+
 def test_botocore_stubber_checks_the_two_exact_sdk_request_shapes():
     boto3 = pytest.importorskip("boto3")
     from botocore.config import Config
