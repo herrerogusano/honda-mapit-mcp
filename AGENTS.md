@@ -127,6 +127,16 @@ review of a persistent CloudFormation service-role association, fresh bounded
 executor/permissions, private artifact binding and exact closed recovery before
 any live production update. Temporary wakefulness must be removed before handoff.
 
+The user then explicitly required complete CD, not an identity-only handoff.
+Implementation is IN PROGRESS: fresh opt-in ProdDeliveryAuthorization preserves
+historical default windows/journals and binds new source/service-role context;
+the pure two-role delivery draft and injected S3 CAS metadata journal passed
+independent offline review. No roles, association, journal objects or deployment
+workflow were activated. The specific permanent CFN role association and private
+30-day journal-storage decision is pending owner response. See
+docs/cd-delivery-implementation.md for integration/live gates. Do not call these
+components complete CD, replay historical writes or broaden another project.
+
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
 and read back as `isPrivate=false`; no history rewrite, merge or AWS change
