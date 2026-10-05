@@ -326,6 +326,23 @@ def _source_gate_script():
     return textwrap.dedent("\n".join(line[10:] for line in lines[start:end]))
 
 
+def test_release_downloads_use_the_locked_al2023_arm_platforms():
+    from pathlib import Path
+    import shlex
+
+    workflow = Path(".github/workflows/cd-release.yml").read_text(encoding="utf-8")
+    downloads = [shlex.split(line.strip()) for line in workflow.splitlines()
+                 if line.strip().startswith("python -m pip download ")]
+    assert len(downloads) == 4
+    for command in downloads:
+        platforms = [command[index + 1] for index, value in enumerate(command)
+                     if value == "--platform"]
+        assert platforms == ["manylinux_2_34_aarch64", "manylinux_2_28_aarch64", "manylinux2014_aarch64"]
+        assert "--require-hashes" in command and "--no-deps" in command
+        assert command[command.index("--abi") + 1] == "cp313"
+        assert command[command.index("--python-version") + 1] == "3.13"
+
+
 def _source_gate_documents():
     sha = "a" * 40
     repo = "herrerogusano/honda-mapit-mcp"
