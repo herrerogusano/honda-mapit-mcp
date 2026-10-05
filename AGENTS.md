@@ -14,6 +14,13 @@ omission; no manual UI change is needed. See docs/cd-github-protections.md.
 This supersedes the earlier unprotected-state observations, not the remaining
 OIDC/IAM/private-artifact/executor gates. No AWS operation or promotion has yet
 occurred under this new approval; expired geography journals remain consumed.
+The separate manual cd-identity workflow is independently accepted offline:
+one bounded runner-issued token, exact target/ref/SHA/repository-ID binding and
+safe subject-format/digest output, with no AWS exchange or deployment. Synthetic
+fixtures are not a trust receipt. The local checkpoint is 2150 passed, ten
+Windows/POSIX-environment skips, compilation and evaluator 12/12; the protection
+commit 2112683 has eight green CI checks. Actual run/approval, OIDC trust, IAM
+and a fresh code-only executor remain pending. See docs/cd-oidc-claims.md.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
