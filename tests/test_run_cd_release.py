@@ -114,7 +114,7 @@ def test_reopen_uses_nested_delivery_binding_and_requires_workflow_receipts(monk
         "kind": "prod_cd_delivery", "prod_run_id": binding["prod_run_id"],
         "delivery_binding": {
             "source_sha": "a" * 40, "service_role_arn": binding["service_role_arn"],
-            "initial_service_role_attachment": True,
+            "initial_service_role_attachment": True, "retained_recovery": False,
         },
         "authorization_start_epoch": 1000, "authorization_cutoff_epoch": 1600,
         "old_zip_sha256": "1" * 64, "old_manifest_sha256": "2" * 64,

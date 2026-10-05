@@ -47,7 +47,7 @@ class Stub:
 
 def make_core(*, authorized_from_epoch=None, authorized_until_epoch=AUTHORIZATION_CUTOFF_EPOCH,
               wall_clock=None, monotonic=None, new_manifest_sha256="4" * 64,
-              delivery_authorization=None):
+              delivery_authorization=None, retained_recovery=False, same_artifact=False):
     policy = CognitoProdPolicy(user_pool_id=POOL, api_id=API,
                                client_id="SyntheticProdClient012345", owner_subject=OWNER)
     journal = Journal()
@@ -59,13 +59,28 @@ def make_core(*, authorized_from_epoch=None, authorized_until_epoch=AUTHORIZATIO
         wall_clock = lambda: AUTHORIZATION_CUTOFF_EPOCH - 60
     if monotonic is None:
         monotonic = lambda: 10.0
+    old_zip = "1" * 64
+    new_zip = old_zip if same_artifact else "3" * 64
+    if same_artifact and new_manifest_sha256 == "4" * 64:
+        new_manifest_sha256 = "2" * 64
+    if retained_recovery:
+        from mapit.aws_prod_geography_upgrade import ProdDeliveryAuthorization
+        authorized_from_epoch = 1000
+        authorized_until_epoch = 1600
+        wall_clock = lambda: 1001.0
+        delivery_authorization = ProdDeliveryAuthorization(
+            source_sha="a" * 40, authorized_from_epoch=authorized_from_epoch,
+            authorized_until_epoch=authorized_until_epoch,
+            service_role_arn=f"arn:aws:iam::{ACCOUNT}:role/honda-mapit-mcp-prod-cfn-update",
+            initial_service_role_attachment=True, retained_recovery=True,
+        )
     core = ProdGeographyUpgrade(
         clients, journal, policy=policy, account_id=ACCOUNT,
         stack_arn=f"arn:aws:cloudformation:eu-west-1:{ACCOUNT}:stack/honda-mapit-mcp-prod/{STACK_UUID}",
         prod_run_id=RUN_ID, api_id=API, function_name=FUNCTION,
         shutdown_state_machine_arn=MACHINE, bucket=BUCKET,
-        old_zip_sha256="1" * 64, old_manifest_sha256="2" * 64,
-        new_zip_sha256="3" * 64, new_manifest_sha256=new_manifest_sha256,
+        old_zip_sha256=old_zip, old_manifest_sha256="2" * 64,
+        new_zip_sha256=new_zip, new_manifest_sha256=new_manifest_sha256,
         authorized_until_epoch=authorized_until_epoch,
         authorized_from_epoch=authorized_from_epoch,
         delivery_authorization=delivery_authorization,
@@ -81,6 +96,79 @@ def test_template_candidate_changes_only_zip_key_and_manifest_digest():
     altered = copy.deepcopy(core.new_template)
     altered["Resources"]["McpHandler"]["Properties"]["Timeout"] += 1
     assert not _only_two_template_changes(core.old_template, altered)
+
+
+def test_identical_zip_is_allowed_only_for_explicit_recovery_with_same_manifest():
+    core, journal = make_core(retained_recovery=True, same_artifact=True)
+    core._step_started = core.monotonic()
+    state = core._save_new_state()
+    assert state["delivery_binding"]["retained_recovery"] is True
+    assert core.old_zip == core.new_zip and core.old_manifest == core.new_manifest
+    assert core._state()["delivery_binding"]["retained_recovery"] is True
+
+    with pytest.raises(ProdGeographyUpgradeError, match="inputs_invalid"):
+        make_core(same_artifact=True)
+    with pytest.raises(ProdGeographyUpgradeError, match="inputs_invalid"):
+        make_core(retained_recovery=True, same_artifact=True, new_manifest_sha256="5" * 64)
+
+
+@pytest.mark.parametrize("api_closed,reservation,valid", [
+    (False, None, True), (True, 0, True),
+    (False, 0, False), (True, None, False),
+])
+def test_recovery_preflight_accepts_only_matching_open_or_closed_state(api_closed, reservation, valid):
+    core, journal = make_core(retained_recovery=True, same_artifact=True)
+    core._owned_stack = lambda *_args, **_kwargs: {"StackStatus": "UPDATE_ROLLBACK_COMPLETE"}
+    core._api = lambda **_kwargs: api_closed
+    core._function = lambda **_kwargs: reservation
+    core._capacity = lambda: None
+    core._tripwire = lambda **_kwargs: {"safe": True}
+    core._call = lambda *_args, **_kwargs: {
+        "Account": ACCOUNT,
+        "Arn": f"arn:aws:sts::{ACCOUNT}:assumed-role/honda-mapit-mcp-prod-cd-executor/hm-cd-prod-{'a' * 16}",
+    }
+
+    result = core.run_step("preflight")
+    assert (result["category"] == "preflight_verified") is valid
+    if valid:
+        state = journal.load()
+        assert state["preflight_verified"] is True
+        assert state["original_api_enabled"] is (not api_closed)
+        assert state["original_function_unreserved"] is (not api_closed)
+    else:
+        assert result["category"] == "function_state_mismatch"
+
+
+def test_recovery_same_artifact_skips_update_and_requires_fresh_closed_readback():
+    import hashlib
+
+    core, journal = make_core(retained_recovery=True, same_artifact=True)
+    core._step_started = core.monotonic()
+    state = core._save_new_state()
+    fingerprint_value = {"alarm": "fixed"}
+    state.update(preflight_verified=True, close_verified=True)
+    state["tripwire_fingerprint"] = hashlib.sha256(_canonical_for_test(fingerprint_value)).hexdigest()
+    journal.save(state)
+    core._owned_stack = lambda *_args, **_kwargs: {"StackStatus": "UPDATE_ROLLBACK_COMPLETE"}
+    core._api = lambda **_kwargs: True
+    core._function = lambda **_kwargs: 0
+    core._capacity = lambda: None
+    core._tripwire = lambda **_kwargs: fingerprint_value
+    core._call = lambda service, method, **_kwargs: (_ for _ in ()).throw(AssertionError(method))
+
+    skipped = core._step_request_update()
+    assert skipped["category"] == "update_skipped_same_artifact"
+    assert journal.load()["update_skipped_same_artifact"] is True
+    checked = core._step_check_update()
+    assert checked["verified"] is True
+    current = journal.load()
+    assert current["update_verified"] is True
+    assert current.get("update_intent") is None
+
+
+def _canonical_for_test(value):
+    import json
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
 def test_code_only_revision_can_retain_exact_identity_manifest():

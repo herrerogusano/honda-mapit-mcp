@@ -38,11 +38,13 @@ jobs:
         id: gate
         run: |
           python - <<'PY'
-          import json, os, re, subprocess
+          import json, os, re, subprocess, time
           from pathlib import Path
 
+          stage = "event"
           def fail():
               print("source_gate_failed")
+              print(json.dumps({"source_gate": "failed", "stage": stage}))
               raise SystemExit(1)
 
           try:
@@ -50,6 +52,7 @@ jobs:
               event_run = event["workflow_run"]
               event_run_id = event_run.get("id")
               event_sha = event_run.get("head_sha")
+              stage = "context"
               repo = os.environ["REPOSITORY"]
               repo_id = os.environ["REPOSITORY_ID"]
               owner_id = os.environ["REPOSITORY_OWNER_ID"]
@@ -72,6 +75,7 @@ jobs:
                   if proc.returncode != 0:
                       fail()
                   return json.loads(proc.stdout)
+              stage = "upstream_run"
               run = api("repos/" + repo + "/actions/runs/" + run_id)
               sha = run.get("head_sha")
               if (type(run) is not dict or type(run.get("id")) is not int or str(run["id"]) != run_id
@@ -85,14 +89,16 @@ jobs:
                   or type(run["head_repository"].get("id")) is not int
                   or str(run["head_repository"]["id"]) != repo_id):
                   fail()
+              stage = "workflow"
               workflow = api("repos/" + repo + "/actions/workflows/ci.yml")
               if (type(run.get("workflow_id")) is not int or run["workflow_id"] != workflow.get("id")
                   or workflow.get("path") != ".github/workflows/ci.yml"):
                   fail()
+              stage = "latest_main"
               branch = api("repos/" + repo + "/branches/main")
               if branch["commit"]["sha"] != sha:
                   fail()
-              checks = api("repos/" + repo + "/commits/" + sha + "/check-runs?filter=latest&per_page=100")
+              stage = "required_checks"
               required = {
                   "Offline geographic queries and public boundary",
                   "Offline CloudFormation schemas",
@@ -103,14 +109,23 @@ jobs:
                   "windows-latest / Python 3.13",
                   "Known dependency advisories",
               }
-              if checks.get("total_count") != len(checks.get("check_runs", [])):
-                  fail()
-              selected = [item for item in checks["check_runs"] if item.get("name") in required]
-              actual = {(item.get("name"), item.get("app", {}).get("id"), item.get("conclusion")) for item in selected
-                        if item.get("status") == "completed" and item.get("head_sha") == sha}
-              expected = {(name, 15368, "success") for name in required}
-              if len(selected) != len(required) or actual != expected:
-                  fail()
+              for attempt in range(5):
+                  checks = api("repos/" + repo + "/commits/" + sha + "/check-runs?filter=latest&per_page=100")
+                  if checks.get("total_count") != len(checks.get("check_runs", [])):
+                      fail()
+                  selected = [item for item in checks["check_runs"] if item.get("name") in required]
+                  if (len(selected) != len(required) or {item.get("name") for item in selected} != required
+                      or any(item.get("head_sha") != sha or item.get("app", {}).get("id") != 15368
+                             or item.get("status") not in {"queued", "in_progress", "completed"}
+                             or (item.get("status") == "completed" and item.get("conclusion") != "success")
+                             for item in selected)):
+                      fail()
+                  if all(item.get("status") == "completed" and item.get("conclusion") == "success" for item in selected):
+                      break
+                  if attempt == 4:
+                      fail()
+                  time.sleep(2)
+              stage = "output"
               output = Path(os.environ["GITHUB_OUTPUT"])
               output.write_text("source_sha=" + sha + "\n", encoding="utf-8")
           except SystemExit:

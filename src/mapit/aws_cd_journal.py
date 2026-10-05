@@ -30,17 +30,17 @@ _FIELDS = frozenset({
     "close_intent", "close_acknowledged", "close_verified", "update_intent",
     "update_acknowledged", "update_verified", "concurrency_restore_intent",
     "concurrency_restore_acknowledged", "api_open_intent", "api_open_acknowledged",
-    "production_open_verified",
+    "production_open_verified", "update_skipped_same_artifact",
 })
 _NESTED = {
-    "delivery_binding": {"source_sha", "service_role_arn", "initial_service_role_attachment"},
+    "delivery_binding": {"source_sha", "service_role_arn", "initial_service_role_attachment", "retained_recovery"},
     "close_intent": {"execution_name", "execution_arn"},
     "update_intent": {"client_request_token"},
 }
 _FLAGS = frozenset({"preflight_verified", "original_api_enabled", "original_function_unreserved",
     "close_acknowledged", "close_verified", "update_acknowledged", "update_verified",
     "concurrency_restore_intent", "concurrency_restore_acknowledged", "api_open_intent",
-    "api_open_acknowledged", "production_open_verified"})
+    "api_open_acknowledged", "production_open_verified", "update_skipped_same_artifact"})
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 
@@ -132,6 +132,8 @@ class S3DeliveryJournal:
                             or value["service_role_arn"] != (
                                 f"arn:aws:iam::{self.account_id}:role/honda-mapit-mcp-prod-cfn-update")
                             or type(value["initial_service_role_attachment"]) is not bool):
+                        return False
+                    if type(value["retained_recovery"]) is not bool:
                         return False
                 elif any(type(v) is not str or not v or len(v) > 1024 for v in value.values()):
                     return False
