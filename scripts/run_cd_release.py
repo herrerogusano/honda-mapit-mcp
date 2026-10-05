@@ -441,11 +441,13 @@ def _manifest_sha(archive_path: Path) -> str:
 def _core(bindings: Mapping[str, Any], services: Mapping[str, Any], journal: Any, *,
           run_id: str, source_sha: str, old_zip: str, old_manifest: str,
           new_zip: str, new_manifest: str, authorized_from: int, authorized_until: int,
+          retained_recovery: bool = False,
           wall_clock: Callable[[], float] = time.time, monotonic: Callable[[], float] = time.monotonic) -> ProdGeographyUpgrade:
     auth = ProdDeliveryAuthorization(
         source_sha=source_sha, authorized_from_epoch=authorized_from,
         authorized_until_epoch=authorized_until, service_role_arn=bindings["service_role_arn"],
         initial_service_role_attachment=bindings["initial_service_role_attachment"],
+        retained_recovery=retained_recovery,
     )
     return ProdGeographyUpgrade(
         services, journal, policy=bindings["_validated_policy"], account_id=bindings["account_id"],
@@ -662,7 +664,8 @@ class CDReleaseRunner:
                 "authorization_start": now, "authorization_until": auth_end}
 
     def _reopen_or_close(self, phase: str, bindings: Mapping[str, Any], services: Mapping[str, Any],
-                         journal: S3DeliveryJournal, run_id: str, source_sha: str) -> dict[str, Any]:
+                         journal: S3DeliveryJournal, run_id: str, source_sha: str,
+                         *, retained_recovery: bool = False) -> dict[str, Any]:
         state = _journal_state(journal)
         delivery = state.get("delivery_binding")
         if (
@@ -670,6 +673,7 @@ class CDReleaseRunner:
             or not isinstance(delivery, Mapping) or delivery.get("source_sha") != source_sha
             or delivery.get("service_role_arn") != bindings["service_role_arn"]
             or delivery.get("initial_service_role_attachment") is not bindings["initial_service_role_attachment"]
+            or delivery.get("retained_recovery") is not retained_recovery
             or state.get("authorization_start_epoch") is None
         ):
             raise ReleaseError("journal_unavailable")
@@ -681,6 +685,7 @@ class CDReleaseRunner:
             old_zip=state.get("old_zip_sha256"), old_manifest=state.get("old_manifest_sha256"),
             new_zip=state.get("new_zip_sha256"), new_manifest=state.get("new_manifest_sha256"),
             authorized_from=start, authorized_until=end, wall_clock=self.clock,
+            retained_recovery=retained_recovery,
         )
         if phase == "recover-close":
             result = self._emergency_close(services, bindings)

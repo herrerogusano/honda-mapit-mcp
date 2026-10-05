@@ -106,3 +106,30 @@ not running, so real ARM execution is required in GitHub's native ARM runner;
 offline unit acceptance does not claim that image execution already happened.
 The `ubuntu-24.04-arm` label is a supported standard public-repository runner,
 verified against the [official runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+## Operational preparation checkpoint — 2026-10-05
+
+The two scoped deployment roles/boundaries now have exact live IAM and stack
+readbacks. Terminal-only 30-day journal retention is installed and verified;
+runtime packages and incomplete journals do not expire. The private production
+binding is configured without passwords, session transfer or business facts.
+These preparations did not update the production handler or attach its service
+role. PRs 17–20 passed protected promotion; the first two automatic CD attempts
+stopped at the credential-free source gate, with all AWS jobs skipped.
+
+The source gate now resolves the exact upstream REST run by webhook ID and SHA,
+retains the fixed CI workflow/repository/latest-main/eight-check bindings, and
+provides fixed-stage diagnostics. At most five same-source check reads allow
+valid pending checks to finish; negative or mismatched responses stop immediately.
+
+An explicit retained-recovery mode permits an exactly owned stable rollback
+state and either a fully open/unreserved or fully closed/reserve-zero service.
+Mixed states and incomplete/failed rollbacks remain rejected. If the validated
+retained ZIP and manifest are already current, recovery records a skip rather
+than calling UpdateStack, then rechecks closure, code, capacity and tripwire
+before a separately approved reopen. Every recovery uses a new journal/window;
+historical writes and expired cutoffs are never replayed or widened.
+
+Independent offline review accepted 100 focused tests; the full suite passed
+2,457 tests with ten environment skips. Actual deployment and recovery remain
+pending. CD is still IN PROGRESS, not operationally complete.

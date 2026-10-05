@@ -57,7 +57,7 @@ _CATEGORIES = frozenset(
         "update_not_verified", "concurrency_intent_exists", "concurrency_restore_ambiguous",
         "concurrency_restore_unverified", "api_open_intent_exists", "api_open_ambiguous",
         "api_open_ack_invalid", "api_open_unverified", "production_open_verified",
-        "upgrade_internal_error", "preflight_verified",
+        "upgrade_internal_error", "preflight_verified", "update_skipped_same_artifact",
     }
 )
 
@@ -131,6 +131,7 @@ class ProdDeliveryAuthorization:
     authorized_until_epoch: int
     service_role_arn: str
     initial_service_role_attachment: bool = False
+    retained_recovery: bool = False
 
     def validated(self, account_id: str) -> "ProdDeliveryAuthorization":
         if (
@@ -144,6 +145,7 @@ class ProdDeliveryAuthorization:
             or self.service_role_arn != f"arn:aws:iam::{account_id}:role/honda-mapit-mcp-prod-cfn-update"
             or type(self.service_role_arn) is not str
             or type(self.initial_service_role_attachment) is not bool
+            or type(self.retained_recovery) is not bool
         ):
             raise ProdGeographyUpgradeError("inputs_invalid")
         return self
@@ -209,6 +211,9 @@ class ProdGeographyUpgrade:
                     or type(authorized_from_epoch) is not int):
                 raise ProdGeographyUpgradeError("inputs_invalid")
         self.delivery_authorization = delivery_authorization
+        self.retained_recovery = bool(
+            delivery_authorization is not None and delivery_authorization.retained_recovery is True
+        )
         for digest in (old_zip_sha256, old_manifest_sha256, new_zip_sha256, new_manifest_sha256):
             if type(digest) is not str or not _SHA.fullmatch(digest):
                 raise ProdGeographyUpgradeError("inputs_invalid")
@@ -216,7 +221,12 @@ class ProdGeographyUpgrade:
         # manifest. The ZIP must change; manifest changes remain optional and
         # are still the sole permitted environment-variable difference.
         if old_zip_sha256 == new_zip_sha256:
-            raise ProdGeographyUpgradeError("inputs_invalid")
+            if (
+                delivery_authorization is None
+                or delivery_authorization.retained_recovery is not True
+                or old_manifest_sha256 != new_manifest_sha256
+            ):
+                raise ProdGeographyUpgradeError("inputs_invalid")
         if type(bucket) is not str or len(bucket) > 63:
             raise ProdGeographyUpgradeError("inputs_invalid")
         try:
@@ -319,6 +329,7 @@ class ProdGeographyUpgrade:
             "source_sha": authorization.source_sha,
             "service_role_arn": authorization.service_role_arn,
             "initial_service_role_attachment": authorization.initial_service_role_attachment,
+            "retained_recovery": authorization.retained_recovery,
         }
 
     def _guard(self, *, allow_expired_close: bool = False) -> float:
@@ -428,7 +439,10 @@ class ProdGeographyUpgrade:
         status = stack.get("StackStatus")
         if status == "UPDATE_IN_PROGRESS" and allow_in_progress:
             return stack
-        if status != "UPDATE_COMPLETE":
+        accepted_statuses = {"UPDATE_COMPLETE"}
+        if self.retained_recovery:
+            accepted_statuses.add("UPDATE_ROLLBACK_COMPLETE")
+        if status not in accepted_statuses:
             raise ProdGeographyUpgradeError("stack_not_owned")
         template_reply = self._call("cloudformation", "get_template", StackName=self.stack_arn, TemplateStage="Original")
         actual = _json_mapping(template_reply.get("TemplateBody"))
@@ -447,7 +461,10 @@ class ProdGeographyUpgrade:
             item = expected[logical]
             if (
                 not isinstance(item, Mapping) or row.get("ResourceType") != item.get("Type")
-                or row.get("ResourceStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
+                or row.get("ResourceStatus") not in (
+                    {"CREATE_COMPLETE", "UPDATE_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"}
+                    if self.retained_recovery else {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
+                )
                 or type(row.get("PhysicalResourceId")) is not str or not row["PhysicalResourceId"]
             ):
                 raise ProdGeographyUpgradeError("resources_mismatch")
@@ -458,11 +475,13 @@ class ProdGeographyUpgrade:
             raise ProdGeographyUpgradeError("resources_mismatch")
         return stack
 
-    def _api(self, *, closed: bool) -> None:
+    def _api(self, *, closed: bool | None) -> bool:
         reply = self._call("apigatewayv2", "get_api", ApiId=self.api_id)
-        expected_closed = closed
-        if reply.get("ApiId") != self.api_id or reply.get("Name") != "honda-mapit-mcp-prod-api" or reply.get("DisableExecuteApiEndpoint") is not expected_closed:
+        observed_closed = reply.get("DisableExecuteApiEndpoint")
+        if (reply.get("ApiId") != self.api_id or reply.get("Name") != "honda-mapit-mcp-prod-api"
+                or type(observed_closed) is not bool or (closed is not None and observed_closed is not closed)):
             raise ProdGeographyUpgradeError("api_state_mismatch")
+        return observed_closed
 
     def _function(self, *, zip_digest: str, manifest_digest: str, reserve_zero: bool | None) -> int | None:
         reply = self._call("lambda", "get_function", FunctionName=self.function_name)
@@ -620,13 +639,27 @@ class ProdGeographyUpgrade:
             if arn != expected:
                 raise ProdGeographyUpgradeError("identity_mismatch")
         stack = self._owned_stack(state, self.old_template)
-        self._function(zip_digest=self.old_zip, manifest_digest=self.old_manifest, reserve_zero=False)
-        self._api(closed=False)
+        if self.retained_recovery:
+            api_closed = self._api(closed=None)
+            reservation = self._function(
+                zip_digest=self.old_zip, manifest_digest=self.old_manifest, reserve_zero=None,
+            )
+            open_pair = api_closed is False and reservation is None
+            closed_pair = api_closed is True and type(reservation) is int and reservation == 0
+            if not (open_pair or closed_pair):
+                raise ProdGeographyUpgradeError("function_state_mismatch")
+            original_api_enabled = open_pair
+            original_function_unreserved = open_pair
+        else:
+            self._function(zip_digest=self.old_zip, manifest_digest=self.old_manifest, reserve_zero=False)
+            self._api(closed=False)
+            original_api_enabled = True
+            original_function_unreserved = True
         self._capacity()
         tripwire = self._tripwire()
         state["tripwire_fingerprint"] = hashlib.sha256(_canonical(tripwire)).hexdigest()
-        state["original_api_enabled"] = True
-        state["original_function_unreserved"] = True
+        state["original_api_enabled"] = original_api_enabled
+        state["original_function_unreserved"] = original_function_unreserved
         state["preflight_verified"] = True
         state["preflight_time_epoch"] = int(self._guard())
         self._save(state)
@@ -696,7 +729,7 @@ class ProdGeographyUpgrade:
         self._guard()
         if state.get("close_verified") is not True:
             raise ProdGeographyUpgradeError("close_not_verified")
-        if state.get("update_intent") is not None:
+        if state.get("update_intent") is not None or state.get("update_skipped_same_artifact") is True:
             raise ProdGeographyUpgradeError("update_intent_exists")
         self._owned_stack(state, self.old_template)
         self._api(closed=True)
@@ -705,6 +738,14 @@ class ProdGeographyUpgrade:
         tripwire = self._tripwire()
         if hashlib.sha256(_canonical(tripwire)).hexdigest() != state.get("tripwire_fingerprint"):
             raise ProdGeographyUpgradeError("tripwire_unverified")
+        if self.retained_recovery and self.old_zip == self.new_zip:
+            if self.old_manifest != self.new_manifest:
+                raise ProdGeographyUpgradeError("inputs_invalid")
+            state["update_skipped_same_artifact"] = True
+            self._save(state)
+            return self._safe(
+                "request-update", "update_skipped_same_artifact", verified=False, calls=self._calls,
+            )
         body = _canonical(self.new_template).decode("ascii")
         if len(body.encode("ascii")) > 50 * 1024:
             raise ProdGeographyUpgradeError("inputs_invalid")
@@ -727,6 +768,24 @@ class ProdGeographyUpgrade:
     def _step_check_update(self) -> dict[str, Any]:
         state = self._require_preflight()
         self._guard()
+        if state.get("update_skipped_same_artifact") is True:
+            if (
+                not self.retained_recovery or self.old_zip != self.new_zip
+                or self.old_manifest != self.new_manifest or state.get("update_intent") is not None
+            ):
+                raise ProdGeographyUpgradeError("update_not_requested")
+            stack = self._owned_stack(state, self.new_template)
+            if stack.get("StackStatus") not in {"UPDATE_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"}:
+                raise ProdGeographyUpgradeError("update_pending")
+            self._api(closed=True)
+            self._function(zip_digest=self.new_zip, manifest_digest=self.new_manifest, reserve_zero=True)
+            self._capacity()
+            tripwire = self._tripwire()
+            if hashlib.sha256(_canonical(tripwire)).hexdigest() != state.get("tripwire_fingerprint"):
+                raise ProdGeographyUpgradeError("tripwire_unverified")
+            state["update_verified"] = True
+            self._save(state)
+            return self._safe("check-update", "update_not_verified", verified=True, calls=self._calls)
         if not isinstance(state.get("update_intent"), Mapping):
             raise ProdGeographyUpgradeError("update_not_requested")
         if state.get("update_acknowledged") is not True:

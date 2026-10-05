@@ -197,8 +197,12 @@ class CDRecoveryRunner(ordinary.CDReleaseRunner):
             if phase == "rollback-update":
                 return self._rollback_update(bindings, services, journal, run_id, source_sha)
             if phase == "reopen":
-                return self._reopen_or_close("reopen", bindings, services, journal, run_id, source_sha)
-            return self._reopen_or_close("recover-close", bindings, services, journal, run_id, source_sha)
+                return self._reopen_or_close(
+                    "reopen", bindings, services, journal, run_id, source_sha, retained_recovery=True,
+                )
+            return self._reopen_or_close(
+                "recover-close", bindings, services, journal, run_id, source_sha, retained_recovery=True,
+            )
         except ordinary.ReleaseError as exc:
             return {"status": "failed", "phase": phase, "category": exc.category}
         except Exception:
@@ -252,7 +256,7 @@ class CDRecoveryRunner(ordinary.CDReleaseRunner):
                 bindings, services, journal, run_id=run_id, source_sha=source_sha,
                 old_zip=old_sha, old_manifest=old_manifest, new_zip=target_sha,
                 new_manifest=target_manifest, authorized_from=now, authorized_until=cutoff,
-                wall_clock=self.clock,
+                wall_clock=self.clock, retained_recovery=True,
             )
             preflight = core.run_step("preflight")
             if preflight.get("category") != "preflight_verified":
@@ -277,7 +281,7 @@ class CDRecoveryRunner(ordinary.CDReleaseRunner):
         if state is None or not ordinary._close_age(services, state, now=self.clock):
             raise ordinary.ReleaseError("close_window_expired")
         update = core.run_step("request-update")
-        if update.get("category") != "update_pending":
+        if update.get("category") not in {"update_pending", "update_skipped_same_artifact"}:
             raise ordinary.ReleaseError("update_failed")
         for attempt in range(ordinary._MAX_UPDATE_POLLS):
             if not ordinary._close_age(services, state, now=self.clock):
