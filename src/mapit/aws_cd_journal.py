@@ -76,12 +76,13 @@ def _etag(value: Any) -> str:
 
 class S3DeliveryJournal:
     def __init__(self, client: Any, *, bucket: str, account_id: str,
-                 run_id: str, source_sha: str) -> None:
+                 run_id: str, source_sha: str, initialize_new: bool = False) -> None:
         try:
             _validate_bucket_name(bucket)
         except Exception:
             raise DeliveryJournalError("journal_inputs_invalid") from None
-        if (type(account_id) is not str or re.fullmatch(r"[0-9]{12}", account_id) is None
+        if (type(initialize_new) is not bool
+                or type(account_id) is not str or re.fullmatch(r"[0-9]{12}", account_id) is None
                 or account_id == "0" * 12
                 or type(run_id) is not str or re.fullmatch(r"[1-9][0-9]{0,19}", run_id) is None
                 or type(source_sha) is not str or re.fullmatch(r"[0-9a-f]{40}", source_sha) is None
@@ -99,6 +100,7 @@ class S3DeliveryJournal:
         self._etag: str | None = None
         self._digest: str | None = None
         self._prior_state: dict[str, Any] | None = None
+        self._initialize_new = initialize_new
 
     @contextlib.contextmanager
     def locked(self) -> Iterator[None]:
@@ -175,6 +177,16 @@ class S3DeliveryJournal:
     def load(self) -> dict[str, Any] | None:
         if not self._locked:
             raise DeliveryJournalError("journal_lock_invalid")
+        if self._initialize_new:
+            # This is an explicit create-only candidate, NOT evidence that an
+            # object is absent. The first conditional PutObject arbitrates
+            # freshness before the core can dispatch any application action.
+            # Missing-key GETs require ListBucket to return 404; do not widen
+            # IAM or reinterpret AccessDenied as absence.
+            self._revision, self._etag, self._digest = 0, None, None
+            self._prior_state = None
+            self._loaded = True
+            return None
         try:
             reply = self.client.get_object(Bucket=self.bucket, Key=self.key,
                                           ExpectedBucketOwner=self.account_id, ChecksumMode="ENABLED")
@@ -257,6 +269,9 @@ class S3DeliveryJournal:
         # Any uncertain write permanently fences this instance. A new reader
         # may reconcile state, but must not retry this write or cloud action.
         self._blocked = True
+        # Readback/reconciliation must always use an actual GET, including
+        # after an ambiguous initial write. Never synthesize absence again.
+        self._initialize_new = False
         try:
             reply = self.client.put_object(Bucket=self.bucket, Key=self.key, Body=body,
                 ExpectedBucketOwner=self.account_id, ServerSideEncryption="AES256",

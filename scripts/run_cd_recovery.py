@@ -193,6 +193,7 @@ class CDRecoveryRunner(ordinary.CDReleaseRunner):
             journal = S3DeliveryJournal(
                 services["s3"], bucket=bindings["artifact_bucket"], account_id=bindings["account_id"],
                 run_id=run_id, source_sha=source_sha,
+                initialize_new=phase == "rollback-update",
             )
             if phase == "rollback-update":
                 return self._rollback_update(bindings, services, journal, run_id, source_sha)

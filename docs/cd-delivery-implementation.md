@@ -144,3 +144,15 @@ hash lock. Official PyPI metadata and independent actual downloads verified all
 2.28 and 2014. The workflow retains CPython 3.13, binary-only/no-dependency
 downloads, exact hashes and pinned-image import acceptance. No AWS application
 write occurred in either failure; actual release and recovery remain pending.
+
+Run `37383378294` passed the synthetic ARM probe and all nine exact-candidate
+ARM checks, but stopped at initial journal preflight. A read-only exact-key
+check confirmed no journal had been created. The executor deliberately lacks
+ListBucket; [S3 documents](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
+that a missing-key GET then returns 403 rather than 404. Fresh release/recovery
+records now use explicit create-only initialization: the initial absence value
+is provisional, and `IfNoneMatch=*` is the atomic freshness authority before
+any shutdown/update action. Creation mode is consumed before the first PUT;
+all readbacks and subsequent reads are real, checksum/ETag-bound GETs. Collision,
+ambiguous write or failed readback fences the instance; no 403 is interpreted as
+absence. Default/reopening readers remain unchanged. No IAM expansion is added.
