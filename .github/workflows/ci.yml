@@ -97,6 +97,10 @@ jobs:
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
       - name: Test real SDK shapes with offline stubs
         run: python -m pytest -q tests/test_aws_dev_shutdown_sdk.py tests/test_aws_dev_shutdown_entrypoint.py tests/test_aws_dev_shutdown_entrypoint_independent.py tests/test_aws_dev_shutdown_template_independent.py tests/test_build_aws_dev_shutdown.py tests/test_build_aws_dev_shutdown_independent.py tests/test_aws_closed_rehearsal_independent.py tests/test_aws_dev_runtime_artifact.py tests/test_aws_dev_runtime_artifact_retirement.py tests/test_aws_dev_oauth_setup_readback.py tests/test_aws_dev_oauth_setup_coordinator.py tests/test_aws_dev_oauth_setup_coordinator_independent.py tests/test_aws_dev_oauth_setup_cleanup_readback.py tests/test_aws_dev_oauth_setup_cleanup_readback_independent.py tests/test_aws_dev_runtime_readback.py tests/test_aws_identity_template.py tests/test_aws_shared_identity_dev.py tests/test_aws_dev_activation.py tests/test_aws_cd_identity_bootstrap.py tests/test_aws_cd_identity_bootstrap_independent.py
+      - name: Test bounded identity boundary compatibility with offline fixtures
+        run: python -m pytest -q tests/test_aws_cd_identity_bootstrap_boundary_independent.py
+      - name: Test identity-only STS core and real SDK factories offline
+        run: python -m pytest -q tests/test_github_sts_identity.py tests/test_github_sts_identity_independent.py tests/test_run_github_sts_identity.py
       - name: Audit pinned SDK dependencies (networked advisory lookup only)
         run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/shutdown-requirements.txt --progress-spinner off --timeout 20 --desc off
   test:

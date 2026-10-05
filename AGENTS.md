@@ -49,6 +49,21 @@ SDK CI job includes its model-shape regression. Actual role creation, STS
 exchange and deploy-capable permission/executor acceptance remain separate.
 The STS proof contract is preparation only; approval of the two consumed
 claim-discovery runs does not authorize approving additional STS runs.
+One new closed four-resource IAM identity stack creation was acknowledged after
+fresh private-journal preflight and eight source checks. Never replay its create
+intent. Initial readback stopped on the service's boundary type `Policy`;
+bounded diagnostics confirmed both exact boundary documents/default versions.
+AWS documentation uses conflicting type spellings. A narrow two-literal
+compatibility repair and separate read-only verifier source binding have passed
+55 independent/focused tests; full repaired cloud acceptance is still pending.
+Keep creation source/hash/window/token unchanged and never use a distinct
+verification source for a write. No production update or STS exchange occurred.
+The separate STS proof core, runner and manual workflow are independently
+accepted offline: no ambient credential chain, direct TLS/single-attempt
+regional clients, unsigned exchange and explicit returned credentials only,
+exact context/identity checks, no exports or artifacts. Actual environment
+secret binding and the two new protected-run approvals remain pending;
+never treat the two consumed claim-only approvals as permission for these runs.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public

@@ -188,7 +188,7 @@ def _readback_clients(coordinator, *, mutate=None):
         if mutate == f"path-{target}":
             role_reply["Role"]["Path"] = "/unexpected/"
         if mutate == f"boundary-type-{target}":
-            role_reply["Role"]["PermissionsBoundary"]["PermissionsBoundaryType"] = "Policy"
+            role_reply["Role"]["PermissionsBoundary"]["PermissionsBoundaryType"] = "UnknownBoundary"
         iam_methods["get_role"].append(_response(**role_reply))
         attached_readback = _response(AttachedPolicies=[], IsTruncated=False)
         if mutate == f"truncated-attached-{target}":

@@ -1,0 +1,72 @@
+name: Identity-only GitHub to AWS STS proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Select the protected identity-only target
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+
+permissions: {}
+
+concurrency:
+  group: honda-mapit-cd-sts-identity-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    name: Verify identity trust only
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: ${{ inputs.target }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TARGET: ${{ inputs.target }}
+      SOURCE_REF: ${{ github.ref }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - name: Check exact target branch and source SHA
+        shell: bash
+        run: |
+          if [[ ! "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Dispatched source identity is invalid"
+            exit 1
+          fi
+          case "${TARGET}:${SOURCE_REF}" in
+            dev:refs/heads/develop|prod:refs/heads/main) ;;
+            *) echo "Target/ref combination is not allowed"; exit 1 ;;
+          esac
+
+      - name: Checkout exact dispatched commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify checked out commit
+        shell: bash
+        run: |
+          if [[ "$(git rev-parse HEAD)" != "${SOURCE_SHA}" ]]; then
+            echo "Checked out commit does not match the dispatch"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.13"
+
+      - name: Install pinned public STS SDK
+        run: python -m pip install --disable-pip-version-check --retries 0 --timeout 20 -r infra/aws/shutdown-requirements.txt
+
+      - name: Request one OIDC token and verify identity only
+        env:
+          AWS_CD_IDENTITY_ROLE_ARN: ${{ secrets.AWS_CD_IDENTITY_ROLE_ARN }}
+        run: python -m scripts.run_github_sts_identity

@@ -124,6 +124,7 @@ class CdIdentityBootstrapCoordinator:
         source_sha: str,
         authorized_from_epoch: int,
         authorized_until_epoch: int,
+        verification_source_sha: str | None = None,
         wall_clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -134,6 +135,10 @@ class CdIdentityBootstrapCoordinator:
         if type(account_id) is not str or _ACCOUNT_RE.fullmatch(account_id) is None:
             raise CdIdentityBootstrapError("binding_invalid")
         if type(source_sha) is not str or re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:
+            raise CdIdentityBootstrapError("binding_invalid")
+        if verification_source_sha is None:
+            verification_source_sha = source_sha
+        if type(verification_source_sha) is not str or re.fullmatch(r"[0-9a-f]{40}", verification_source_sha) is None:
             raise CdIdentityBootstrapError("binding_invalid")
         try:
             template = build_cd_identity_bootstrap(
@@ -161,6 +166,7 @@ class CdIdentityBootstrapCoordinator:
         self.repository_id = repository_id
         self.observed_subjects = json.loads(_canonical(observed_subjects))
         self.source_sha = source_sha
+        self.verification_source_sha = verification_source_sha
         self.window_start = authorized_from_epoch
         self.window_end = authorized_until_epoch
         self.wall_clock = wall_clock
@@ -182,6 +188,8 @@ class CdIdentityBootstrapCoordinator:
         try:
             with self.journal.locked():
                 self._assert_input_binding()
+                if step in {"preflight", "create"} and self.verification_source_sha != self.source_sha:
+                    raise CdIdentityBootstrapError("binding_invalid")
                 self._step_started = self._monotonic()
                 self._last_monotonic = self._step_started
                 self._calls = 0
@@ -279,6 +287,7 @@ class CdIdentityBootstrapCoordinator:
             "repository_id": self.repository_id,
             "observed_subjects": self._subject_binding(),
             "source_sha": self.source_sha,
+            "verification_source_sha": self.verification_source_sha,
             "authorized_from_epoch": self.window_start,
             "authorized_until_epoch": self.window_end,
             "template_sha256": self.template_sha256,
@@ -339,6 +348,10 @@ class CdIdentityBootstrapCoordinator:
             or state.get("repository_id") != self.repository_id
             or state.get("observed_subjects") != self._subject_binding()
             or state.get("source_sha") != self.source_sha
+            or (
+                "verification_source_sha" in state
+                and state["verification_source_sha"] != self.verification_source_sha
+            )
             or state.get("template_sha256") != self.template_sha256
             or state.get("authorized_from_epoch") != self.window_start
             or state.get("authorized_until_epoch") != self.window_end
@@ -664,7 +677,10 @@ class CdIdentityBootstrapCoordinator:
             or role.get("Path") != "/"
             or not isinstance(role.get("PermissionsBoundary"), Mapping)
             or role["PermissionsBoundary"].get("PermissionsBoundaryArn") != boundary_arn
-            or role["PermissionsBoundary"].get("PermissionsBoundaryType") != "PermissionsBoundaryPolicy"
+            or type(role["PermissionsBoundary"].get("PermissionsBoundaryType")) is not str
+            or role["PermissionsBoundary"]["PermissionsBoundaryType"] not in {
+                "PermissionsBoundaryPolicy", "Policy"
+            }
             or not tags_valid
             or any(tagmap.get(key) != value for key, value in expected_tags.items())
             or trust is None
@@ -743,6 +759,7 @@ class CdIdentityBootstrapCoordinator:
         self._check_window()
         state["phase"] = "create_readback_verified"
         state["create_readback_verified"] = True
+        state["verification_source_sha"] = self.verification_source_sha
         self._save(state)
         return self._safe("check-create", True, "stack_and_identity_verified", self._calls)
 
@@ -756,5 +773,6 @@ class CdIdentityBootstrapCoordinator:
         self._check_window()
         state["phase"] = "final_readback_verified"
         state["final_readback_verified"] = True
+        state["verification_source_sha"] = self.verification_source_sha
         self._save(state)
         return self._safe("final-readback", True, "final_readback_verified", self._calls)

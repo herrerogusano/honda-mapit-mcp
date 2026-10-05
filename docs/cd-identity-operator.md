@@ -45,3 +45,22 @@ independent suite passed 32 tests. A local pinned Botocore model check confirmed
 the boundary-type field belongs to the role attachment, not the managed policy.
 The existing SDK CI job now runs both files with pinned SDK dependencies.
 These are offline acceptance facts, not evidence of role creation or AWS trust.
+
+## Initial cloud receipt and bounded compatibility repair
+
+After all eight source checks passed, one new private-journal preflight passed
+the exact account/provider/name checks. One `CreateStack` was acknowledged;
+it must never be replayed. The first readback verified the exact four-resource
+template and ownership, then failed closed on boundary type `Policy`.
+Bounded signed diagnostics on both roles confirmed exact boundary ARN, policy
+name/path, default version and the complete expected explicit-deny document.
+This is not yet full coordinator acceptance or a successful STS exchange.
+
+AWS's [GetRole reference](https://docs.aws.amazon.com/boto3/latest/reference/services/iam/client/get_role.html)
+is inconsistent: response syntax/model use `PermissionsBoundaryPolicy`, while
+the field description uses `Policy`. Accept only these two string literals,
+never a missing/unknown value, and retain every exact ARN/policy/inline/trust
+readback. This changes no AWS permission or template. A repaired read-only
+verification records its own reviewed source SHA separately; the original
+creation source, template digest, request token and window remain unchanged.
+An alternate verification source is forbidden for preflight/create steps.
