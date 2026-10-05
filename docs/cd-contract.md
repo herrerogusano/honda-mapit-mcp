@@ -133,3 +133,18 @@ silently replace a required approval with `workflow_dispatch`, make the
 repository public, purchase a plan, attach AWS credentials to a self-hosted
 runner, or add a deploy-capable IAM role as a workaround. No AWS account read,
 role creation, OIDC token request, merge or deployment occurred in this review.
+
+## Current delivery distinction
+
+The historical hosting capability gate above was superseded by the separately
+authorized public portfolio publication and exact protection readbacks in
+[the GitHub protection contract](cd-github-protections.md). Identity bootstrap,
+bounded STS evidence and consumed attempts are tracked in
+[the identity proof contract](cd-sts-proof-contract.md). These receipts do not
+grant deployment permissions or establish completed CD.
+
+The actionable offline [next production delivery gate](cd-production-next-gate.md)
+describes private artifact handoff, the proposed executor/service-role split,
+its persistent CloudFormation consequence and exact closed-update/recovery
+requirements. Actual roles, a fresh delivery executor and a dev deployment
+target are not implemented by that proposal.
