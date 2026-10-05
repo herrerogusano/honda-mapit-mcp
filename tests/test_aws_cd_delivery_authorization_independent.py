@@ -224,4 +224,5 @@ def test_update_stack_passes_only_exact_reviewed_cfn_service_role():
         "source_sha": "a" * 40,
         "service_role_arn": _service_role(),
         "initial_service_role_attachment": False,
+        "retained_recovery": False,
     }

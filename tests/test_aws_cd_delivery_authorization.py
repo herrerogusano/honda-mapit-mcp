@@ -34,6 +34,7 @@ def test_fresh_cd_journal_is_distinct_and_binds_source_and_role():
         "source_sha": "a" * 40,
         "service_role_arn": ROLE,
         "initial_service_role_attachment": False,
+        "retained_recovery": False,
     }
     assert core._state() == state
     journal.value["kind"] = "prod_geography_upgrade"
@@ -48,6 +49,7 @@ def test_fresh_cd_journal_is_distinct_and_binds_source_and_role():
     {"service_role_arn": ROLE.replace(ACCOUNT, "999999999999")},
     {"service_role_arn": ROLE + "/extra"}, {"service_role_arn": None},
     {"initial_service_role_attachment": 1}, {"initial_service_role_attachment": "true"},
+    {"retained_recovery": 1}, {"retained_recovery": "true"},
 ])
 def test_invalid_authorization_denied_before_any_call(changes):
     with pytest.raises(ProdGeographyUpgradeError, match="inputs_invalid"):
@@ -61,12 +63,14 @@ def test_fresh_window_requires_explicit_opt_in_and_exact_both_bounds():
         fresh_core(authorized_until_epoch=START + 901)
 
 
-@pytest.mark.parametrize("field", ["source_sha", "service_role_arn", "initial_service_role_attachment"])
+@pytest.mark.parametrize("field", [
+    "source_sha", "service_role_arn", "initial_service_role_attachment", "retained_recovery",
+])
 def test_altered_cd_journal_binding_cannot_be_reused(field):
     core, journal = fresh_core()
     core._step_started = core.monotonic()
     core._save_new_state()
-    journal.value["delivery_binding"][field] = "wrong" if field != "initial_service_role_attachment" else True
+    journal.value["delivery_binding"][field] = "wrong" if field in {"source_sha", "service_role_arn"} else True
     with pytest.raises(ProdGeographyUpgradeError, match="journal_invalid"):
         core._state()
 
@@ -79,6 +83,17 @@ def test_historical_journal_cannot_be_loaded_by_cd_core():
     journal.value = copy.deepcopy(state)
     with pytest.raises(ProdGeographyUpgradeError, match="journal_invalid"):
         new._state()
+
+
+def test_recovery_mode_is_durable_and_cannot_be_changed_between_steps():
+    core, journal = fresh_core(authorization(retained_recovery=True))
+    core._step_started = core.monotonic()
+    saved = core._save_new_state()
+    assert saved["delivery_binding"]["retained_recovery"] is True
+    assert core._state() == saved
+    journal.value["delivery_binding"]["retained_recovery"] = False
+    with pytest.raises(ProdGeographyUpgradeError, match="journal_invalid"):
+        core._state()
 
 
 @pytest.mark.parametrize("clock,category", [
