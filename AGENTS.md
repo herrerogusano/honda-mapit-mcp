@@ -12,8 +12,14 @@ owner's acknowledgement, their exact target branch and verified administrator
 bypass disabled. The API field is empirically supported despite documentation
 omission; no manual UI change is needed. See docs/cd-github-protections.md.
 This supersedes the earlier unprotected-state observations, not the remaining
-OIDC/IAM/private-artifact/executor gates. No AWS operation or promotion has yet
-occurred under this new approval; expired geography journals remain consumed.
+OIDC/IAM/private-artifact/executor gates. PRs 1 and 3 subsequently passed all
+eight checks and were merged to develop; PR 2 promotes develop to main and is
+still pending. Read-only AWS checks verified a non-root identity, the existing
+owned production stack in eu-west-1, and a compatible existing account-wide
+GitHub OIDC provider. Reuse that provider without mutation; both proposed CD
+roles were absent. IAM uses its canonical global endpoint/signing region, not
+a switch of the application's region. No AWS mutation occurred; expired
+geography journals remain consumed.
 The separate manual cd-identity workflow is independently accepted offline:
 one bounded runner-issued token, exact target/ref/SHA/repository-ID binding and
 safe subject-format/digest output, with no AWS exchange or deployment. Synthetic
@@ -21,6 +27,15 @@ fixtures are not a trust receipt. The local checkpoint is 2150 passed, ten
 Windows/POSIX-environment skips, compilation and evaluator 12/12; the protection
 commit 2112683 has eight green CI checks. Actual run/approval, OIDC trust, IAM
 and a fresh code-only executor remain pending. See docs/cd-oidc-claims.md.
+The identity bootstrap factory is independently reviewed offline: exactly four
+dev/prod role/boundary resources, exact observed subject digest binding and
+caller-identity-only permission with explicit deny of other actions. Real
+templates embed supplied account/provider/repository bindings and must remain
+private. Both synthetic subject formats are registered in the network-denied
+schema CI checker; actual schema/CloudFormation/IAM acceptance is still pending.
+See docs/cd-identity-bootstrap.md. The user separately authorized approving only
+the two no-deployment identity-discovery runs after their source checks pass;
+this does not authorize approval of later production updates.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
