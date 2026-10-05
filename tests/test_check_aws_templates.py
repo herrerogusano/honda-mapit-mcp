@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import socket
@@ -26,6 +27,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "shared_identity_dev_runtime_draft", "shared_identity_dev_cleanup_draft",
         "prod_bootstrap_draft", "prod_controls_draft", "prod_artifacts_draft",
         "prod_oauth_draft", "prod_runtime_draft",
+        "cd_identity_legacy_draft", "cd_identity_immutable_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
@@ -100,6 +102,73 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
     assert prod_runtime["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
     assert prod_runtime["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
     assert not any(item["Type"].startswith("AWS::Cognito") for item in prod_runtime["Resources"].values())
+
+    synthetic_account = "123456789012"
+    synthetic_owner = "1234567"
+    synthetic_repository = "7654321"
+    provider_arn = f"arn:aws:iam::{synthetic_account}:oidc-provider/token.actions.githubusercontent.com"
+    for label, subject_format in (
+        ("cd_identity_legacy_draft", "legacy_environment"),
+        ("cd_identity_immutable_draft", "immutable_environment"),
+    ):
+        identity_template = json.loads(documents[label])
+        assert set(identity_template["Resources"]) == {
+            "DevCdPermissionsBoundary", "DevCdIdentityRole",
+            "ProdCdPermissionsBoundary", "ProdCdIdentityRole",
+        }
+        assert "Outputs" not in identity_template and "Parameters" not in identity_template
+        assert all(
+            item["Type"] != "AWS::IAM::OpenIDConnectProvider"
+            for item in identity_template["Resources"].values()
+        )
+        for target in ("dev", "prod"):
+            title = target.title()
+            role = identity_template["Resources"][f"{title}CdIdentityRole"]
+            boundary = identity_template["Resources"][f"{title}CdPermissionsBoundary"]
+            role_props = role["Properties"]
+            assert role["Type"] == "AWS::IAM::Role"
+            assert role_props["RoleName"] == f"honda-mapit-mcp-{target}-cd"
+            assert role_props["Tags"] == [
+                {"Key": "Project", "Value": "honda-mapit-mcp"},
+                {"Key": "Environment", "Value": target},
+                {"Key": "Purpose", "Value": "CDIdentityOwnership"},
+            ]
+            assert role_props["PermissionsBoundary"] == {
+                "Fn::GetAtt": [f"{title}CdPermissionsBoundary", "PolicyArn"]
+            }
+            if subject_format == "legacy_environment":
+                subject = f"repo:herrerogusano/honda-mapit-mcp:environment:{target}"
+            else:
+                subject = (
+                    f"repo:herrerogusano@{synthetic_owner}/honda-mapit-mcp@{synthetic_repository}"
+                    f":environment:{target}"
+                )
+            statement = role_props["AssumeRolePolicyDocument"]["Statement"]
+            assert statement == [{
+                "Sid": "TrustExactRepositoryEnvironmentSubject",
+                "Effect": "Allow",
+                "Principal": {"Federated": provider_arn},
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {"StringEquals": {
+                    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                    "token.actions.githubusercontent.com:sub": subject,
+                }},
+            }]
+            inline = role_props["Policies"]
+            assert len(inline) == 1
+            assert inline[0]["PolicyDocument"]["Statement"] == [{
+                "Sid": "AllowOnlyCallerIdentity", "Effect": "Allow",
+                "Action": "sts:GetCallerIdentity", "Resource": "*",
+            }]
+            boundary_props = boundary["Properties"]
+            assert boundary["Type"] == "AWS::IAM::ManagedPolicy"
+            assert "Tags" not in boundary_props
+            assert boundary_props["PolicyDocument"]["Statement"] == [
+                {"Sid": "AllowOnlyCallerIdentity", "Effect": "Allow",
+                 "Action": "sts:GetCallerIdentity", "Resource": "*"},
+                {"Sid": "DenyEverythingExceptCallerIdentity", "Effect": "Deny",
+                 "NotAction": "sts:GetCallerIdentity", "Resource": "*"},
+            ]
 
 
 def test_socket_and_dns_guard_restores_after_success_and_exception():
