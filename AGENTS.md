@@ -112,6 +112,21 @@ other account/provider, bare host, IAM expansion or prod proof is included.
 Require independent review and fresh eight-check/protection/closed-role gates
 before the single normally approved dev attempt. Older allowances stay consumed.
 
+The strict compatibility increment is now independently accepted with 75 focused
+tests; the integrated offline suite passed 2295 tests with ten environment skips,
+compilation and model-free evaluation 12/12. Dev proof 37343136563 succeeded on
+7a6dbe4 after fresh CI/protection/IAM readbacks. During the user's renewed hour,
+2026-10-05 16:40:52–17:40:52 UTC, PR #12 synchronized ancestry without a tree
+change and PR #11 promoted normally to main at 0244907. All eight main CI checks
+passed; one fresh, normally approved prod proof 37344958197 also succeeded,
+verifying exact account/role. Both one-attempt allowances are consumed. Identity
+roles remain caller-identity-only; no deployment, IAM expansion, MAPIT operation
+or new spending occurred. The independently reviewed offline next delivery
+proposal is docs/cd-production-next-gate.md, not implemented CD. It requires
+review of a persistent CloudFormation service-role association, fresh bounded
+executor/permissions, private artifact binding and exact closed recovery before
+any live production update. Temporary wakefulness must be removed before handoff.
+
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
 and read back as `isPrivate=false`; no history rewrite, merge or AWS change

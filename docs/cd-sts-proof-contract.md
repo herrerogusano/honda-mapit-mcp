@@ -187,3 +187,31 @@ cross-account/path/scheme/non-string/missing-provider negatives before caller
 access. Compilation and diff checks passed. No other proof check, workflow,
 dependency or IAM setting changed. Live acceptance remains pending until exact
 source CI and the separately authorized one-attempt dev proof complete.
+
+## Successful dev compatibility proof
+
+PR #10 merged normally to develop at
+`7a6dbe41f0960ccd61db0126bfa8270e6cb5be34`; all eight exact source CI checks
+passed. Fresh GitHub protection/owner/secret metadata checks and a separate
+sixteen-read closed IAM/provider verification passed before normal approval.
+[Dev run 37343136563](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37343136563)
+succeeded, emitting `aws_identity_verified`, `account_verified=true` and
+`role_verified=true` for that exact source. This verifies the bounded token,
+web-identity exchange and signed caller-identity pipeline; it does not deploy.
+Only a safe allowlisted result projection was retained. The single dev allowance
+is consumed; no automatic retry or permission expansion follows.
+
+During the owner's renewed one-hour window, 16:40:52–17:40:52 UTC on October 5,
+the supervisor continued identity-only promotion/prod verification and offline
+delivery design, explicitly without deployment, IAM expansion or new spending.
+PR #12 synchronized main ancestry into develop without a tree change; PR #11
+then promoted normally to main at `02449071162755c015692bf8d44736b14502e223`.
+All eight integrated main CI checks subsequently passed in run 37344681117.
+Fresh GitHub controls and a separate sixteen-read exact closed IAM/provider
+verification passed. [Prod run 37344958197](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37344958197)
+received normal environment approval and succeeded on that exact main source,
+with `aws_identity_verified`, `account_verified=true` and `role_verified=true`.
+Its safe result projection passed the high-signal log check. This one-attempt
+prod allowance is consumed, not authority for automatic re-execution.
+The existing roles remain caller-identity-only; actual delivery prerequisites
+are detailed in [the next production gate](cd-production-next-gate.md).
