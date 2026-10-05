@@ -2,6 +2,19 @@
 
 ## Scope
 
+On 2026-10-05 the user explicitly authorized PR promotion to develop then main
+and preparation/creation of the narrowly scoped AWS OIDC connection for CD in
+eu-west-1. Present the exact artifact/change and recovery before a production
+update; preserve owner/MFA, quota 10, MAPIT data and single-owner production.
+Both target branches now have exact eight app-bound CI checks, strict freshness,
+PR/admin enforcement and no force-push/deletion. Both environments require the
+owner's acknowledgement, their exact target branch and verified administrator
+bypass disabled. The API field is empirically supported despite documentation
+omission; no manual UI change is needed. See docs/cd-github-protections.md.
+This supersedes the earlier unprotected-state observations, not the remaining
+OIDC/IAM/private-artifact/executor gates. No AWS operation or promotion has yet
+occurred under this new approval; expired geography journals remain consumed.
+
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
 and read back as `isPrivate=false`; no history rewrite, merge or AWS change

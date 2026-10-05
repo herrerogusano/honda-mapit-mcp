@@ -37,6 +37,21 @@ schema-check jobs, and does not certify those gates as passing.
 
 ## Separate future deployment gates
 
+### GitHub controls accepted — 2026-10-05
+
+After public publication, the exact eight-check branch protections and
+owner-approved, target-branch-restricted `dev`/`prod` environments were applied
+and verified. Administrator bypass is disabled on both environments. See
+[the settings receipt](cd-github-protections.md). Historical unprotected-state
+observations below do not describe this new readback. The user also explicitly
+authorized promotion through PRs to `develop` then `main`, and preparation and
+creation of the narrow AWS OIDC connection for CD in eu-west-1. Before any
+production update, present the exact change and recovery procedure. Preserve
+owner/MFA, quota 10, MAPIT data and single-owner production; this approval does
+not authorize hosted multiuser or paid inference. Operational CD still requires
+actual claim discovery, separately accepted IAM/update wiring and a real
+approved release-branch proof; readiness alone is not deployment.
+
 This workflow intentionally does not implement any deployment path. A future
 proposal requires separate review and approval of all of the following before
 adding a deploy-capable workflow:
