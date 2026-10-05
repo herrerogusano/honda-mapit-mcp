@@ -235,6 +235,58 @@ def test_clean_module_invocation_fails_safely_before_token_or_sdk_import():
     assert result.stderr == ""
 
 
+def test_error_metadata_is_revalidated_and_stage_is_allowlisted():
+    error = runner.RunnerProofError("claims_mismatch", stage="claims_validation")
+    assert error.safe_dict() == {
+        "status": "failed", "category": "claims_mismatch", "stage": "claims_validation"
+    }
+    error.category = {"secret": "category-canary"}
+    error.stage = ["secret", "stage-canary"]
+    assert error.safe_dict() == {
+        "status": "failed", "category": "proof_failed", "stage": "proof_internal"
+    }
+    assert "canary" not in json.dumps(error.safe_dict())
+
+
+def test_oidc_token_failure_preserves_fixed_acquisition_category(monkeypatch, tmp_path):
+    def fail(*_args, **_kwargs):
+        raise runner.OidcClaimError("runner_request_failed")
+
+    monkeypatch.setattr(runner, "request_runner_oidc_token", fail)
+    with pytest.raises(runner.RunnerProofError) as raised:
+        runner.run_identity_proof(_env(), home=tmp_path / "clean")
+    assert raised.value.safe_dict() == {
+        "status": "failed", "category": "runner_request_failed", "stage": "oidc_token_acquisition"
+    }
+
+
+def test_unexpected_token_request_error_gets_closed_acquisition_stage(monkeypatch, tmp_path):
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("request-canary-secret")
+
+    monkeypatch.setattr(runner, "request_runner_oidc_token", fail)
+    with pytest.raises(runner.RunnerProofError) as raised:
+        runner.run_identity_proof(_env(), home=tmp_path / "clean")
+    assert raised.value.safe_dict() == {
+        "status": "failed", "category": "proof_failed", "stage": "oidc_token_acquisition"
+    }
+    assert "request-canary-secret" not in repr(raised.value)
+
+
+def test_proof_failure_identifies_unsigned_client_creation_without_sdk_text(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner, "request_runner_oidc_token", lambda *_a, **_k: _token())
+
+    def fail(**_kwargs):
+        raise RuntimeError("sdk-canary-secret")
+
+    with pytest.raises(runner.RunnerProofError) as raised:
+        runner.run_identity_proof(_env(), home=tmp_path / "clean", client_factory=fail)
+    assert raised.value.safe_dict() == {
+        "status": "failed", "category": "sts_client_creation_failed", "stage": "unsigned_client_creation"
+    }
+    assert "sdk-canary-secret" not in repr(raised.value)
+
+
 def test_manual_workflow_is_target_and_source_pinned_without_credential_export():
     workflow = Path(".github/workflows/cd-sts-identity.yml").read_text(encoding="utf-8")
     assert "workflow_dispatch:" in workflow

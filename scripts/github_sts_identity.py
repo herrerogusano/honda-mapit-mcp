@@ -30,12 +30,20 @@ _MAX_SESSION_FIELD = 1_048_576
 class StsProofError(ValueError):
     """Fixed-category proof failure; never contains token, credentials, or SDK text."""
 
-    def __init__(self, category: str) -> None:
+    def __init__(self, category: str, *, stage: str = "proof_internal") -> None:
         allowed = {
             "invalid_input", "claims_mismatch", "sts_exchange_failed",
             "sts_response_invalid", "identity_mismatch", "credentials_invalid",
+            "sts_client_creation_failed",
         }
-        self.category = category if category in allowed else "sts_response_invalid"
+        allowed_stages = {
+            "proof_internal", "claims_validation", "assume_role_exchange",
+            "assume_role_response_validation", "credential_validation",
+            "signed_client_creation", "caller_identity_exchange",
+            "caller_identity_response_validation",
+        }
+        self.category = category if type(category) is str and category in allowed else "sts_response_invalid"
+        self.stage = stage if type(stage) is str and stage in allowed_stages else "proof_internal"
         super().__init__(self.category)
 
 
@@ -103,14 +111,14 @@ def prove_github_sts_identity(
         or re.fullmatch(r"[1-9][0-9]{0,19}", expected_repository_id) is None
         or type(role_arn) is not str
     ):
-        raise StsProofError("invalid_input")
+        raise StsProofError("invalid_input", stage="claims_validation")
     match = _ROLE_ARN.fullmatch(role_arn)
     if (
         match is None
         or match.group(1) != expected_account_id
         or match.group(2) != ROLE_NAMES[target]
     ):
-        raise StsProofError("invalid_input")
+        raise StsProofError("invalid_input", stage="claims_validation")
     account_id = match.group(1)
     try:
         claims = validate_oidc_claims(
@@ -121,7 +129,7 @@ def prove_github_sts_identity(
             expected_repository_id=expected_repository_id,
         )
     except OidcClaimError:
-        raise StsProofError("claims_mismatch") from None
+        raise StsProofError("claims_mismatch", stage="claims_validation") from None
 
     session_name = f"mapit-cd-{target}-{source_sha[:12]}"
     try:
@@ -132,9 +140,9 @@ def prove_github_sts_identity(
             DurationSeconds=900,
         )
     except Exception:
-        raise StsProofError("sts_exchange_failed") from None
+        raise StsProofError("sts_exchange_failed", stage="assume_role_exchange") from None
     if not _http_200(assume):
-        raise StsProofError("sts_response_invalid")
+        raise StsProofError("sts_response_invalid", stage="assume_role_response_validation")
 
     provider = assume.get("Provider")
     audience = assume.get("Audience")
@@ -144,14 +152,18 @@ def prove_github_sts_identity(
     subject_digest = ""
     if type(subject) is str and len(subject) <= 1024:
         subject_digest = hashlib.sha256(subject.encode("utf-8")).hexdigest()
+    expected_provider_arn = (
+        f"arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com"
+    )
     if (
-        provider != ISSUER
+        type(provider) is not str
+        or provider not in {ISSUER, expected_provider_arn}
         or audience != AUDIENCE
         or not _same_digest(subject_digest, claims.subject_sha256)
         or not isinstance(assumed, Mapping)
         or not isinstance(credentials, Mapping)
     ):
-        raise StsProofError("identity_mismatch")
+        raise StsProofError("identity_mismatch", stage="assume_role_response_validation")
     expected_arn = f"arn:aws:sts::{account_id}:assumed-role/{ROLE_NAMES[target]}/{session_name}"
     assumed_arn = assumed.get("Arn")
     assumed_id = assumed.get("AssumedRoleId")
@@ -161,7 +173,7 @@ def prove_github_sts_identity(
         or len(assumed_id) > 256
         or not assumed_id.endswith(f":{session_name}")
     ):
-        raise StsProofError("identity_mismatch")
+        raise StsProofError("identity_mismatch", stage="assume_role_response_validation")
 
     access_key = credentials.get("AccessKeyId")
     secret_key = credentials.get("SecretAccessKey")
@@ -171,7 +183,7 @@ def prove_github_sts_identity(
         type(value) is not str or not value or len(value) > _MAX_SESSION_FIELD
         for value in (access_key, secret_key, session_token)
     ):
-        raise StsProofError("credentials_invalid")
+        raise StsProofError("credentials_invalid", stage="credential_validation")
     try:
         if (
             not isinstance(expiration, datetime)
@@ -185,9 +197,9 @@ def prove_github_sts_identity(
         expiration_utc = expiration.astimezone(timezone.utc)
         now_utc = now.astimezone(timezone.utc)
     except Exception:
-        raise StsProofError("credentials_invalid") from None
+        raise StsProofError("credentials_invalid", stage="credential_validation") from None
     if expiration_utc <= now_utc or (expiration_utc - now_utc).total_seconds() > 960:
-        raise StsProofError("credentials_invalid")
+        raise StsProofError("credentials_invalid", stage="credential_validation")
 
     try:
         authenticated_sts = explicit_sts_factory(
@@ -196,17 +208,20 @@ def prove_github_sts_identity(
             aws_session_token=session_token,
             region_name=REGION,
         )
+    except Exception:
+        raise StsProofError("sts_client_creation_failed", stage="signed_client_creation") from None
+    try:
         caller = authenticated_sts.get_caller_identity()
     except Exception:
-        raise StsProofError("sts_exchange_failed") from None
+        raise StsProofError("sts_exchange_failed", stage="caller_identity_exchange") from None
     if not _http_200(caller):
-        raise StsProofError("sts_response_invalid")
+        raise StsProofError("sts_response_invalid", stage="caller_identity_response_validation")
     if (
         caller.get("Account") != account_id
         or caller.get("Arn") != expected_arn
         or caller.get("UserId") != assumed_id
     ):
-        raise StsProofError("identity_mismatch")
+        raise StsProofError("identity_mismatch", stage="caller_identity_response_validation")
     return IdentityProof(
         status="aws_identity_verified",
         target=target,

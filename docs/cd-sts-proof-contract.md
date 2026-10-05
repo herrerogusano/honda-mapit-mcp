@@ -62,3 +62,128 @@ metadata presence read back. GitHub does not return plaintext secret values,
 so this is a submission/metadata receipt, not a readable-value attestation.
 No AWS credentials or tokens were uploaded. Do not overwrite/replay these
 bindings; the actual protected STS runs and their approvals remain pending.
+
+## First authorized live proof — 2026-10-05
+
+The owner separately authorized exactly two identity-only runs. Fresh GitHub
+source CI, branch/environment protections, disabled administrator bypass and
+secret metadata checks passed. A separate read-only probe verified the exact
+four-resource identity stack, both closed roles/boundaries and existing OIDC
+provider with sixteen reads; it did not alter the original creation journal
+or extend its immutable window.
+
+- [Dev run](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37338161383):
+  source `726929c505ca11c21446ecf9a35c6d689773f027`, failed.
+- [Prod run](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37338166318):
+  source `6be4b6738ab100bae8b0944717c04e97a82e57d3`, failed.
+
+Both received normal protected-environment approval and emitted only the fixed
+`proof_failed` category. That category does not identify whether failure occurred
+at token acquisition, claims validation, STS exchange or response verification.
+Neither run establishes successful AWS identity interoperability. No deployment
+or MAPIT operation occurred. The two-run allowance is consumed: do not rerun,
+relax trust/verification or broaden role permissions automatically. Investigate
+offline and add reviewed, non-sensitive failure-stage diagnostics before seeking
+a new bounded proof allowance.
+
+## Offline diagnostic increment
+
+The next increment preserves the successful output and all exact trust,
+response, credential, timeout and single-attempt checks. Failure output may
+contain only an allowlisted stage and category. Stages distinguish runner-token
+acquisition, claim validation, unsigned client creation, web-identity exchange,
+exchange-response verification, credential verification, signed client creation,
+caller-identity exchange and caller-response verification. Unknown exceptions
+must produce fixed fallback codes, never exception text or provider payloads.
+Error metadata must be sanitized again at serialization, not trusted merely
+because its constructor originally validated it. Clients still close on every
+exit and diagnostics must not trigger additional requests.
+
+Neither the `Provider` expectation nor the IAM trust is relaxed: the official
+[STS response contract](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html)
+describes the OIDC provider as the token issuer. No evidence from the two generic
+failures identifies that field as the cause. This increment is offline only;
+another real proof requires separate, bounded authorization after acceptance.
+
+Implementation preserves the legacy pre-context failure output and successful
+proof projection. Known token-acquisition categories survive translation;
+unexpected token errors retain a fixed acquisition stage. All other proof
+errors carry sanitized stage/category pairs, with a fixed internal fallback.
+The full offline checkpoint passed 2,256 tests with ten environment skips;
+compilation passed. Workflow, dependencies, IAM and deployed resources are
+unchanged. Independent diagnostic review and source CI are recorded separately
+once complete; this checkpoint itself permits no live retry.
+
+Independent offline review accepted the change; the supervisor's combined
+focused run passed 46 tests, including
+all nine failure stages, bounded call counts, client closure and canary-safe
+main serialization. The source increment is prepared in PR #9. No live proof
+was repeated and the original two-run allowance remains consumed.
+
+## One separately authorized dev diagnostic attempt
+
+The diagnostic PR #9 merged normally into develop at
+`bae697e9fd47a1687fab980314430024ce24621a`; all eight source CI checks passed
+in run 37340654012. Fresh branch/environment/owner/secret metadata checks and a
+separate sixteen-read exact closed-stack/IAM/provider probe passed.
+
+The owner then authorized one dev-only attempt, normally approved in the
+protected environment: [run 37341041504](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37341041504).
+It failed with `identity_mismatch` at `assume_role_response_validation`.
+This establishes that token acquisition, local claim validation and the AWS
+web-identity exchange returned successfully with HTTP 200, but an exact returned
+identity-field check failed. It does not identify the field or establish a
+successful end-to-end identity proof. The signed caller-identity request was not
+reached. No deployment, MAPIT call, role-permission change or prod attempt occurred.
+
+The one-attempt allowance is consumed. Do not guess a Provider-format repair,
+relax identity checks, replay this run or request another token automatically.
+The next diagnostic choice is a separately bounded read of the existing AWS
+audit event, filtering in memory to this exact role/session/time and emitting
+only field-match booleans; this is proposed, not authorized or performed.
+
+## Authorized existing-event audit read
+
+The owner subsequently authorized the bounded audit investigation. One regional
+STS account-identity read and two single-attempt CloudTrail lookups inspected the
+same narrow job-time interval in eu-west-1, at most ten events each with no
+pagination. Each query matched exactly the requested role/session event; neither
+was truncated. Responses remained in process memory and only comparison
+booleans were emitted. No new web-identity exchange was requested.
+
+The successful event's audience, subject digest, assumed-role ARN and session-ID
+suffix matched; a credentials object was present. Its `provider` matched exactly
+the privately verified owned OIDC-provider ARN, not the issuer URL or bare host.
+This is concrete audit evidence of the representation mismatch. The primary
+[CloudTrail STS documentation](https://docs.aws.amazon.com/IAM/latest/UserGuide/cloudtrail-integration.html)
+states that these events contain response elements except the secret access key,
+and its OIDC example represents `provider` as an IAM OIDC-provider ARN. The STS
+API reference's issuer wording differs. Do not expose raw audit data, which can
+include temporary session tokens; the actual SDK response was not retained.
+
+Proposed correction: accept only the exact configured issuer URL or the exact
+owned IAM OIDC-provider ARN derived from the already validated expected account
+and fixed GitHub issuer. Retain exact token issuer/audience/subject and all
+role/session/caller checks; reject other accounts/providers and malformed forms.
+This read-only authorization did not approve that implementation or another
+proof. Independent offline acceptance and a new dev-only attempt allowance
+remain separate before verifying actual SDK interoperability.
+
+## Strict provider compatibility authorization
+
+The owner approved the proposed implementation, offline validation and exactly
+one new dev-only proof. Accept only a string exactly equal to the fixed issuer
+URL or the exact IAM OIDC-provider ARN constructed from the already validated
+expected account and fixed issuer host. Do not normalize paths/schemes, accept
+the bare host, other accounts/providers or change token/role/session/caller
+checks. No environment/IAM/workflow/dependency mutation or prod proof is included.
+Require independent offline acceptance, eight exact source CI checks, fresh
+closed IAM/provider and GitHub-protection readbacks, then normal dev approval.
+The earlier proof and audit allowances remain consumed.
+
+The compatibility increment passed independent offline acceptance; the combined
+focused regression passed 75 tests, including dev/prod synthetic positives and
+cross-account/path/scheme/non-string/missing-provider negatives before caller
+access. Compilation and diff checks passed. No other proof check, workflow,
+dependency or IAM setting changed. Live acceptance remains pending until exact
+source CI and the separately authorized one-attempt dev proof complete.
