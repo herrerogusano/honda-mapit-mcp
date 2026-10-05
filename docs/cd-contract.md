@@ -1,5 +1,16 @@
 # CD readiness workflow contract
 
+## Current visibility — 2026-10-05
+
+The user selected public portfolio publication and explicitly allowed the
+existing Git author email to remain visible. After the publication review,
+repository visibility was changed and verified as public. History and the open
+PR were preserved; no merge or AWS operation occurred. The private-plan gate
+below is historical, not the current visibility. Public-repository protection
+features can now be configured, but availability is not enforcement: `main`
+was still unprotected on the post-change readback, and no environment approval
+or deployment permission was configured by this visibility change.
+
 `.github/workflows/cd-readiness.yml` is a manually dispatched readiness check,
 not a deployment workflow. GitHub only offers `workflow_dispatch` for a
 workflow present on the default branch, so the workflow must first reach the

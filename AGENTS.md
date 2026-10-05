@@ -2,6 +2,17 @@
 
 ## Scope
 
+On 2026-10-05 the user authorized public portfolio visibility and explicitly
+retaining the existing author email. GitHub visibility was changed to public
+and read back as `isPrivate=false`; no history rewrite, merge or AWS change
+occurred. Pre-publication review covered reachable source/history and retained
+Actions logs plus PR/issue surfaces, with no confirmed sensitive finding.
+Numeric-only log heuristics are not proof of AWS account bindings; the review
+is not a guarantee of secret absence. The earlier private-plan capability gate
+is historical: public protection features are now available, but branch and
+environment protections still need separate configuration and readback. Public
+source does not authorize OIDC/IAM activation or expose the private MCP service.
+
 On 2026-10-05 the user requested preparing CD alongside AWS deployments.
 The separate manual `cd-readiness.yml` checks dev/develop or prod/main at the
 exact dispatched commit, with read-only repository permission and no AWS/OIDC,

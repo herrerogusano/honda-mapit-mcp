@@ -39,16 +39,23 @@ complete security, and resolver changes remain possible without a lockfile.
 The synthetic model-free evaluator and offline environment diagnostic also run.
 Actions are referenced by immutable commit SHA in `.github/workflows/ci.yml`.
 
-## Protection-rule limitation
+## Protection-rule history and current state
 
-The repository's current private GitHub plan does not allow configuring the
+On 2026-10-05 the user authorized public portfolio publication after a
+source/history and GitHub-surface review. Public visibility was verified;
+the author email was retained with explicit consent. This makes the public
+protection features available, but does not configure them. The post-change
+`main` readback still reported no protection. See the current
+[CD contract](cd-contract.md); there was no merge or AWS deployment.
+
+The repository's prior private GitHub plan did not allow configuring the
 desired Environment protection rules or deployment branch policies (GitHub
 returned HTTP 422). It also rejected branch protection for `develop` and `main`
 with HTTP 403 and requires GitHub Pro or a public repository. The `dev`/`prod`
 Environment names exist, but they are not presented as enforced approvals or
 deployment gates.
 
-Until the plan supports those rules, promotion remains a repository convention
+Until protection rules are configured and read back, promotion remains a repository convention
 verified by the CI checks above, not an asserted platform guarantee. Do not push
 feature work directly to `develop` or production work directly to `main`; use
 pull requests even though GitHub cannot currently enforce that policy.

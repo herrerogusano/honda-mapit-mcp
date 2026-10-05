@@ -1,5 +1,24 @@
 # Honda MAPIT read-only MCP
 
+## Portfolio checkpoint — 2026-10-05
+
+The current development includes a retained private, single-owner AWS MCP,
+with twelve tools when geographic queries are enabled. Public IGN boundaries
+cover Menorca, Barcelona and the 36 municipalities of the Barcelona metropolitan
+area. See the [geographic acceptance status](docs/geographic-query-status.md).
+Publishing this source repository does not publish the service endpoint,
+credentials, motorcycle data or a public signup flow.
+
+Invitation-only multiuser HTTP/Lambda components are tested offline with
+synthetic accounts, not enabled in production. Telegram remains owner-only.
+The [CD readiness workflow](docs/cd-contract.md) is preparation without AWS
+permissions, not an operational deployment pipeline. Development is reviewed
+in [PR #1](https://github.com/herrerogusano/honda-mapit-mcp/pull/1); pending
+changes are not implicitly merged into `main` or deployed.
+
+The phase descriptions below retain their original local implementation scope;
+later acceptance and remaining gates are recorded in the linked status files.
+
 Phase 0 produced the standalone synchronous client. Phase 1 now adds a local
 stdio MCP server with ten read-only tools over a separate application-service
 layer. Phase 2 adds bounded route analytics over the same monthly retrieval

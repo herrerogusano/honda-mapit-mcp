@@ -1,5 +1,29 @@
 # Security and local operations
 
+## Public portfolio review — 2026-10-05
+
+Before changing visibility, the review covered 110 reachable commits, 832
+file blobs (approximately 12.4 MB), the current tracked files, all 107 retained
+Actions logs, and the available PR/issue/comment/review/release surfaces.
+There were no stored Actions artifacts or releases. No confirmed secret or
+private route-data finding emerged. Synthetic credential fixtures and public
+IGN geometry were retained; the user explicitly approved retaining the author
+email. No history rewrite or deletion was performed.
+
+This was a bounded heuristic and contextual review, not certification that
+every possible secret is absent. Dedicated secret-scanner tools were not
+installed. Numeric-only twelve-digit log matches are not classified as AWS
+bindings without evidence; the broad numeric classifier did not establish
+their semantics. Future scanner reports should retain safe locations and
+categories, never matched values, to permit focused review without rescanning
+all logs.
+
+The repository is public, but the retained AWS MCP remains private and
+single-owner. Publishing source does not expose its endpoint, grant access to
+credentials or motorcycle data, enable hosted multiuser signup, or activate CD.
+The existing [geographic status](geographic-query-status.md) and
+[CD contract](cd-contract.md) describe later acceptance and pending gates.
+
 ## Architecture and trust boundaries
 
 The local MCP exposes read-only tools over stdio. Its service layer validates
@@ -84,7 +108,7 @@ or newer within major 26. Primary evidence: [PyPA pip advisories](https://github
 [pytest changelog](https://docs.pytest.org/en/stable/changelog.html), and
 [pip-audit security model](https://github.com/pypa/pip-audit#security-model).
 
-## Remaining boundaries
+## Original Phase 7 boundaries (historical)
 
 No AWS deployment, managed model, automatic historical sync, public Telegram
 worker or Home Assistant integration exists. MAPIT native distance units and
