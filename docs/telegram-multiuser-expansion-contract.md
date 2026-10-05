@@ -1,12 +1,25 @@
 # Telegram multi-user expansion: offline design contract
 
+## Current product decision (2026-10-05)
+
+The user selected **multi-user MCP access and owner-only Telegram**. Existing
+offline invitation/tenant libraries remain reusable, but Telegram enrollment for
+other people is deferred until incremental cost is known and separately approved.
+The two-person Telegram hosting proposal is not the current deployment target.
+Continue local MCP request-isolation preparation without enabling hosted signup,
+new identity/storage/IAM resources, account reads or live provider calls. The
+previous two-hour external-operation window has expired; no new window was granted.
+Owner-only Telegram still needs reviewed application-session renewal, durable
+receipt behavior and transport/cost acceptance before permanent activation.
+
 Status: **offline library accepted; hosted linking/deployment pending**. This document records existing seams and a
 bounded direction for a later implementation. It does not authorize account
 creation, public signup, deployment, credential collection, new paid services,
 live MAPIT/Telegram calls, or model inference. The existing production endpoint
 remains single-owner. A separate geography scope for Barcelona/Spain must not
-be inferred from this multi-user design; the accepted geography bundle is
-deployed for Menorca; Barcelona/AMB has a separate bounded review.
+be inferred from this multi-user design; the separately accepted geography
+bundle is deployed for Menorca and Barcelona/AMB, as recorded in
+`geographic-query-status.md`.
 
 ## Accepted offline invitation boundary
 
@@ -237,7 +250,7 @@ in separately reviewed steps:
    if a persistent multi-instance Telegram service is actually selected.
 5. Separate operator/user gates for public signup, pricing, production
    deployment, privacy notice/consent, account recovery, abuse handling,
-   geographic regions, and any paid model. Offline tests or this document do
+geographic regions, and any paid model. Offline tests or this document do
    not satisfy those gates.
 
 Required invariant tests include: verified subject A can read only A's fake

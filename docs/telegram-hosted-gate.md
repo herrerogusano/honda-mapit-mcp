@@ -1,5 +1,10 @@
 # Hosted Telegram multi-user gate (design only)
 
+Superseded product target (2026-10-05): the user chose multi-user **MCP** with
+**owner-only Telegram** for now. Preserve this proposal as future design evidence,
+not an active two-user Telegram deployment plan or approval. Any later Telegram
+expansion requires an incremental-cost review and separate approval.
+
 Status: proposal for review; **no webhook, new table, secret, or hosted multi-user path is deployed or authorized here**. The retained production MCP remains the accepted single-owner service. This proposal adds no model or conversational inference and does not extend the prior bounded Telegram `sendMessage` authorization to `setWebhook` or persistent processing.
 
 ## Bounded target

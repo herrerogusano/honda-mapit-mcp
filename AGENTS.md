@@ -2,6 +2,13 @@
 
 ## Scope
 
+On 2026-10-05 the user selected multi-user MCP access and owner-only Telegram.
+Telegram expansion to other users is deferred until incremental cost is known
+and separately approved. Continue bounded offline MCP composition/testing; no
+renewed external-operation window, hosted signup/storage/IAM expansion or live
+Telegram/MAPIT operation follows from the continuation request. Preserve the
+single-owner production runtime until separately reviewed hosted acceptance.
+
 On 2026-10-03 the user renewed a two-hour work window, 15:51:57–17:51:57 UTC,
 with temporary display/system wakefulness and restoration before final handoff.
 Scope: extend geographic queries across Spain if practical, otherwise Barcelona
