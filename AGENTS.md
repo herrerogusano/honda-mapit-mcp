@@ -88,6 +88,14 @@ That allowance is consumed. The user approved offline diagnostic improvements,
 not automatic repetition: retain exact validation/IAM and add only allowlisted
 failure stages/categories before requesting a new bounded live proof allowance.
 See docs/cd-sts-proof-contract.md. No deployment or MAPIT operation occurred.
+The offline diagnostic increment passed independent review, 46 focused tests,
+the full 2256-test checkpoint and eight CI jobs; PR #9 merged to develop at
+bae697e. After a new one-attempt dev authorization and fresh exact controls/IAM
+readbacks, run 37341041504 failed at assume_role_response_validation with
+identity_mismatch. AWS exchange returned HTTP 200; caller-identity was not reached.
+The failing field remains unknown. This dev allowance is consumed; no prod
+attempt or blind format repair is approved. A bounded existing-audit-event read
+is proposed as the next gate, not performed or authorized.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public

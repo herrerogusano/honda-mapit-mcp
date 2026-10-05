@@ -119,3 +119,25 @@ focused run passed 46 tests, including
 all nine failure stages, bounded call counts, client closure and canary-safe
 main serialization. The source increment is prepared in PR #9. No live proof
 was repeated and the original two-run allowance remains consumed.
+
+## One separately authorized dev diagnostic attempt
+
+The diagnostic PR #9 merged normally into develop at
+`bae697e9fd47a1687fab980314430024ce24621a`; all eight source CI checks passed
+in run 37340654012. Fresh branch/environment/owner/secret metadata checks and a
+separate sixteen-read exact closed-stack/IAM/provider probe passed.
+
+The owner then authorized one dev-only attempt, normally approved in the
+protected environment: [run 37341041504](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37341041504).
+It failed with `identity_mismatch` at `assume_role_response_validation`.
+This establishes that token acquisition, local claim validation and the AWS
+web-identity exchange returned successfully with HTTP 200, but an exact returned
+identity-field check failed. It does not identify the field or establish a
+successful end-to-end identity proof. The signed caller-identity request was not
+reached. No deployment, MAPIT call, role-permission change or prod attempt occurred.
+
+The one-attempt allowance is consumed. Do not guess a Provider-format repair,
+relax identity checks, replay this run or request another token automatically.
+The next diagnostic choice is a separately bounded read of the existing AWS
+audit event, filtering in memory to this exact role/session/time and emitting
+only field-match booleans; this is proposed, not authorized or performed.
