@@ -13,8 +13,9 @@ bypass disabled. The API field is empirically supported despite documentation
 omission; no manual UI change is needed. See docs/cd-github-protections.md.
 This supersedes the earlier unprotected-state observations, not the remaining
 OIDC/IAM/private-artifact/executor gates. PRs 1 and 3 subsequently passed all
-eight checks and were merged to develop; PR 2 promotes develop to main and is
-still pending. Read-only AWS checks verified a non-root identity, the existing
+eight checks and were merged to develop; PR 2 subsequently merged to main.
+PR 4 integrated the closed identity factory into develop after eight green
+checks. Read-only AWS checks verified a non-root identity, the existing
 owned production stack in eu-west-1, and a compatible existing account-wide
 GitHub OIDC provider. Reuse that provider without mutation; both proposed CD
 roles were absent. IAM uses its canonical global endpoint/signing region, not
@@ -26,16 +27,28 @@ safe subject-format/digest output, with no AWS exchange or deployment. Synthetic
 fixtures are not a trust receipt. The local checkpoint is 2150 passed, ten
 Windows/POSIX-environment skips, compilation and evaluator 12/12; the protection
 commit 2112683 has eight green CI checks. Actual run/approval, OIDC trust, IAM
-and a fresh code-only executor remain pending. See docs/cd-oidc-claims.md.
+and a fresh code-only executor were pending at that checkpoint. The two approved
+claim-discovery runs subsequently succeeded on exact develop/main commits;
+both emitted immutable environment subjects whose digests matched fresh
+repository/owner binding. Their approval allowance is consumed. This is not
+an AWS trust exchange or deployment. See docs/cd-oidc-claims.md.
 The identity bootstrap factory is independently reviewed offline: exactly four
 dev/prod role/boundary resources, exact observed subject digest binding and
 caller-identity-only permission with explicit deny of other actions. Real
 templates embed supplied account/provider/repository bindings and must remain
 private. Both synthetic subject formats are registered in the network-denied
-schema CI checker; actual schema/CloudFormation/IAM acceptance is still pending.
+schema CI checker; all 25 synthetic schemas passed CI, alongside the other
+seven required checks. Actual CloudFormation/IAM acceptance is still pending.
 See docs/cd-identity-bootstrap.md. The user separately authorized approving only
 the two no-deployment identity-discovery runs after their source checks pass;
 this does not authorize approval of later production updates.
+The injected closed-identity bootstrap coordinator is independently accepted
+offline, including crash-after-intent reconciliation without write replay and
+exact role/boundary/provider readbacks. Its 32 focused tests pass; the pinned
+SDK CI job includes its model-shape regression. Actual role creation, STS
+exchange and deploy-capable permission/executor acceptance remain separate.
+The STS proof contract is preparation only; approval of the two consumed
+claim-discovery runs does not authorize approving additional STS runs.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
