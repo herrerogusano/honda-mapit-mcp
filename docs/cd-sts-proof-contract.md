@@ -62,3 +62,60 @@ metadata presence read back. GitHub does not return plaintext secret values,
 so this is a submission/metadata receipt, not a readable-value attestation.
 No AWS credentials or tokens were uploaded. Do not overwrite/replay these
 bindings; the actual protected STS runs and their approvals remain pending.
+
+## First authorized live proof — 2026-10-05
+
+The owner separately authorized exactly two identity-only runs. Fresh GitHub
+source CI, branch/environment protections, disabled administrator bypass and
+secret metadata checks passed. A separate read-only probe verified the exact
+four-resource identity stack, both closed roles/boundaries and existing OIDC
+provider with sixteen reads; it did not alter the original creation journal
+or extend its immutable window.
+
+- [Dev run](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37338161383):
+  source `726929c505ca11c21446ecf9a35c6d689773f027`, failed.
+- [Prod run](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37338166318):
+  source `6be4b6738ab100bae8b0944717c04e97a82e57d3`, failed.
+
+Both received normal protected-environment approval and emitted only the fixed
+`proof_failed` category. That category does not identify whether failure occurred
+at token acquisition, claims validation, STS exchange or response verification.
+Neither run establishes successful AWS identity interoperability. No deployment
+or MAPIT operation occurred. The two-run allowance is consumed: do not rerun,
+relax trust/verification or broaden role permissions automatically. Investigate
+offline and add reviewed, non-sensitive failure-stage diagnostics before seeking
+a new bounded proof allowance.
+
+## Offline diagnostic increment
+
+The next increment preserves the successful output and all exact trust,
+response, credential, timeout and single-attempt checks. Failure output may
+contain only an allowlisted stage and category. Stages distinguish runner-token
+acquisition, claim validation, unsigned client creation, web-identity exchange,
+exchange-response verification, credential verification, signed client creation,
+caller-identity exchange and caller-response verification. Unknown exceptions
+must produce fixed fallback codes, never exception text or provider payloads.
+Error metadata must be sanitized again at serialization, not trusted merely
+because its constructor originally validated it. Clients still close on every
+exit and diagnostics must not trigger additional requests.
+
+Neither the `Provider` expectation nor the IAM trust is relaxed: the official
+[STS response contract](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html)
+describes the OIDC provider as the token issuer. No evidence from the two generic
+failures identifies that field as the cause. This increment is offline only;
+another real proof requires separate, bounded authorization after acceptance.
+
+Implementation preserves the legacy pre-context failure output and successful
+proof projection. Known token-acquisition categories survive translation;
+unexpected token errors retain a fixed acquisition stage. All other proof
+errors carry sanitized stage/category pairs, with a fixed internal fallback.
+The full offline checkpoint passed 2,256 tests with ten environment skips;
+compilation passed. Workflow, dependencies, IAM and deployed resources are
+unchanged. Independent diagnostic review and source CI are recorded separately
+once complete; this checkpoint itself permits no live retry.
+
+Independent offline review accepted the change; the supervisor's combined
+focused run passed 46 tests, including
+all nine failure stages, bounded call counts, client closure and canary-safe
+main serialization. The source increment is prepared in PR #9. No live proof
+was repeated and the original two-run allowance remains consumed.

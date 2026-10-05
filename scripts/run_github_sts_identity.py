@@ -42,10 +42,47 @@ def _utc_now() -> datetime:
 
 
 class RunnerProofError(ValueError):
-    def __init__(self, category: str) -> None:
-        allowed = {"ambient_aws_source", "runner_context_invalid", "role_binding_invalid", "proof_failed"}
-        self.category = category if category in allowed else "proof_failed"
+    def __init__(self, category: str, *, stage: str | None = None) -> None:
+        context_categories = {"ambient_aws_source", "runner_context_invalid", "role_binding_invalid"}
+        stage_categories = {
+            "oidc_token_acquisition": {
+                "runner_token_missing", "runner_endpoint_invalid", "runner_request_failed",
+                "runner_response_invalid", "token_format_invalid", "proof_failed",
+            },
+            "claims_validation": {"invalid_input", "claims_mismatch"},
+            "unsigned_client_creation": {"sts_client_creation_failed"},
+            "assume_role_exchange": {"sts_exchange_failed"},
+            "assume_role_response_validation": {"sts_response_invalid", "identity_mismatch"},
+            "credential_validation": {"credentials_invalid"},
+            "signed_client_creation": {"sts_client_creation_failed"},
+            "caller_identity_exchange": {"sts_exchange_failed"},
+            "caller_identity_response_validation": {"sts_response_invalid", "identity_mismatch"},
+            "proof_internal": {"proof_failed"},
+        }
+        if type(category) is not str:
+            self.category = "proof_failed"
+            self.stage = "proof_internal" if stage is not None else None
+        elif stage is not None and type(stage) is not str:
+            self.category = "proof_failed"
+            self.stage = "proof_internal"
+        elif stage is None and category in context_categories:
+            self.category = category
+            self.stage = None
+        elif stage in stage_categories and category in stage_categories[stage]:
+            self.category = category
+            self.stage = stage
+        else:
+            self.category = "proof_failed"
+            self.stage = "proof_internal" if stage is not None else None
         super().__init__(self.category)
+
+    def safe_dict(self) -> dict[str, str]:
+        # Revalidate at serialization time because exception attributes remain mutable.
+        fresh = RunnerProofError(self.category, stage=self.stage)
+        result = {"status": "failed", "category": fresh.category}
+        if fresh.stage is not None:
+            result["stage"] = fresh.stage
+        return result
 
 
 def _context(environment: Mapping[str, str], home: str | os.PathLike[str] | None) -> tuple[str, str, str, str, str]:
@@ -149,12 +186,17 @@ def run_identity_proof(
             environment.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN"),
             opener=opener,
         )
-    except OidcClaimError:
-        raise RunnerProofError("proof_failed") from None
+    except OidcClaimError as error:
+        raise RunnerProofError(error.category, stage="oidc_token_acquisition") from None
+    except Exception:
+        raise RunnerProofError("proof_failed", stage="oidc_token_acquisition") from None
     unsigned_client = None
     created: list[Any] = []
     try:
-        unsigned_client = client_factory(unsigned=True)
+        try:
+            unsigned_client = client_factory(unsigned=True)
+        except Exception:
+            raise RunnerProofError("sts_client_creation_failed", stage="unsigned_client_creation") from None
 
         def explicit_factory(**credentials: str) -> Any:
             if credentials.pop("region_name", None) != REGION:
@@ -178,10 +220,12 @@ def run_identity_proof(
             clock=clock,
         )
         return proof.safe_dict()
-    except (StsProofError, RunnerProofError):
-        raise RunnerProofError("proof_failed") from None
+    except (StsProofError, RunnerProofError) as error:
+        if isinstance(error, StsProofError):
+            raise RunnerProofError(error.category, stage=error.stage) from None
+        raise
     except Exception:
-        raise RunnerProofError("proof_failed") from None
+        raise RunnerProofError("proof_failed", stage="proof_internal") from None
     finally:
         for client in [unsigned_client, *created]:
             close = getattr(client, "close", None) if client is not None else None
@@ -198,10 +242,10 @@ def main() -> int:
         print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
         return 0
     except RunnerProofError as error:
-        print(json.dumps({"status": "failed", "category": error.category}, separators=(",", ":")))
+        print(json.dumps(error.safe_dict(), separators=(",", ":")))
         return 1
     except Exception:
-        print('{"status":"failed","category":"proof_failed"}')
+        print('{"status":"failed","category":"proof_failed","stage":"proof_internal"}')
         return 1
 
 

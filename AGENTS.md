@@ -79,6 +79,15 @@ secret plaintext is not readable through that API. No credential/key/token was
 uploaded. Do not repeat or overwrite these bindings implicitly. The two new
 STS approvals/exchanges are still pending; their earlier claim-only allowance
 remains consumed.
+The user subsequently approved exactly two new identity-only STS runs. Fresh
+source CI/protections and a separate sixteen-read closed-role/provider check
+passed; both runs received normal environment approval but failed with the
+fixed `proof_failed` category (dev 37338161383, prod 37338166318). This does not
+establish successful trust exchange and does not identify the failing stage.
+That allowance is consumed. The user approved offline diagnostic improvements,
+not automatic repetition: retain exact validation/IAM and add only allowlisted
+failure stages/categories before requesting a new bounded live proof allowance.
+See docs/cd-sts-proof-contract.md. No deployment or MAPIT operation occurred.
 
 On 2026-10-05 the user authorized public portfolio visibility and explicitly
 retaining the existing author email. GitHub visibility was changed to public
