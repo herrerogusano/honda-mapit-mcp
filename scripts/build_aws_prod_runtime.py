@@ -218,9 +218,16 @@ def build_prod_runtime_archive(
     parameter_version: int,
     parameter_tier: str,
     geography_wheel_dir: Path | None = None,
+    source_sha: str | None = None,
 ) -> ProdBuildSummary:
     """Create a production-only ZIP. This performs no credential/AWS reads."""
     repo = dev_builder._repo_root()
+    if source_sha is not None and (
+        type(source_sha) is not str
+        or re.fullmatch(r"[0-9a-f]{40}", source_sha) is None
+        or source_sha == "0" * 40
+    ):
+        raise ProdBuildError("production_source_invalid")
     if dev_builder._is_reparse_or_symlink(repo) or not repo.is_dir():
         raise ProdBuildError("repository_invalid")
     policy = _validated_policy(policy)
@@ -267,6 +274,11 @@ def build_prod_runtime_archive(
     entries = [*wheel_entries, *source_entries,
                (f"mapit/{JWKS_FILENAME}", jwks_bytes),
                (f"mapit/{MANIFEST_FILENAME}", manifest)]
+    if source_sha is not None:
+        entries.append(("mapit/source-provenance.json", json.dumps(
+            {"schema": 1, "source_sha": source_sha},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("ascii")))
     seen: set[str] = set()
     total_bytes = 0
     for name, data in entries:

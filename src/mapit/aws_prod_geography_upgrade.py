@@ -130,6 +130,7 @@ class ProdDeliveryAuthorization:
     authorized_from_epoch: int
     authorized_until_epoch: int
     service_role_arn: str
+    initial_service_role_attachment: bool = False
 
     def validated(self, account_id: str) -> "ProdDeliveryAuthorization":
         if (
@@ -142,6 +143,7 @@ class ProdDeliveryAuthorization:
             or not 1 <= self.authorized_until_epoch - self.authorized_from_epoch <= 3600
             or self.service_role_arn != f"arn:aws:iam::{account_id}:role/honda-mapit-mcp-prod-cfn-update"
             or type(self.service_role_arn) is not str
+            or type(self.initial_service_role_attachment) is not bool
         ):
             raise ProdGeographyUpgradeError("inputs_invalid")
         return self
@@ -308,12 +310,16 @@ class ProdGeographyUpgrade:
         except Exception:
             raise ProdGeographyUpgradeError("journal_invalid") from None
 
-    def _delivery_binding(self) -> dict[str, str] | None:
+    def _delivery_binding(self) -> dict[str, Any] | None:
         authorization = self.delivery_authorization
         if authorization is None:
             return None
         authorization.validated(self.account_id)
-        return {"source_sha": authorization.source_sha, "service_role_arn": authorization.service_role_arn}
+        return {
+            "source_sha": authorization.source_sha,
+            "service_role_arn": authorization.service_role_arn,
+            "initial_service_role_attachment": authorization.initial_service_role_attachment,
+        }
 
     def _guard(self, *, allow_expired_close: bool = False) -> float:
         mono = self.monotonic()
@@ -399,10 +405,22 @@ class ProdGeographyUpgrade:
         if type(rows) is not list or len(rows) != 1 or not isinstance(rows[0], Mapping):
             raise ProdGeographyUpgradeError("stack_unverified")
         stack = rows[0]
+        observed_role = stack.get("RoleARN")
+        if self.delivery_authorization is None:
+            role_owned = observed_role in (None, "")
+        else:
+            role_owned = observed_role == self.delivery_authorization.service_role_arn
+            exact_old_template = _canonical(expected_template) == _canonical(self.old_template)
+            if (
+                not role_owned
+                and exact_old_template
+                and self.delivery_authorization.initial_service_role_attachment is True
+                and observed_role in (None, "")
+            ):
+                role_owned = True
         if (
             stack.get("StackId") != self.stack_arn or stack.get("StackName") != STACK_NAME
-            or (stack.get("RoleARN") != self.delivery_authorization.service_role_arn
-                if self.delivery_authorization else stack.get("RoleARN") not in (None, ""))
+            or not role_owned
             or not self._has_run_tag(stack.get("Tags"), self.prod_run_id)
             or stack.get("EnableTerminationProtection") is not True
         ):

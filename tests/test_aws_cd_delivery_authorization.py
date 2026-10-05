@@ -30,7 +30,11 @@ def test_fresh_cd_journal_is_distinct_and_binds_source_and_role():
     core._step_started = core.monotonic()
     state = core._save_new_state()
     assert state["kind"] == "prod_cd_delivery"
-    assert state["delivery_binding"] == {"source_sha": "a" * 40, "service_role_arn": ROLE}
+    assert state["delivery_binding"] == {
+        "source_sha": "a" * 40,
+        "service_role_arn": ROLE,
+        "initial_service_role_attachment": False,
+    }
     assert core._state() == state
     journal.value["kind"] = "prod_geography_upgrade"
     with pytest.raises(ProdGeographyUpgradeError, match="journal_invalid"):
@@ -43,6 +47,7 @@ def test_fresh_cd_journal_is_distinct_and_binds_source_and_role():
     {"authorized_until_epoch": START}, {"authorized_until_epoch": START + 3601},
     {"service_role_arn": ROLE.replace(ACCOUNT, "999999999999")},
     {"service_role_arn": ROLE + "/extra"}, {"service_role_arn": None},
+    {"initial_service_role_attachment": 1}, {"initial_service_role_attachment": "true"},
 ])
 def test_invalid_authorization_denied_before_any_call(changes):
     with pytest.raises(ProdGeographyUpgradeError, match="inputs_invalid"):
@@ -56,12 +61,12 @@ def test_fresh_window_requires_explicit_opt_in_and_exact_both_bounds():
         fresh_core(authorized_until_epoch=START + 901)
 
 
-@pytest.mark.parametrize("field", ["source_sha", "service_role_arn"])
+@pytest.mark.parametrize("field", ["source_sha", "service_role_arn", "initial_service_role_attachment"])
 def test_altered_cd_journal_binding_cannot_be_reused(field):
     core, journal = fresh_core()
     core._step_started = core.monotonic()
     core._save_new_state()
-    journal.value["delivery_binding"][field] = "wrong"
+    journal.value["delivery_binding"][field] = "wrong" if field != "initial_service_role_attachment" else True
     with pytest.raises(ProdGeographyUpgradeError, match="journal_invalid"):
         core._state()
 

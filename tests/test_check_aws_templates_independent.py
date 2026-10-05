@@ -28,7 +28,7 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "closed_oauth_cleanup_draft", "closed_oauth_setup_cleanup_draft",
         "closed_oauth_setup_control_draft",
         "shared_identity_dev_runtime_draft", "shared_identity_dev_cleanup_draft",
-        "prod_bootstrap_draft", "prod_controls_draft", "prod_artifacts_draft",
+        "prod_bootstrap_draft", "prod_controls_draft", "prod_artifacts_draft", "prod_artifacts_cd_retention",
         "prod_oauth_draft", "prod_runtime_draft",
         "cd_identity_legacy_draft", "cd_identity_immutable_draft",
         "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",

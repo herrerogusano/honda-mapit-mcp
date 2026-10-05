@@ -60,6 +60,18 @@ def test_factory_returns_two_separate_bound_roles_and_boundaries():
     assert template["Metadata"]["ExistingIdentityRolesChanged"] is False
     assert template["Metadata"]["ServiceRoleAssociationIsPersistent"] is True
     assert template["Metadata"]["ApiGatewayHttpApiResourceScopePendingClosedValidation"] is True
+    assert template["Metadata"]["LambdaProviderTagMaintenanceScopedToHandler"] is True
+    assert template["Metadata"]["LambdaProviderReadDependenciesScopedToHandler"] is True
+    assert template["Metadata"]["ExecutorS3Prefixes"] == ["runtime/*", "journals/*"]
+    assert template["Metadata"]["ExecutorS3ListOrDelete"] is False
+    assert template["Metadata"]["JournalRetentionDays"] == 30
+    assert template["Metadata"]["JournalRetentionLifecycleFilter"] == {
+        "Prefix": "journals/", "Tag": {"Key": "cd-terminal", "Value": "true"}
+    }
+    assert template["Metadata"]["JournalTerminalTagConfiguredByFactory"] is False
+    assert template["Metadata"]["JournalLifecycleConfiguredByFactory"] is False
+    assert template["Metadata"]["JournalAuthorizationEnvelopeMaxSeconds"] == 3600
+    assert template["Metadata"]["ExpiredJournalActionable"] is False
     for title in ("Executor", "CloudFormation"):
         role = resources[f"ProdCd{title}Role"]
         boundary = resources[f"ProdCd{title}Boundary"]
@@ -91,9 +103,72 @@ def test_executor_trust_is_exact_observed_prod_subject_and_no_direct_code_write(
     encoded = repr(statements)
     assert "lambda:UpdateFunctionCode" not in encoded
     assert "lambda:UpdateFunctionConfiguration" not in encoded
-    assert "s3:PutObject" not in encoded and "s3:GetObject" not in encoded
     assert "iam:CreateRole" not in encoded and "iam:PutRolePolicy" not in encoded
     assert not any("mapit-refresh-token" in str(stmt) for stmt in statements)
+
+
+def test_executor_s3_grants_are_prefix_scoped_and_require_atomic_conditions():
+    statements = _role_policy(_build()["Resources"], "ProdCdExecutorRole")
+    s3 = [s for s in statements if any(
+        action.startswith("s3:") for action in (s["Action"] if isinstance(s["Action"], list) else [s["Action"]])
+    )]
+    assert {s["Sid"] for s in s3} == {
+        "ReadRuntimePackages", "PublishRuntimePackagesWithoutOverwrite",
+        "ReadOnlyDeliveryJournals", "CreateDeliveryJournalWithoutOverwrite",
+        "ReviseDeliveryJournalWithObservedEtag", "ReadDeliveryJournalTags",
+        "MarkOnlyTerminalDeliveryJournals", "ReadExactArtifactBucketSecurityMetadata",
+    }
+    assert all(s["Effect"] == "Allow" for s in s3)
+    assert all(
+        action in {
+            "s3:GetObject", "s3:PutObject", "s3:GetObjectTagging", "s3:PutObjectTagging",
+            "s3:GetBucketLocation", "s3:GetBucketVersioning", "s3:GetBucketPublicAccessBlock", "s3:GetBucketOwnershipControls",
+            "s3:GetEncryptionConfiguration", "s3:GetBucketTagging", "s3:GetBucketPolicyStatus", "s3:GetBucketPolicy",
+        }
+        for s in s3 for action in (s["Action"] if isinstance(s["Action"], list) else [s["Action"]])
+    )
+    assert all(s["Resource"] in {BUCKET, f"{BUCKET}/runtime/*", f"{BUCKET}/journals/*"} for s in s3)
+    by_sid = {s["Sid"]: s for s in s3}
+    assert by_sid["PublishRuntimePackagesWithoutOverwrite"]["Condition"] == {
+        "StringEquals": {"s3:if-none-match": "*"}
+    }
+    assert by_sid["CreateDeliveryJournalWithoutOverwrite"]["Condition"] == {
+        "StringEquals": {"s3:if-none-match": "*"}
+    }
+    assert by_sid["ReviseDeliveryJournalWithObservedEtag"]["Condition"] == {
+        "Null": {"s3:if-match": "false"}
+    }
+    assert by_sid["ReadDeliveryJournalTags"]["Action"] == "s3:GetObjectTagging"
+    assert by_sid["MarkOnlyTerminalDeliveryJournals"]["Action"] == "s3:PutObjectTagging"
+    assert by_sid["MarkOnlyTerminalDeliveryJournals"]["Condition"] == {
+        "ForAllValues:StringEquals": {"s3:RequestObjectTagKeys": ["cd-terminal"]},
+        "StringEquals": {"s3:RequestObjectTag/cd-terminal": "true"},
+        "Null": {"s3:RequestObjectTagKeys": "false"},
+    }
+    bucket_read = by_sid["ReadExactArtifactBucketSecurityMetadata"]
+    assert set(bucket_read["Action"]) == {
+        "s3:GetBucketLocation", "s3:GetBucketVersioning", "s3:GetBucketPublicAccessBlock", "s3:GetBucketOwnershipControls",
+        "s3:GetEncryptionConfiguration", "s3:GetBucketTagging", "s3:GetBucketPolicyStatus", "s3:GetBucketPolicy",
+    }
+    assert bucket_read["Resource"] == BUCKET
+    assert not any("s3:List" in str(s["Action"]) or "s3:Delete" in str(s["Action"]) for s in statements)
+
+
+def test_factory_accepts_only_owned_artifact_bucket_namespaces():
+    stack_bucket = "honda-mapit-mcp-prod-runtime-runtimeartifactbucket-a1b2c3d4e5f6"
+    template = _build(artifact_bucket_arn=f"arn:aws:s3:::{stack_bucket}")
+    executor = _role_policy(template["Resources"], "ProdCdExecutorRole")
+    assert next(s for s in executor if s["Sid"] == "ReadRuntimePackages")["Resource"] == (
+        f"arn:aws:s3:::{stack_bucket}/runtime/*"
+    )
+    for invalid in (
+        "other-project-prod-runtime-runtimeartifactbucket-a1b2c3d4e5f6",
+        "honda-mapit-mcp-prod-runtime-runtimeartifactbucket-a1b2c3d4e5f6-near-miss",
+        "honda-mapit-mcp-prod-runtime-runtimeartifactbucket-A1B2C3D4E5F6",
+        "honda-mapit-mcp-prod-runtime-runtimeartifactbucket-short",
+    ):
+        with pytest.raises(DeliveryRoleError):
+            _build(artifact_bucket_arn=f"arn:aws:s3:::{invalid}")
 
 
 def test_executor_scopes_update_passrole_shutdown_controls_and_tripwire_reads():
@@ -116,6 +191,9 @@ def test_executor_scopes_update_passrole_shutdown_controls_and_tripwire_reads():
     api_toggle = next(s for s in statements if s["Action"] == "apigateway:PATCH")
     assert api_toggle["Resource"] == API_ARN
     assert "Condition" not in api_toggle  # HTTP API property enforcement is a separate closed-validation gate.
+    function_reads = next(s for s in statements if s["Sid"] == "RestoreOnlyFixedFunctionConcurrency")
+    assert "lambda:ListTags" in function_reads["Action"]
+    assert function_reads["Resource"] == HANDLER
 
 
 def test_cfn_role_only_updates_handler_reads_runtime_prefix_and_exact_dependencies():
@@ -128,7 +206,8 @@ def test_cfn_role_only_updates_handler_reads_runtime_prefix_and_exact_dependenci
     updates = next(s for s in statements if s["Sid"] == "UpdateAndReadOnlyFixedHandler")
     assert updates["Resource"] == HANDLER
     assert set(updates["Action"]) == {
-        "lambda:GetFunction", "lambda:GetFunctionConfiguration",
+        "lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:GetFunctionCodeSigningConfig",
+        "lambda:ListTags", "lambda:TagResource", "lambda:UntagResource",
         "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration",
     }
     assert next(s for s in statements if s["Sid"] == "ReadOnlyRuntimePackagePrefix")["Resource"] == f"{BUCKET}/runtime/*"

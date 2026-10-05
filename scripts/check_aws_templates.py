@@ -177,6 +177,7 @@ def fixed_documents() -> dict[str, str]:
     documents["prod_bootstrap_draft"] = json.dumps(fixed_prod_bootstrap_template())
     documents["prod_controls_draft"] = json.dumps(fixed_prod_controls_template("a1b2c3d4e5"))
     documents["prod_artifacts_draft"] = json.dumps(fixed_prod_artifact_template())
+    documents["prod_artifacts_cd_retention"] = json.dumps(fixed_prod_artifact_template(journal_retention_days=30))
     documents["prod_oauth_draft"] = json.dumps(build_prod_oauth_template(
         user_pool_id=prod_policy.user_pool_id, api_id=prod_policy.api_id,
         callback_url="http://localhost:8786/mcp/oauth/callback/codex-fixed-server",

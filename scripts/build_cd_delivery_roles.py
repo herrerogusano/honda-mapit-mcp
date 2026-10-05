@@ -2,7 +2,10 @@
 
 This module builds review material only; it creates no AWS clients/resources.
 The caller must privately source exact current resource bindings and the
-observed GitHub OIDC subject digest before using the result.
+observed GitHub OIDC subject digest before using the result. The executor may
+read published runtime objects and use the exact journal prefix with conditional
+creation/revision writes. Only terminal journals are tagged for the 30-day
+lifecycle; expiry/actionability is enforced by the delivery workflow, not IAM.
 """
 
 from __future__ import annotations
@@ -32,7 +35,12 @@ _ROLE_PATH = re.compile(r"(?:[A-Za-z0-9+=,.@_-]+/)*[A-Za-z0-9+=,.@_-]+\Z")
 _PROD_STACK = "honda-mapit-mcp-prod"
 _FUNCTION = "honda-mapit-mcp-prod-handler"
 _STATE_MACHINE = "honda-mapit-mcp-prod-shutdown"
-_ARTIFACT_STACK_BUCKET_PREFIX = "honda-mapit-mcp-prod-runtime-artifacts-"
+_LEGACY_ARTIFACT_BUCKET = re.compile(
+    r"honda-mapit-mcp-prod-runtime-artifacts-[a-z0-9]{12,20}\Z"
+)
+_STACK_ARTIFACT_BUCKET = re.compile(
+    r"honda-mapit-mcp-prod-runtime-runtimeartifactbucket-[a-z0-9]{8,12}\Z"
+)
 _ALARM = "honda-mapit-mcp-prod-request-tripwire"
 _RULE = "honda-mapit-mcp-prod-request-tripwire-alarm-rule"
 _EXECUTOR_ROLE = "honda-mapit-mcp-prod-cd-executor"
@@ -105,9 +113,16 @@ def build_cd_delivery_roles(
 ) -> dict[str, Any]:
     """Build four IAM resources; identifiers must come from private readbacks.
 
-    No direct Lambda code/config writes or artifact publication are granted to
-    GitHub. The optional Lambda execution-role PassRole is explicit and off by
-    default only in the sense that callers must supply an exact bool decision.
+    GitHub can conditionally create objects under runtime/* with
+    If-None-Match="*"; the workflow must use content-addressed runtime keys.
+    It can read/write/tag only journals under journals/* using
+    If-None-Match="*" for creation or If-Match for revisions. It cannot list or
+    delete S3 objects. The workflow must reject expired journals, tag only a
+    fresh-loaded terminal receipt, and cap each authorization envelope at one
+    hour. The bucket lifecycle retains terminal-tagged journal objects for 30
+    days. No direct Lambda code/config writes are granted to
+    GitHub. The optional Lambda execution-role PassRole is explicit and callers
+    must supply an exact bool decision.
     """
     _account(account_id)
     if (
@@ -141,7 +156,10 @@ def build_cd_delivery_roles(
         bucket_name = _validate_bucket_name(bucket_match.group(1))
     except Exception:
         raise DeliveryRoleError() from None
-    if not bucket_name.startswith(_ARTIFACT_STACK_BUCKET_PREFIX):
+    if (
+        _LEGACY_ARTIFACT_BUCKET.fullmatch(bucket_name) is None
+        and _STACK_ARTIFACT_BUCKET.fullmatch(bucket_name) is None
+    ):
         raise DeliveryRoleError()
     if type(execution_role_arn) is not str:
         raise DeliveryRoleError()
@@ -173,16 +191,45 @@ def build_cd_delivery_roles(
         {"Sid": "ReadOnlyFixedApi", "Effect": "Allow", "Action": "apigateway:GET", "Resource": api_arn},
         {"Sid": "RestoreOnlyFixedFunctionConcurrency", "Effect": "Allow",
          "Action": ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:GetFunctionConcurrency",
+                    "lambda:ListTags",
                     "lambda:PutFunctionConcurrency", "lambda:DeleteFunctionConcurrency"],
          "Resource": handler_arn},
         {"Sid": "ReadRegionalConcurrencyCeiling", "Effect": "Allow", "Action": "lambda:GetAccountSettings", "Resource": "*"},
         {"Sid": "ReadOnlyTripwire", "Effect": "Allow", "Action": "cloudwatch:DescribeAlarms", "Resource": tripwire_alarm_arn},
         {"Sid": "ReadOnlyTripwireRule", "Effect": "Allow",
          "Action": ["events:DescribeRule", "events:ListTargetsByRule"], "Resource": tripwire_rule_arn},
+        {"Sid": "ReadRuntimePackages", "Effect": "Allow", "Action": "s3:GetObject",
+         "Resource": f"{artifact_bucket_arn}/runtime/*"},
+        {"Sid": "PublishRuntimePackagesWithoutOverwrite", "Effect": "Allow", "Action": "s3:PutObject",
+         "Resource": f"{artifact_bucket_arn}/runtime/*",
+         "Condition": {"StringEquals": {"s3:if-none-match": "*"}}},
+        {"Sid": "ReadOnlyDeliveryJournals", "Effect": "Allow", "Action": "s3:GetObject",
+         "Resource": f"{artifact_bucket_arn}/journals/*"},
+        {"Sid": "CreateDeliveryJournalWithoutOverwrite", "Effect": "Allow", "Action": "s3:PutObject",
+         "Resource": f"{artifact_bucket_arn}/journals/*",
+         "Condition": {"StringEquals": {"s3:if-none-match": "*"}}},
+        {"Sid": "ReviseDeliveryJournalWithObservedEtag", "Effect": "Allow", "Action": "s3:PutObject",
+         "Resource": f"{artifact_bucket_arn}/journals/*",
+         "Condition": {"Null": {"s3:if-match": "false"}}},
+        {"Sid": "ReadDeliveryJournalTags", "Effect": "Allow", "Action": "s3:GetObjectTagging",
+         "Resource": f"{artifact_bucket_arn}/journals/*"},
+        {"Sid": "MarkOnlyTerminalDeliveryJournals", "Effect": "Allow", "Action": "s3:PutObjectTagging",
+         "Resource": f"{artifact_bucket_arn}/journals/*",
+         "Condition": {
+             "ForAllValues:StringEquals": {"s3:RequestObjectTagKeys": ["cd-terminal"]},
+             "StringEquals": {"s3:RequestObjectTag/cd-terminal": "true"},
+             "Null": {"s3:RequestObjectTagKeys": "false"},
+         }},
+        {"Sid": "ReadExactArtifactBucketSecurityMetadata", "Effect": "Allow",
+         "Action": ["s3:GetBucketLocation", "s3:GetBucketVersioning", "s3:GetBucketPublicAccessBlock",
+                    "s3:GetBucketOwnershipControls", "s3:GetEncryptionConfiguration",
+                    "s3:GetBucketTagging", "s3:GetBucketPolicyStatus", "s3:GetBucketPolicy"],
+         "Resource": artifact_bucket_arn},
     ]
     executor_policy = _policy(executor_statements)
 
-    cfn_actions = ["lambda:GetFunction", "lambda:GetFunctionConfiguration",
+    cfn_actions = ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:GetFunctionCodeSigningConfig",
+                   "lambda:ListTags", "lambda:TagResource", "lambda:UntagResource",
                    "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration"]
     cfn_statements: list[dict[str, Any]] = [
         {"Sid": "UpdateAndReadOnlyFixedHandler", "Effect": "Allow",
@@ -249,7 +296,19 @@ def build_cd_delivery_roles(
             "Environment": "prod",
             "ExistingIdentityRolesChanged": False,
             "DirectLambdaCodeOrConfigWritesForExecutor": False,
-            "ArtifactPublicationForExecutor": False,
+            "LambdaProviderTagMaintenanceScopedToHandler": True,
+            "LambdaProviderReadDependenciesScopedToHandler": True,
+            "ArtifactPublicationForExecutor": "RuntimePrefixConditionalCreateOnly",
+            "ExecutorS3Prefixes": ["runtime/*", "journals/*"],
+            "ExecutorS3ListOrDelete": False,
+            "JournalInitialWriteCondition": "s3:if-none-match='*'",
+            "JournalRevisionWriteCondition": "s3:if-match-present",
+            "JournalRetentionDays": 30,
+            "JournalRetentionLifecycleFilter": {"Prefix": "journals/", "Tag": {"Key": "cd-terminal", "Value": "true"}},
+            "JournalTerminalTagConfiguredByFactory": False,
+            "JournalLifecycleConfiguredByFactory": False,
+            "JournalAuthorizationEnvelopeMaxSeconds": 3600,
+            "ExpiredJournalActionable": False,
             "ExecutionRolePassRoleForCloudFormation": allow_execution_role_passrole,
             "ServiceRoleAssociationIsPersistent": True,
             "ApiGatewayHttpApiResourceScopePendingClosedValidation": True,
