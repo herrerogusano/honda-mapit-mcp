@@ -433,3 +433,19 @@ def test_source_gate_uses_rest_run_when_webhook_omits_optional_metadata(monkeypa
 def test_source_gate_fails_closed_on_rest_run_id_sha_or_repository_mismatch(monkeypatch, tmp_path, mutate):
     with pytest.raises(SystemExit):
         _execute_source_gate(monkeypatch, tmp_path, mutate_rest=mutate)
+@pytest.mark.parametrize("step,category,calls", [
+    ("check-close", "aws_call_failed", 9),
+    ("PRIVATE_STEP_CANARY", "PRIVATE_CATEGORY_CANARY", True),
+    ("check-update", "template_mismatch", -1),
+    ("check-update", "template_mismatch", 101),
+])
+def test_core_step_diagnostics_are_fixed_categories_and_counts_only(capsys, step, category, calls):
+    from scripts.run_cd_release import _report_core_step
+    _report_core_step({"category": category, "calls": calls, "verified": "PRIVATE_VALUE_CANARY",
+                       "private": "PRIVATE_BODY_CANARY"}, step)
+    output = capsys.readouterr().out
+    assert "PRIVATE_" not in output
+    result = json.loads(output)["core_step"]
+    assert set(result) == {"step", "category", "calls", "verified"}
+    assert result["verified"] is False
+    assert result["calls"] == (calls if type(calls) is int and 0 <= calls <= 100 else 0)
