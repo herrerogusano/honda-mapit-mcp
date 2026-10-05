@@ -46,7 +46,8 @@ class Stub:
 
 
 def make_core(*, authorized_from_epoch=None, authorized_until_epoch=AUTHORIZATION_CUTOFF_EPOCH,
-              wall_clock=None, monotonic=None, new_manifest_sha256="4" * 64):
+              wall_clock=None, monotonic=None, new_manifest_sha256="4" * 64,
+              delivery_authorization=None):
     policy = CognitoProdPolicy(user_pool_id=POOL, api_id=API,
                                client_id="SyntheticProdClient012345", owner_subject=OWNER)
     journal = Journal()
@@ -67,6 +68,7 @@ def make_core(*, authorized_from_epoch=None, authorized_until_epoch=AUTHORIZATIO
         new_zip_sha256="3" * 64, new_manifest_sha256=new_manifest_sha256,
         authorized_until_epoch=authorized_until_epoch,
         authorized_from_epoch=authorized_from_epoch,
+        delivery_authorization=delivery_authorization,
         wall_clock=wall_clock,
         monotonic=monotonic,
     )

@@ -1,5 +1,9 @@
 # Next delivery gate: private code-only production updates
 
+Implementation has begun at the owner's explicit request; see
+[the component/integration status](cd-delivery-implementation.md). Offline
+components do not satisfy the remaining live gates or constitute completed CD.
+
 This is an offline architecture proposal, not a deployable workflow, permission
 receipt or authorization to modify the running service. Identity-only GitHub
 roles must remain unchanged. Production remains single-owner in eu-west-1,

@@ -15,6 +15,7 @@ import re
 import time
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from mapit.aws_prod_runtime import CognitoProdPolicy
@@ -121,6 +122,31 @@ def _only_two_template_changes(old: Mapping[str, Any], new: Mapping[str, Any]) -
         return False
 
 
+@dataclass(frozen=True, repr=False)
+class ProdDeliveryAuthorization:
+    """Explicit fresh CD binding; not a renewal of a historical journal."""
+
+    source_sha: str
+    authorized_from_epoch: int
+    authorized_until_epoch: int
+    service_role_arn: str
+
+    def validated(self, account_id: str) -> "ProdDeliveryAuthorization":
+        if (
+            type(self.source_sha) is not str
+            or re.fullmatch(r"[0-9a-f]{40}", self.source_sha) is None
+            or self.source_sha == "0" * 40
+            or type(self.authorized_from_epoch) is not int
+            or type(self.authorized_until_epoch) is not int
+            or self.authorized_from_epoch <= 0
+            or not 1 <= self.authorized_until_epoch - self.authorized_from_epoch <= 3600
+            or self.service_role_arn != f"arn:aws:iam::{account_id}:role/honda-mapit-mcp-prod-cfn-update"
+            or type(self.service_role_arn) is not str
+        ):
+            raise ProdGeographyUpgradeError("inputs_invalid")
+        return self
+
+
 class ProdGeographyUpgrade:
     """Manual single-step state machine; no polling, retries, or client creation."""
 
@@ -145,6 +171,7 @@ class ProdGeographyUpgrade:
         new_manifest_sha256: str,
         authorized_until_epoch: int,
         authorized_from_epoch: int | None = None,
+        delivery_authorization: ProdDeliveryAuthorization | None = None,
         wall_clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -160,17 +187,26 @@ class ProdGeographyUpgrade:
             or not (sm_match := _STEP_ARN.fullmatch(shutdown_state_machine_arn))
             or sm_match.group("account") != account_id
             or type(authorized_until_epoch) is not int
-            or not (
+            or not (delivery_authorization is not None or (
                 (authorized_until_epoch == AUTHORIZATION_CUTOFF_EPOCH and authorized_from_epoch is None)
                 or (
                     authorized_until_epoch == AUTHORIZATION_NEW_CUTOFF_EPOCH
                     and type(authorized_from_epoch) is int
                     and authorized_from_epoch == AUTHORIZATION_START_EPOCH
                 )
-            )
+            ))
             or not callable(wall_clock) or not callable(monotonic)
         ):
             raise ProdGeographyUpgradeError("inputs_invalid")
+        if delivery_authorization is not None:
+            if type(delivery_authorization) is not ProdDeliveryAuthorization:
+                raise ProdGeographyUpgradeError("inputs_invalid")
+            delivery_authorization.validated(account_id)
+            if (authorized_from_epoch != delivery_authorization.authorized_from_epoch
+                    or authorized_until_epoch != delivery_authorization.authorized_until_epoch
+                    or type(authorized_from_epoch) is not int):
+                raise ProdGeographyUpgradeError("inputs_invalid")
+        self.delivery_authorization = delivery_authorization
         for digest in (old_zip_sha256, old_manifest_sha256, new_zip_sha256, new_manifest_sha256):
             if type(digest) is not str or not _SHA.fullmatch(digest):
                 raise ProdGeographyUpgradeError("inputs_invalid")
@@ -248,7 +284,8 @@ class ProdGeographyUpgrade:
             return None
         if (
             type(value) is not dict or type(value.get("schema")) is not int or value.get("schema") != 1
-            or value.get("kind") != "prod_geography_upgrade"
+            or value.get("kind") != ("prod_cd_delivery" if self.delivery_authorization else "prod_geography_upgrade")
+            or value.get("delivery_binding") != self._delivery_binding()
             or value.get("account_id") != self.account_id or value.get("stack_arn") != self.stack_arn
             or value.get("prod_run_id") != self.prod_run_id or value.get("api_id") != self.api_id
             or value.get("shutdown_state_machine_arn") != self.shutdown_arn
@@ -270,6 +307,13 @@ class ProdGeographyUpgrade:
             self.journal.save(state)
         except Exception:
             raise ProdGeographyUpgradeError("journal_invalid") from None
+
+    def _delivery_binding(self) -> dict[str, str] | None:
+        authorization = self.delivery_authorization
+        if authorization is None:
+            return None
+        authorization.validated(self.account_id)
+        return {"source_sha": authorization.source_sha, "service_role_arn": authorization.service_role_arn}
 
     def _guard(self, *, allow_expired_close: bool = False) -> float:
         mono = self.monotonic()
@@ -315,7 +359,7 @@ class ProdGeographyUpgrade:
         self._state(fresh=True)
         upgrade_id = str(uuid.uuid4())
         state = {
-            "schema": 1, "kind": "prod_geography_upgrade", "upgrade_id": upgrade_id,
+            "schema": 1, "kind": "prod_cd_delivery" if self.delivery_authorization else "prod_geography_upgrade", "upgrade_id": upgrade_id,
             "account_id": self.account_id, "stack_arn": self.stack_arn, "prod_run_id": self.prod_run_id,
             "api_id": self.api_id, "function_name": self.function_name,
             "shutdown_state_machine_arn": self.shutdown_arn, "bucket": self.bucket,
@@ -327,6 +371,8 @@ class ProdGeographyUpgrade:
             "new_template_sha256": hashlib.sha256(_canonical(self.new_template)).hexdigest(),
             "preflight_verified": False,
         }
+        if self.delivery_authorization is not None:
+            state["delivery_binding"] = self._delivery_binding()
         self._save(state)
         return state
 
@@ -355,7 +401,8 @@ class ProdGeographyUpgrade:
         stack = rows[0]
         if (
             stack.get("StackId") != self.stack_arn or stack.get("StackName") != STACK_NAME
-            or stack.get("RoleARN") not in (None, "")
+            or (stack.get("RoleARN") != self.delivery_authorization.service_role_arn
+                if self.delivery_authorization else stack.get("RoleARN") not in (None, ""))
             or not self._has_run_tag(stack.get("Tags"), self.prod_run_id)
             or stack.get("EnableTerminationProtection") is not True
         ):
@@ -549,6 +596,11 @@ class ProdGeographyUpgrade:
             or ":root" in arn or not re.fullmatch(rf"arn:aws:(?:iam|sts)::{self.account_id}:(?:user|role|assumed-role)/[A-Za-z0-9+=,.@_/-]{{1,512}}", arn)
         ):
             raise ProdGeographyUpgradeError("identity_mismatch")
+        if self.delivery_authorization is not None:
+            expected = (f"arn:aws:sts::{self.account_id}:assumed-role/honda-mapit-mcp-prod-cd-executor/"
+                        f"hm-cd-prod-{self.delivery_authorization.source_sha[:16]}")
+            if arn != expected:
+                raise ProdGeographyUpgradeError("identity_mismatch")
         stack = self._owned_stack(state, self.old_template)
         self._function(zip_digest=self.old_zip, manifest_digest=self.old_manifest, reserve_zero=False)
         self._api(closed=False)
@@ -646,6 +698,7 @@ class ProdGeographyUpgrade:
             "cloudformation", "update_stack", StackName=self.stack_arn, TemplateBody=body,
             Parameters=[{"ParameterKey": "EnvironmentName", "ParameterValue": "prod"}],
             Capabilities=["CAPABILITY_NAMED_IAM"], ClientRequestToken=token,
+            **({"RoleARN": self.delivery_authorization.service_role_arn} if self.delivery_authorization else {}),
         )
         if response.get("StackId") != self.stack_arn:
             raise ProdGeographyUpgradeError("update_ack_invalid")
@@ -743,4 +796,4 @@ class ProdGeographyUpgrade:
         return self._safe("open", "production_open_verified", verified=True, calls=self._calls)
 
 
-__all__ = ["ProdGeographyUpgrade", "ProdGeographyUpgradeError"]
+__all__ = ["ProdGeographyUpgrade", "ProdGeographyUpgradeError", "ProdDeliveryAuthorization"]

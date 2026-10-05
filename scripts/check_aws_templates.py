@@ -70,6 +70,7 @@ def fixed_documents() -> dict[str, str]:
     )
     from mapit.aws_prod_runtime import CognitoProdPolicy
     from scripts.build_cd_identity_bootstrap import build_cd_identity_bootstrap
+    from scripts.build_cd_delivery_roles import build_cd_delivery_roles
 
     documents = {}
     for label, filename in (
@@ -212,6 +213,33 @@ def fixed_documents() -> dict[str, str]:
             owner_id=identity_owner_id,
             repository_id=identity_repository_id,
             observed_subjects=observed_subjects,
+        ))
+        delivery_label = (
+            "cd_delivery_legacy_draft" if subject_format == "legacy_environment"
+            else "cd_delivery_immutable_draft"
+        )
+        documents[delivery_label] = json.dumps(build_cd_delivery_roles(
+            account_id=identity_account_id,
+            provider_arn=identity_provider_arn,
+            owner_id=identity_owner_id,
+            repository_id=identity_repository_id,
+            observed_prod_subject_format=subject_format,
+            observed_prod_subject_sha256=observed_subjects["prod"]["sha256"],
+            stack_arn=(f"arn:aws:cloudformation:eu-west-1:{identity_account_id}:stack/"
+                       "honda-mapit-mcp-prod/11111111-2222-4333-8444-555555555555"),
+            handler_arn=(f"arn:aws:lambda:eu-west-1:{identity_account_id}:function:"
+                         "honda-mapit-mcp-prod-handler"),
+            api_arn="arn:aws:apigateway:eu-west-1::/apis/a1b2c3d4e5",
+            shutdown_state_machine_arn=(f"arn:aws:states:eu-west-1:{identity_account_id}:stateMachine:"
+                                        "honda-mapit-mcp-prod-shutdown"),
+            artifact_bucket_arn=("arn:aws:s3:::honda-mapit-mcp-prod-runtime-artifacts-"
+                                 "syntheticbucket1"),
+            execution_role_arn=f"arn:aws:iam::{identity_account_id}:role/honda-mapit-mcp-prod-runtime",
+            tripwire_alarm_arn=(f"arn:aws:cloudwatch:eu-west-1:{identity_account_id}:alarm:"
+                                "honda-mapit-mcp-prod-request-tripwire"),
+            tripwire_rule_arn=(f"arn:aws:events:eu-west-1:{identity_account_id}:rule/"
+                               "honda-mapit-mcp-prod-request-tripwire-alarm-rule"),
+            allow_execution_role_passrole=True,
         ))
     return documents
 
