@@ -56,7 +56,7 @@ def guard(binding, clock):
     binding["last_observed_epoch"] = now
 
 
-def template_from_inventory(inventory):
+def template_from_inventory(inventory, *, lambda_environment_key_arn=None):
     identity = inventory["identity"]
     account = inventory["account"]
     subject = identity["observed_subjects"]["prod"]
@@ -74,6 +74,7 @@ def template_from_inventory(inventory):
         tripwire_alarm_arn=f"arn:aws:cloudwatch:{REGION}:{account}:alarm:honda-mapit-mcp-prod-request-tripwire",
         tripwire_rule_arn=f"arn:aws:events:{REGION}:{account}:rule/honda-mapit-mcp-prod-request-tripwire-alarm-rule",
         allow_execution_role_passrole=True,
+        lambda_environment_key_arn=lambda_environment_key_arn,
     )
 
 

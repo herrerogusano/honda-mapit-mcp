@@ -32,6 +32,7 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "prod_oauth_draft", "prod_runtime_draft",
         "cd_identity_legacy_draft", "cd_identity_immutable_draft",
         "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",
+        "cd_delivery_lambda_key_draft",
     }
     rendered = "\n".join(docs.values())
     assert "synthetic-access-canary" not in rendered

@@ -70,7 +70,8 @@ def _policy(statements: list[dict[str, Any]]) -> dict[str, Any]:
     return {"Version": "2012-10-17", "Statement": statements}
 
 
-def _permissions_boundary(policy: dict[str, Any]) -> dict[str, Any]:
+def _permissions_boundary(policy: dict[str, Any], *, environment_key: str | None = None,
+                          handler_arn: str | None = None) -> dict[str, Any]:
     allowed_actions: list[str] = []
     for statement in policy["Statement"]:
         actions = statement["Action"]
@@ -80,6 +81,21 @@ def _permissions_boundary(policy: dict[str, Any]) -> dict[str, Any]:
     # Reuse the scoped action/resource/condition grants as the boundary's
     # ceiling; the explicit NotAction deny additionally blocks future grants.
     statements = [dict(statement) for statement in policy["Statement"]]
+    if environment_key is not None:
+        # Sid labels are not authorization semantics. Compact the opt-in
+        # boundary only, leaving the historical default byte-identical.
+        statements = [{k: v for k, v in statement.items() if k != "Sid"}
+                      for statement in statements]
+        kms_actions = [action for action in allowed_actions if action.startswith("kms:")]
+        # Explicit denies also constrain resource-policy/session grants that
+        # could otherwise bypass an implicit boundary denial.
+        statements.extend([
+            {"Effect": "Deny", "Action": kms_actions, "NotResource": environment_key},
+            {"Effect": "Deny", "Action": kms_actions, "Resource": environment_key,
+             "Condition": {"StringNotEquals": {"kms:ViaService": "lambda.eu-west-1.amazonaws.com"}}},
+            {"Effect": "Deny", "Action": kms_actions, "Resource": environment_key,
+             "Condition": {"StringNotEquals": {"kms:EncryptionContext:aws:lambda:FunctionArn": handler_arn}}},
+        ])
     statements.append({"Sid": "DenyEveryUnlistedAction", "Effect": "Deny",
                        "NotAction": allowed_actions, "Resource": "*"})
     return _policy(statements)
@@ -110,6 +126,7 @@ def build_cd_delivery_roles(
     tripwire_alarm_arn: str,
     tripwire_rule_arn: str,
     allow_execution_role_passrole: bool,
+    lambda_environment_key_arn: str | None = None,
 ) -> dict[str, Any]:
     """Build four IAM resources; identifiers must come from private readbacks.
 
@@ -168,6 +185,22 @@ def build_cd_delivery_roles(
         raise DeliveryRoleError()
     _exact(tripwire_alarm_arn, f"arn:aws:cloudwatch:eu-west-1:{account_id}:alarm:{_ALARM}")
     _exact(tripwire_rule_arn, f"arn:aws:events:eu-west-1:{account_id}:rule/{_RULE}")
+    if lambda_environment_key_arn is not None:
+        prefix = f"arn:aws:kms:eu-west-1:{account_id}:key/"
+        if (type(lambda_environment_key_arn) is not str
+                or not lambda_environment_key_arn.startswith(prefix)
+                or _UUID.fullmatch(lambda_environment_key_arn[len(prefix):]) is None
+                or lambda_environment_key_arn[len(prefix):] == "00000000-0000-0000-0000-000000000000"):
+            raise DeliveryRoleError()
+
+    def environment_key_statement(actions: list[str]) -> dict[str, Any]:
+        return {"Sid": "FixedLambdaEnvironmentKey", "Effect": "Allow",
+                "Action": actions, "Resource": lambda_environment_key_arn,
+                "Condition": {"StringEquals": {
+                    "kms:CallerAccount": account_id,
+                    "kms:ViaService": "lambda.eu-west-1.amazonaws.com",
+                    "kms:EncryptionContext:aws:lambda:FunctionArn": handler_arn,
+                }}}
 
     cfn_role_arn = f"arn:aws:iam::{account_id}:role/{_CFN_ROLE}"
     stack_read = ["cloudformation:GetTemplate", "cloudformation:DescribeStacks", "cloudformation:DescribeStackResources"]
@@ -226,6 +259,8 @@ def build_cd_delivery_roles(
                     "s3:GetBucketTagging", "s3:GetBucketPolicyStatus", "s3:GetBucketPolicy"],
          "Resource": artifact_bucket_arn},
     ]
+    if lambda_environment_key_arn is not None:
+        executor_statements.append(environment_key_statement(["kms:Decrypt"]))
     executor_policy = _policy(executor_statements)
 
     cfn_actions = ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:GetFunctionCodeSigningConfig",
@@ -247,6 +282,8 @@ def build_cd_delivery_roles(
             "Resource": execution_role_arn,
             "Condition": {"StringEquals": {"iam:PassedToService": "lambda.amazonaws.com"}},
         })
+    if lambda_environment_key_arn is not None:
+        cfn_statements.append(environment_key_statement(["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"]))
     cfn_policy = _policy(cfn_statements)
 
     resources: dict[str, Any] = {}
@@ -274,7 +311,8 @@ def build_cd_delivery_roles(
             "Type": "AWS::IAM::ManagedPolicy",
             "Properties": {"ManagedPolicyName": boundary_name,
                            "Description": "Maximum permissions boundary for one fixed production CD role.",
-                           "PolicyDocument": _permissions_boundary(policy)},
+                           "PolicyDocument": _permissions_boundary(policy, environment_key=lambda_environment_key_arn,
+                                                                    handler_arn=handler_arn)},
         }
         resources[role_id] = {
             "Type": "AWS::IAM::Role",
