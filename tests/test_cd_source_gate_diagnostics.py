@@ -16,7 +16,7 @@ def execute(monkeypatch, tmp_path, *, pending_reads=0, mutate=None):
     event.write_text(json.dumps({"workflow_run": {"id": run_id, "head_sha": sha},
                                 "repository": {"id": 7654321, "owner": {"id": 1234567}}}))
     output = tmp_path / "outputs"
-    for key, value in {"EVENT_PATH": str(event), "REPOSITORY": repo,
+    for key, value in {"GITHUB_EVENT_PATH": str(event), "REPOSITORY": repo,
                        "REPOSITORY_ID": "7654321", "REPOSITORY_OWNER_ID": "1234567",
                        "WORKFLOW_RUN_ID": str(run_id), "DEFAULT_SHA": sha,
                        "GITHUB_OUTPUT": str(output)}.items():
@@ -43,6 +43,22 @@ def test_same_source_pending_check_may_finish_within_fixed_bound(monkeypatch, tm
     run()
     assert len(reads) == 2 and sleeps == [2]
     assert output.read_text() == "source_sha=" + "a" * 40 + "\n"
+
+
+def test_platform_event_file_does_not_depend_on_empty_context_expression(monkeypatch, tmp_path):
+    monkeypatch.setenv("EVENT_PATH", "")
+    run, reads, sleeps, output = execute(monkeypatch, tmp_path)
+    run()
+    assert output.exists() and len(reads) == 1 and not sleeps
+
+
+def test_missing_platform_event_path_fails_without_any_api_call(monkeypatch, tmp_path, capsys):
+    run, reads, sleeps, output = execute(monkeypatch, tmp_path)
+    monkeypatch.delenv("GITHUB_EVENT_PATH")
+    with pytest.raises(SystemExit):
+        run()
+    assert not reads and not sleeps and not output.exists()
+    assert '"stage": "event"' in capsys.readouterr().out
 
 
 def test_pending_checks_do_not_extend_bound_or_emit_values(monkeypatch, tmp_path, capsys):
