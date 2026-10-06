@@ -114,20 +114,24 @@ SAFE_LOGIN_CATEGORIES = frozenset({
     "redirect_rejected", "login_form_unstable", "login_rejected",
     "callback_invalid", "token_invalid", "token_endpoint_rejected",
 })
+SAFE_LOGIN_REASONS = frozenset(ManagedLoginError._TOKEN_REASONS)
 
 
 class HostedAcceptanceError(ValueError):
     """Safe category only; never includes identifiers/provider text."""
 
-    def __init__(self, category: str, *, stage: str | None = None, login_category: str | None = None):
+    def __init__(self, category: str, *, stage: str | None = None, login_category: str | None = None,
+                 login_reason: str | None = None):
         self.category = category if type(category) is str and category in SAFE_CATEGORIES else "runner_failed"
         self.stage = stage if type(stage) is str and stage in SAFE_LOGIN_STAGES else None
         self.login_category = login_category if type(login_category) is str and login_category in SAFE_LOGIN_CATEGORIES else None
+        self.login_reason = login_reason if type(login_reason) is str and login_reason in SAFE_LOGIN_REASONS else None
         super().__init__(self.category)
 
 
-def _fail(category: str, *, stage: str | None = None, login_category: str | None = None) -> None:
-    raise HostedAcceptanceError(category, stage=stage, login_category=login_category)
+def _fail(category: str, *, stage: str | None = None, login_category: str | None = None,
+          login_reason: str | None = None) -> None:
+    raise HostedAcceptanceError(category, stage=stage, login_category=login_category, login_reason=login_reason)
 
 
 def _ok_response(value: Any) -> bool:
@@ -831,6 +835,7 @@ def run_hosted_acceptance(
                 "user_provision_failed",
                 stage=login_result.get("stage"),
                 login_category=login_result.get("login_category"),
+                login_reason=login_result.get("token_reason"),
             )
         state = user_journal.load()
         usernames = tuple(row.get("username") for row in state.get("slots", [])) if isinstance(state, Mapping) else ()
@@ -983,6 +988,8 @@ def run_hosted_acceptance(
             result["stage"] = exc.stage
         if exc.login_category is not None:
             result["login_category"] = exc.login_category
+        if exc.login_reason is not None:
+            result["login_reason"] = exc.login_reason
         return result
     except Exception:
         return {"success": False, "category": "runner_failed"}

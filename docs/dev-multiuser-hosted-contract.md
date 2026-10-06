@@ -208,3 +208,33 @@ host/port fencing, domain/path/secure/expiry rules, 32-cookie/header limits,
 ignored rather than stored/sent; control characters and malformed/oversized
 inputs fail with a fixed category. This does not loosen PKCE, CSRF, redirect,
 JWT or user bindings and does not establish a successful live login.
+
+The subsequent source attempt `545b` reached the token endpoint and stopped at
+`token_post` with the safe `token_invalid` category; no raw response was
+retained. Cognito's documented token response examples do not require a
+`scope` member ([token endpoint documentation](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)).
+The client therefore accepts an omitted scope as unknown, but rejects an
+explicit null/wrong-type scope or a present scope missing the required value.
+The independently verified JWT remains the authority for issuer, audience,
+subject, resource and scope; the client never invents or decodes an unverified
+grant. Token failures expose only fixed allowlisted subfield reasons.
+
+On develop `545b7fd`, eight source checks, fresh protections and native-cookie
+review passed. The same-A reset was consumed; login progressed to token POST
+and failed with `token_invalid`. B remained pending and no publication/runtime/
+table/opening step followed. That terminal reset journal must not be replayed.
+The local full checkpoint is 3,358 passed and twelve environment skips; an earlier
+run had two packaging-fixture read failures which passed isolated and on the full
+rerun, without relaxing source checks. The token parser's mandatory response-body
+scope is incompatible with official Cognito token response examples; this is not
+proof of which field failed live. The owner approved one new bounded attempt
+after repairing that documented incompatibility, independent review and fresh CI.
+Missing body scope must not invent a grant or weaken signed JWT scope validation.
+
+The corrected token-body parser passed the integrated offline checkpoint of
+3,374 tests with twelve environment skips, compilation and model-free evaluation
+12/12. Omitted scope remains unknown; explicit invalid or insufficient scope
+fails closed. Only fixed validation reasons may leave the operator. This is
+preparation for the newly authorized attempt, not hosted acceptance. Independent
+review accepted the increment, including real RSA/JWKS tests for absent/wrong
+JWT scope, valid scope and a foreign signature, plus diagnostic redaction.

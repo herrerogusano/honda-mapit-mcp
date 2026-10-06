@@ -50,6 +50,34 @@ def test_pair_bridge_resanitizes_mutated_managed_error_fields():
     assert "private-url" not in repr(result)
 
 
+@pytest.mark.parametrize("unsafe_reason", ["access-token-secret", ["raw", "reason"]])
+def test_pair_bridge_drops_mutated_or_unhashable_token_reason(unsafe_reason):
+    class FailedClient(ManagedLoginClient):
+        def login(self, *, username, password):
+            error = ManagedLoginError("token_invalid", stage="token_post", reason="scope_invalid")
+            error.reason = unsafe_reason
+            raise error
+
+    class Operator:
+        def provision(self, *, on_confirmed_user):
+            try:
+                on_confirmed_user("synthetic-a", "password-never-output")
+            except ManagedLoginError:
+                return {"success": False, "category": "login_failed"}
+            raise AssertionError("callback unexpectedly succeeded")
+
+    result = provision_and_login_pair(Operator(), lambda: FailedClient.__new__(FailedClient))
+    assert result == {
+        "success": False,
+        "category": "login_failed",
+        "login_category": "token_invalid",
+        "stage": "token_post",
+        "users": 0,
+    }
+    assert "access-token-secret" not in repr(result)
+    assert "raw" not in repr(result)
+
+
 def test_pair_bridge_does_not_propagate_arbitrary_operator_category():
     class Operator:
         def provision(self, *, on_confirmed_user):

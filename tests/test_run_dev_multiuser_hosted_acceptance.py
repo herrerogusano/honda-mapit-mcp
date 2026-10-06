@@ -67,16 +67,19 @@ def test_source_gate_runs_before_client_factory_or_private_bindings(tmp_path):
 
 def test_login_failure_diagnostics_are_allowlisted_and_redacted():
     failure = HostedAcceptanceError(
-        "user_provision_failed", stage="login_post", login_category="callback_invalid"
+        "user_provision_failed", stage="token_post", login_category="token_invalid",
+        login_reason="scope_missing_required",
     )
     assert failure.category == "user_provision_failed"
-    assert failure.stage == "login_post"
-    assert failure.login_category == "callback_invalid"
+    assert failure.stage == "token_post"
+    assert failure.login_category == "token_invalid"
+    assert failure.login_reason == "scope_missing_required"
     unsafe = HostedAcceptanceError(
         "user_provision_failed", stage="https://private.example/cookie", login_category="raw-secret"
     )
     assert unsafe.stage is None
     assert unsafe.login_category is None
+    assert unsafe.login_reason is None
 
 
 class _DynamoMemory:

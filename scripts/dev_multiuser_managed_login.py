@@ -65,15 +65,21 @@ class ManagedLoginError(ValueError):
         "authorize_get", "login_get", "login_post", "authorize_redirect",
         "token_post", "client_factory",
     })
+    _TOKEN_REASONS = frozenset({
+        "json_invalid", "access_token_invalid", "token_type_invalid",
+        "expires_in_invalid", "scope_invalid", "scope_missing_required",
+        "refresh_token_invalid", "id_token_invalid",
+    })
 
-    def __init__(self, category: str, *, stage: str | None = None):
+    def __init__(self, category: str, *, stage: str | None = None, reason: str | None = None):
         self.category = category if type(category) is str and category in self._ALLOWED else "response_invalid"
         self.stage = stage if type(stage) is str and stage in self._STAGES else None
+        self.reason = reason if self.category == "token_invalid" and type(reason) is str and reason in self._TOKEN_REASONS else None
         super().__init__(self.category)
 
 
-def _fail(category: str) -> None:
-    raise ManagedLoginError(category)
+def _fail(category: str, *, reason: str | None = None) -> None:
+    raise ManagedLoginError(category, reason=reason)
 
 
 def _bounded_text(value: Any, maximum: int = 4096) -> bool:
@@ -116,7 +122,7 @@ class HttpResponse:
 class ManagedLoginTokens:
     _access_token: str
     _expires_in: int
-    _scope: str
+    _scope: str | None
     _refresh_token: str | None = None
     _id_token: str | None = None
 
@@ -438,16 +444,32 @@ class ManagedLoginClient:
         try:
             value = json.loads(response.body.decode("utf-8"))
         except Exception:
-            _fail("token_invalid")
-        if not isinstance(value, Mapping) or type(value.get("access_token")) is not str or not 0 < len(value["access_token"].encode("utf-8")) <= MAX_TOKEN_BYTES or value.get("token_type") != "Bearer" or type(value.get("expires_in")) is not int or isinstance(value["expires_in"], bool) or not 1 <= value["expires_in"] <= 3600 or type(value.get("scope")) is not str or self.required_scope not in value["scope"].split():
-            _fail("token_invalid")
+            _fail("token_invalid", reason="json_invalid")
+        if not isinstance(value, Mapping):
+            _fail("token_invalid", reason="json_invalid")
+        access = value.get("access_token")
+        if type(access) is not str or not 0 < len(access.encode("utf-8")) <= MAX_TOKEN_BYTES:
+            _fail("token_invalid", reason="access_token_invalid")
+        if value.get("token_type") != "Bearer":
+            _fail("token_invalid", reason="token_type_invalid")
+        expires = value.get("expires_in")
+        if type(expires) is not int or isinstance(expires, bool) or not 1 <= expires <= 3600:
+            _fail("token_invalid", reason="expires_in_invalid")
+        if "scope" not in value:
+            scope = None
+        elif type(value.get("scope")) is not str:
+            _fail("token_invalid", reason="scope_invalid")
+        else:
+            scope = value["scope"]
+            if self.required_scope not in scope.split():
+                _fail("token_invalid", reason="scope_missing_required")
         refresh = value.get("refresh_token")
         identity = value.get("id_token")
         if refresh is not None and (type(refresh) is not str or len(refresh.encode("utf-8")) > MAX_TOKEN_BYTES):
-            _fail("token_invalid")
+            _fail("token_invalid", reason="refresh_token_invalid")
         if identity is not None and (type(identity) is not str or len(identity.encode("utf-8")) > MAX_TOKEN_BYTES):
-            _fail("token_invalid")
-        return ManagedLoginTokens(value["access_token"], value["expires_in"], value["scope"], refresh, identity)
+            _fail("token_invalid", reason="id_token_invalid")
+        return ManagedLoginTokens(access, expires, scope, refresh, identity)
 
     def dry_login_page(self) -> dict[str, Any]:
         """Fetch and strictly parse the login page without sending credentials.
@@ -547,7 +569,7 @@ def provision_and_login_pair(operator: Any, client_factory: Callable[[], Managed
     if not callable(getattr(operator, "provision", None)) or not callable(client_factory) or on_tokens is not None and not callable(on_tokens):
         _fail("configuration_invalid")
     authenticated = 0
-    failure: tuple[str, str] | None = None
+    failure: tuple[str, str, str | None] | None = None
 
     def _login(username: str, password: str) -> None:
         nonlocal authenticated, failure
@@ -562,7 +584,8 @@ def provision_and_login_pair(operator: Any, client_factory: Callable[[], Managed
         except ManagedLoginError as exc:
             category = exc.category if type(exc.category) is str and exc.category in ManagedLoginError._ALLOWED else "response_invalid"
             stage = exc.stage if type(exc.stage) is str and exc.stage in ManagedLoginError._STAGES else "client_factory"
-            failure = (category, stage)
+            reason = exc.reason if type(exc.reason) is str and exc.reason in ManagedLoginError._TOKEN_REASONS else None
+            failure = (category, stage, reason)
             raise
 
     result = operator.provision(on_confirmed_user=_login)
@@ -574,6 +597,7 @@ def provision_and_login_pair(operator: Any, client_factory: Callable[[], Managed
         return {
             "success": False, "category": "login_failed",
             "login_category": failure[0], "stage": failure[1], "users": authenticated,
+            **({"token_reason": failure[2]} if failure[2] is not None else {}),
         }
     category = result.get("category")
     if type(category) is not str or category not in DevMultiuserUserError._ALLOWED:

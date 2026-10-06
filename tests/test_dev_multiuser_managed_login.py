@@ -76,6 +76,39 @@ def test_direct_flow_binds_resource_audience_and_does_not_retry_or_use_password_
     assert "opaque-access" not in repr(tokens)
 
 
+def test_documented_token_response_without_scope_is_accepted_without_inventing_scope():
+    class NoScopeFlow(FlowTransport):
+        def __call__(self, method, url, headers, body, timeout):
+            response = super().__call__(method, url, headers, body, timeout)
+            if method == "POST" and urlsplit(url).path == "/oauth2/token":
+                return _response(200, url, json.dumps({
+                    "access_token": "opaque-access", "refresh_token": "opaque-refresh",
+                    "token_type": "Bearer", "expires_in": 900,
+                }).encode())
+            return response
+
+    tokens = _client(NoScopeFlow()).login(username=USERNAME, password=PASSWORD)
+    assert tokens.access_token == "opaque-access"
+    assert tokens._scope is None
+
+
+@pytest.mark.parametrize("scope", (None, 42, SCOPE.replace("/use", "/other")))
+def test_explicit_or_insufficient_scope_remains_fail_closed(scope):
+    class BadScopeFlow(FlowTransport):
+        def __call__(self, method, url, headers, body, timeout):
+            response = super().__call__(method, url, headers, body, timeout)
+            if method == "POST" and urlsplit(url).path == "/oauth2/token":
+                payload = {"access_token": "opaque-access", "refresh_token": "opaque-refresh",
+                           "token_type": "Bearer", "expires_in": 900, "scope": scope}
+                return _response(200, url, json.dumps(payload).encode())
+            return response
+
+    with pytest.raises(ManagedLoginError, match="token_invalid") as caught:
+        _client(BadScopeFlow()).login(username=USERNAME, password=PASSWORD)
+    assert caught.value.stage == "token_post"
+    assert caught.value.reason in {"scope_invalid", "scope_missing_required"}
+
+
 def test_external_redirect_is_rejected_before_login_form():
     transport = FlowTransport(external=True)
     with pytest.raises(ManagedLoginError, match="redirect_rejected"):
