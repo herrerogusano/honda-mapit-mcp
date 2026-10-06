@@ -18,6 +18,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "shutdown_control_draft", "cleanup_schedule_draft", "combined_control_draft",
         "closed_bootstrap_draft",
         "retained_dev_closed_bootstrap_draft",
+        "retained_dev_closed_runtime_draft",
         "retained_dev_controls_draft", "retained_dev_artifacts_draft",
         "retained_dev_oauth_draft",
         "permanent_identity_draft",
@@ -33,6 +34,8 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "cd_identity_legacy_draft", "cd_identity_immutable_draft",
         "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",
         "cd_delivery_lambda_key_draft",
+        "cd_retained_dev_legacy_draft", "cd_retained_dev_immutable_draft",
+        "cd_retained_dev_lambda_key_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True

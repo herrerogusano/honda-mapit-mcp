@@ -44,7 +44,7 @@ def test_artifacts_are_private_encrypted_and_only_terminal_journals_expire():
     assert rule["Prefix"] == "journals/"
     assert rule["TagFilters"] == [{"Key": "cd-terminal", "Value": "true"}]
     assert rule["ExpirationInDays"] == 30
-    assert "BucketName" not in props
+    assert props["BucketName"] == {"Fn::Sub": "honda-mapit-mcp-dev-retained-${AWS::AccountId}-${AWS::Region}"}
     assert "honda-mapit-mcp-dev-retained-runtime-artifacts" in json.dumps(template)
     assert "honda-mapit-mcp-prod" not in json.dumps(template)
 

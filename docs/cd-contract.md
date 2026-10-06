@@ -39,7 +39,20 @@ The owner approved retaining dev with an additional gross budget target of
 USD 1/month on 2026-10-06; this is not a billing hard cap. Pricing research must
 include retained alarms, logs, artifacts, workflow transitions and authentication,
 not just Lambda execution. A closed endpoint does not make those charges zero.
-No AWS resources have been created for this increment.
+The permanent closed bootstrap was subsequently created once and accepted
+with 15 exact readbacks on October 6. Its five resources remain disabled:
+no routes, invocation permission, OAuth client, application environment or
+business/secret access was installed. The private immutable creation receipt
+is retained outside Git; its intent must never be replayed. This is not yet
+an operational dev MCP or dev continuous delivery.
+
+The next offline increment adds exact dev-only executor/service-role drafts,
+a private account/region-derived artifact bucket and a closed five-resource
+synthetic runtime factory. The resource-binding reader proves only the original
+CloudFormation template and resource IDs, not current out-of-band runtime state.
+Full fresh runtime/control readbacks remain mandatory for later operators.
+Production remains unchanged; no role, bucket, runtime update or opening has
+been performed by these new factories.
 
 The separate offline OAuth setup factory composes the unchanged closed five
 resources with exactly three retained children of the existing identity pool:
