@@ -153,6 +153,22 @@ def _ok_response(value: Any) -> bool:
     return isinstance(metadata, Mapping) and type(metadata.get("HTTPStatusCode")) is int and metadata["HTTPStatusCode"] == 200
 
 
+def _read_lambda_tags(lambda_client: Any, *, function_arn: str, account: str) -> Mapping[str, str]:
+    """Read Lambda tags only through the exact already-bound regional ARN."""
+    expected_arn = f"arn:aws:lambda:{REGION}:{account}:function:{FUNCTION}"
+    if type(function_arn) is not str or function_arn != expected_arn:
+        _fail("runtime_update_failed")
+    try:
+        response = lambda_client.list_tags(Resource=function_arn)
+    except Exception:
+        _fail("runtime_update_failed")
+    tags = response.get("Tags") if isinstance(response, Mapping) else None
+    if (not _ok_response(response) or not isinstance(tags, Mapping)
+        or any(type(key) is not str or type(value) is not str for key, value in tags.items())):
+        _fail("runtime_update_failed")
+    return tags
+
+
 def _validate_bucket_encryption(value: Any) -> bool:
     """Validate the accepted S3 SDK encryption projection, without writes.
 
@@ -1079,7 +1095,9 @@ def run_hosted_acceptance(
             or not _ok_response(function) or type(code_sha) is not str or not code_sha
             or config.get("Environment", {}).get("Variables") != expected_environment):
             _fail("runtime_update_failed")
-        lambda_tags = clients["lambda"].list_tags(Resource=FUNCTION)
+        lambda_tags = _read_lambda_tags(
+            clients["lambda"], function_arn=role_values["handler_arn"], account=auth["account"],
+        )
         expected_lambda_tags = [
             {"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"},
             {"Key": "Purpose", "Value": "retained-dev"}, {"Key": "OperatorRunId", "Value": str(app_run)},
@@ -1087,7 +1105,7 @@ def run_hosted_acceptance(
             {"Key": "aws:cloudformation:stack-name", "Value": "honda-mapit-mcp-dev-retained"},
             {"Key": "aws:cloudformation:logical-id", "Value": "McpHandler"},
         ]
-        if not _owned_resource_tags(lambda_tags.get("Tags"), expected_lambda_tags[:3], stack=RetainedDevStackCreationTags.from_receipt(stack_kind="app", stack_arn=app_stack, account_id=auth["account"], tags=expected_lambda_tags[:4]), logical_id="McpHandler"):
+        if not _owned_resource_tags(lambda_tags, expected_lambda_tags[:3], stack=RetainedDevStackCreationTags.from_receipt(stack_kind="app", stack_arn=app_stack, account_id=auth["account"], tags=expected_lambda_tags[:4]), logical_id="McpHandler"):
             _fail("runtime_update_failed")
         try:
             if archive_path.stat().st_size > 16 * 1024 * 1024:

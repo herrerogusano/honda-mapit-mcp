@@ -23,6 +23,7 @@ from scripts.run_dev_multiuser_hosted_acceptance import (
     _validate_bucket_encryption,
     _exact_tag_set,
     _pair_journal_for_reset,
+    _read_lambda_tags,
     fetch_public_jwks,
     run_hosted_acceptance,
 )
@@ -230,6 +231,34 @@ def test_second_recurring_selection_drives_real_preparer_with_original_creation_
     assert rejected["success"] is False and rejected["calls"] == 2
     assert [call[0] for call in cognito.calls] == ["get", "get"]
     assert fresh_bad.load() is None and reset_bad.load() is None and recovery_bad.load() is None
+
+
+def test_lambda_tag_read_uses_exact_bound_function_arn_and_fails_closed():
+    function_arn = f"arn:aws:lambda:eu-west-1:{ACCOUNT}:function:honda-mapit-mcp-dev-retained-handler"
+    expected_tags = {"Project": "honda-mapit-mcp", "Environment": "dev", "Purpose": "retained-dev"}
+
+    class Lambda:
+        def __init__(self, response):
+            self.response = response
+            self.calls = []
+
+        def list_tags(self, **kwargs):
+            self.calls.append(kwargs)
+            return self.response
+
+    client = Lambda({"ResponseMetadata": {"HTTPStatusCode": 200}, "Tags": expected_tags})
+    assert _read_lambda_tags(client, function_arn=function_arn, account=ACCOUNT) == expected_tags
+    assert client.calls == [{"Resource": function_arn}]
+
+    client.calls.clear()
+    with pytest.raises(HostedAcceptanceError, match="^runtime_update_failed$"):
+        _read_lambda_tags(client, function_arn="honda-mapit-mcp-dev-retained-handler", account=ACCOUNT)
+    assert client.calls == []
+
+    malformed = Lambda({"ResponseMetadata": {"HTTPStatusCode": 200}, "Tags": [{"Key": "Project"}]})
+    with pytest.raises(HostedAcceptanceError, match="^runtime_update_failed$"):
+        _read_lambda_tags(malformed, function_arn=function_arn, account=ACCOUNT)
+    assert malformed.calls == [{"Resource": function_arn}]
 
 
 def test_login_failure_diagnostics_are_allowlisted_and_redacted():

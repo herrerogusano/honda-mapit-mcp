@@ -1,5 +1,41 @@
 # Project Agent Workflow
 
+Superseding consumed attempt (2026-10-07 Europe/Madrid): the owner authorized
+one fresh same-A/B attempt after the selector correction. Exact develop
+`a566d28` had eight green checks and fresh branch/environment readbacks. A new
+immutable private authorization was prepared; neither the metadata repair nor
+orphan deletion was replayed. Both technical reset/logins completed, the ARM
+artifact was published and the closed nineteen-resource runtime update reached
+accepted/UPDATE_COMPLETE. The runner then stopped with runner_failed before
+creating a window or tenant journals. Six bounded read-only checks confirmed
+exact identity, API disabled, Lambda reservation zero, nineteen app resources
+and the accepted role stack; three further metadata reads confirmed the active
+expected handler and exact ARN tag read. Independent offline review identified
+the post-update ListTags request incorrectly using a function name instead of
+the already validated handler ARN. Correct this offline with a strict request
+regression; no IAM/template expansion is required. This reset/deployment
+allowance is consumed. Do not replay it, repeat resets, delete the now-owned
+authorizer or infer hosted E2E acceptance from the successful deployment.
+Production/MFA/MAPIT/quota ten remain unchanged; a separately reviewed bounded
+continuation is required before opening dev or repeating authentication.
+The exact-ARN correction passed independent review, 63 focused tests and
+compilation and is saved in PR #66. Temporary wakefulness was removed and the
+original HP power scheme verified before handoff. Passwords/tokens were not
+persisted: do not propose login without a newly authorized reset or pretend
+the earlier in-memory credentials remain available. Any accepted-runtime
+continuation requires a new offline recovery contract, not relaxed historical
+rollback guards or an automatic third recurring reset.
+
+Final offline handoff checkpoint (2026-10-07 Europe/Madrid): PR #65 merged
+normally to develop `a566d28` after eight green source checks. This fixes only
+the second-recurring reset preparer's selection of immutable B-creation
+provenance; it does not consume a new hosted attempt. The separate owner
+decision for one fresh same-A/B attempt is still pending. The temporary owned
+wakefulness helper was removed and the original HP power scheme verified;
+no persistent display settings were changed. Never replay the accepted metadata
+repair, orphan deletion or stopped hosted journals. Multiuser DEV is not yet
+accepted as functional, and production remains unchanged.
+
 Superseding live checkpoint (2026-10-07 Europe/Madrid): PRs #63/#64 and final
 develop `6b09eb2` passed eight checks. The exact-key/account DescribeKey CFN
 role/boundary update was acknowledged and fully read back; its new fifteen-field
