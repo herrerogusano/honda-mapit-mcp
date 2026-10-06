@@ -1,5 +1,24 @@
 # Project Agent Workflow
 
+On 2026-10-06 the owner explicitly approved updating the existing retained DEV
+with an isolated admin-only Cognito test pool (MFA OFF only there), two technical
+users, and a retained DynamoDB authorization table. Keep production/main,
+definitive owner/MFA, owner-only Telegram and regional Lambda quota 10 unchanged.
+Use synthetic business data only, no MAPIT credentials/history or paid models.
+The incremental small-test estimate is about USD 0.03/month plus variable
+storage/logs, within the existing USD 1/month gross DEV target, not a hard cap.
+Open DEV only during bounded tests with independently armed closure. The user
+requires hosted functional multi-user DEV acceptance before notification for a
+separate production deployment; offline components are not that acceptance.
+The current opt-in identity proof, DynamoDB reader/CAS, durable DEV Lambda
+composition and manifest-bound synthetic entrypoint passed independent offline
+review. The new closed setup preserves the five original runtime resources and
+adds only six identity/table resources; subsequent closed runtime has nineteen.
+Do not weaken or replay historical bootstrap/updater journals for these phases.
+Two fresh read-only AWS checks confirmed the original non-root DEV operator and
+ready retained stack; its CloudFormation service-role association is absent.
+No AWS mutation or hosted E2E acceptance has occurred in this increment yet.
+
 On 2026-10-06 the user requested continuing multi-user MCP development.
 The opt-in local durable authorization increment is independently reviewed:
 explicit SQLite connection/schema, opaque tenant key/status/revision only,

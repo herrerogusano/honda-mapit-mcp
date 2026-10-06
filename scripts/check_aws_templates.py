@@ -60,6 +60,10 @@ def fixed_documents() -> dict[str, str]:
     from scripts.build_aws_retained_dev_runtime import build_retained_dev_runtime_template
     from scripts.build_aws_retained_dev_support import build_retained_dev_artifacts, build_retained_dev_controls
     from scripts.build_aws_retained_dev_oauth import build_retained_dev_oauth_setup
+    from scripts.build_aws_retained_dev_multiuser import (
+        build_retained_dev_multiuser_setup, build_retained_dev_multiuser_template,
+    )
+    from scripts.build_dev_multiuser_timed_controls import build_dev_multiuser_timed_controls
     from scripts.build_aws_identity_template import fixed_identity_template
     from scripts.build_aws_shared_identity_dev import build_shared_identity_dev_template
     from scripts.build_aws_dev_oauth_template import build_dev_oauth_setup_template, build_dev_oauth_template
@@ -76,6 +80,7 @@ def fixed_documents() -> dict[str, str]:
     from scripts.build_cd_identity_bootstrap import build_cd_identity_bootstrap
     from scripts.build_cd_delivery_roles import build_cd_delivery_roles
     from scripts.build_cd_retained_dev_roles import build_cd_retained_dev_roles
+    from scripts.build_cd_retained_dev_multiuser_roles import build_cd_retained_dev_multiuser_roles
     from scripts.build_cd_retained_dev_proof_role import build_cd_retained_dev_proof_role
 
     documents = {}
@@ -316,6 +321,20 @@ def fixed_documents() -> dict[str, str]:
         tripwire_alarm_arn=f"arn:aws:cloudwatch:eu-west-1:{identity_account_id}:alarm:honda-mapit-mcp-dev-retained-request-tripwire",
         tripwire_rule_arn=f"arn:aws:events:eu-west-1:{identity_account_id}:rule/honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule",
     ))
+    documents["retained_dev_multiuser_timed_controls"] = json.dumps(build_dev_multiuser_timed_controls("a1b2c3d4e5"))
+    documents["retained_dev_multiuser_roles_bootstrap"] = json.dumps(build_cd_retained_dev_multiuser_roles(**retained_args))
+    documents["retained_dev_multiuser_roles_recurrent"] = json.dumps(build_cd_retained_dev_multiuser_roles(
+        **retained_args, observed_user_pool_id="eu-west-1_A1b2C3d4E"))
+    documents["retained_dev_multiuser_setup"] = json.dumps(build_retained_dev_multiuser_setup(
+        api_id="a1b2c3d4e5", callback_url="http://localhost:39031/callback"))
+    documents["retained_dev_multiuser_runtime"] = json.dumps(build_retained_dev_multiuser_template(
+        api_id="a1b2c3d4e5", bucket="honda-mapit-mcp-dev-retained-123456789012-eu-west-1",
+        zip_sha256="1" * 64, source_sha256="1" * 40, jwks_sha256="2" * 64,
+        manifest_sha256="3" * 64, account_id="123456789012",
+        execution_start_epoch=1893456000, execution_end_epoch=1893456300,
+        callback_url="http://localhost:39031/callback",
+        subjects=("12345678-1234-4234-8234-123456789abc", "22345678-1234-4234-8234-123456789abc"),
+        tenant_keys=("tenant-" + "a" * 64, "tenant-" + "b" * 64)))
     return documents
 
 
