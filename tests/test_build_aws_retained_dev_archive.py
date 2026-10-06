@@ -125,6 +125,7 @@ class _PublisherS3:
             "ContentLength": len(self.body),
             "ChecksumSHA256": base64.b64encode(hashlib.sha256(self.body).digest()).decode("ascii"),
             "ServerSideEncryption": "AES256",
+            "ContentType": "application/zip",
             "ResponseMetadata": {"HTTPStatusCode": 200},
         }
 

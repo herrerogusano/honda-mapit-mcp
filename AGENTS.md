@@ -8,6 +8,14 @@ role creation, STS acceptance, code download/publication or complete dev CD.
 The preflight/update/S3-journal integration remains unaccepted preparation.
 Keep production/main and historical consumed intents unchanged.
 
+The retained-dev readonly-proof bootstrap subsequently passed fresh source CI
+and dev/develop protections on ee0cfec (CI 37485087411). Five preflight reads,
+one acknowledged CreateStack and eleven final readback calls accepted the exact
+two-resource role/boundary stack. The create intent is consumed; never replay
+it or alter its original private source/window/token. This is configuration
+acceptance, not an STS exchange, GitHub secret binding or runtime deployment.
+The shared provider, production, owner/MFA, MAPIT and quota 10 are unchanged.
+
 ## Scope
 
 On 2026-10-06 the owner approved permanent retained dev, with an additional

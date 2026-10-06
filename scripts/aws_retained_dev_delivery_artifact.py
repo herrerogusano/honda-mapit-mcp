@@ -182,7 +182,7 @@ def _read_archive(path: Path, *, receipt: RetainedDevBuildReceipt) -> tuple[byte
     return body, hashlib.sha256(manifest_bytes).hexdigest()
 
 
-def _journal_state(*, account_id: str, bucket: str, run_id: str, source_sha: str, key: str, sha256: str, manifest_sha256: str, size_bytes: int, status: str, revision: int) -> dict[str, Any]:
+def _journal_state(*, account_id: str, bucket: str, run_id: str, source_sha: str, key: str, sha256: str, manifest_sha256: str, size_bytes: int, authorized_from_epoch: int, authorized_until_epoch: int, last_observed_epoch: float, status: str, revision: int) -> dict[str, Any]:
     return {
         "schema": 1,
         "kind": "retained-dev-artifact-publication",
@@ -190,6 +190,9 @@ def _journal_state(*, account_id: str, bucket: str, run_id: str, source_sha: str
         "bucket": bucket,
         "run_id": run_id,
         "source_sha": source_sha,
+        "authorized_from_epoch": authorized_from_epoch,
+        "authorized_until_epoch": authorized_until_epoch,
+        "last_observed_epoch": last_observed_epoch,
         "artifact_key": key,
         "sha256": sha256,
         "manifest_sha256": manifest_sha256,
@@ -204,7 +207,11 @@ def _valid_state(value: Any, expected: Mapping[str, Any]) -> bool:
     return (
         isinstance(value, Mapping)
         and set(value) == set(expected)
-        and all(value.get(key) == val for key, val in expected.items() if key not in {"status", "revision"})
+        and type(value.get("schema")) is int
+        and all(value.get(key) == val for key, val in expected.items() if key not in {"status", "revision", "last_observed_epoch"})
+        and type(value.get("last_observed_epoch")) in (int, float)
+        and math.isfinite(value["last_observed_epoch"])
+        and expected["authorized_from_epoch"] <= value["last_observed_epoch"] < expected["authorized_until_epoch"]
         and type(value.get("revision")) is int and value["revision"] in {1, 2}
         and ((value.get("status") == "intent" and value["revision"] == 1)
              or (value.get("status") == "verified" and value["revision"] == 2))
@@ -256,18 +263,21 @@ def publish_retained_dev_runtime(
             return RetainedDevArtifactResult(False, "artifact_input_invalid")
         started_mono = _clock_value(monotonic)
         last_mono = started_mono
+        last_wall = _clock_value(wall_clock)
 
         def guard() -> None:
-            nonlocal last_mono
+            nonlocal last_mono, last_wall
             now = _clock_value(wall_clock)
             current_mono = _clock_value(monotonic)
             if (
                 now < authorized_from_epoch or now >= authorized_until_epoch
+                or now < last_wall
                 or current_mono < last_mono
                 or current_mono - started_mono >= MAX_STEP_SECONDS
             ):
                 raise RetainedDevArtifactError("window_expired")
             last_mono = current_mono
+            last_wall = now
 
         guard()
         body, manifest_sha256 = _read_archive(
@@ -280,13 +290,18 @@ def publish_retained_dev_runtime(
         expected = _journal_state(
             account_id=expected_owner, bucket=bucket, run_id=run_id, source_sha=build_receipt.source_sha,
             key=key, sha256=sha256_hex, manifest_sha256=manifest_sha256, size_bytes=len(body), status="intent", revision=1,
+            authorized_from_epoch=authorized_from_epoch, authorized_until_epoch=authorized_until_epoch,
+            last_observed_epoch=last_wall,
         )
         with journal.locked():
             guard()
             prior = journal.load()
+            guard()
             if prior is not None:
                 if not _valid_state(prior, expected):
                     return RetainedDevArtifactResult(False, "journal_conflict")
+                last_wall = max(last_wall, float(prior["last_observed_epoch"]))
+                guard()
                 if prior.get("status") == "verified":
                     guard()
                     try:
@@ -298,6 +313,7 @@ def publish_retained_dev_runtime(
                         not _status(head)
                         or type(head.get("ContentLength")) is not int or head["ContentLength"] != len(body)
                         or head.get("ChecksumSHA256") != checksum or head.get("ServerSideEncryption") != "AES256"
+                        or head.get("ContentType") != "application/zip"
                     ):
                         return RetainedDevArtifactResult(False, "artifact_head_mismatch")
                     receipt = RetainedDevArtifactReceipt(key, sha256_hex, manifest_sha256, len(body), "AES256")
@@ -334,16 +350,20 @@ def publish_retained_dev_runtime(
                 not _status(head)
                 or type(head.get("ContentLength")) is not int or head["ContentLength"] != len(body)
                 or head.get("ChecksumSHA256") != checksum or head.get("ServerSideEncryption") != "AES256"
+                or head.get("ContentType") != "application/zip"
             ):
                 return RetainedDevArtifactResult(False, "artifact_head_mismatch", put_attempted=True, put_succeeded=put_succeeded, journal_intent_saved=True)
+            guard()
             verified = dict(expected)
             verified["status"] = "verified"
             verified["revision"] = 2
+            verified["last_observed_epoch"] = last_wall
             try:
                 if journal.compare_and_set(1, verified) is not True:
                     return RetainedDevArtifactResult(False, "journal_verified_failed", put_attempted=True, put_succeeded=put_succeeded, journal_intent_saved=True)
             except Exception:
                 return RetainedDevArtifactResult(False, "journal_verified_failed", put_attempted=True, put_succeeded=put_succeeded, journal_intent_saved=True)
+            guard()
             receipt = RetainedDevArtifactReceipt(key, sha256_hex, manifest_sha256, len(body), "AES256")
             return RetainedDevArtifactResult(True, "artifact_already_present_verified" if idempotent else "artifact_uploaded_verified", put_attempted=True, put_succeeded=put_succeeded, head_verified=True, idempotent_existing=idempotent, journal_intent_saved=True, receipt=receipt)
     except RetainedDevArtifactError as exc:

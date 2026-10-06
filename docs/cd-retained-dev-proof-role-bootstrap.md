@@ -1,7 +1,15 @@
 # Retained-dev read-only proof role bootstrap
 
-Status: separate injected offline core and private runner; not live AWS
-acceptance. It does not modify the already accepted four-resource role factory,
+Status: independently accepted offline and subsequently accepted in AWS on
+2026-10-06, after PR 43 and eight green develop checks on `ee0cfec`
+(CI `37485087411`). Five preflight reads passed; the one create was
+acknowledged. An early two-read check returned `stack_readback_mismatch`;
+the later eleven-read check verified the exact role/boundary configuration.
+The private original authorization/journal is immutable and the create intent
+is consumed. Never replay it. This is not STS trust exchange, secret binding,
+runtime delivery or complete dev CD.
+
+The bootstrap does not modify the already accepted four-resource role factory,
 production roles, OIDC provider, private bindings, or workflow.
 
 `aws_retained_dev_proof_bootstrap.py` consumes only the exact private inputs
