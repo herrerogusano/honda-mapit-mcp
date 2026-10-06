@@ -1,5 +1,15 @@
 # Project Agent Workflow
 
+Final offline handoff checkpoint (2026-10-07 Europe/Madrid): PR #65 merged
+normally to develop `a566d28` after eight green source checks. This fixes only
+the second-recurring reset preparer's selection of immutable B-creation
+provenance; it does not consume a new hosted attempt. The separate owner
+decision for one fresh same-A/B attempt is still pending. The temporary owned
+wakefulness helper was removed and the original HP power scheme verified;
+no persistent display settings were changed. Never replay the accepted metadata
+repair, orphan deletion or stopped hosted journals. Multiuser DEV is not yet
+accepted as functional, and production remains unchanged.
+
 Superseding live checkpoint (2026-10-07 Europe/Madrid): PRs #63/#64 and final
 develop `6b09eb2` passed eight checks. The exact-key/account DescribeKey CFN
 role/boundary update was acknowledged and fully read back; its new fifteen-field
