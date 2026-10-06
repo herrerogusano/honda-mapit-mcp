@@ -20,7 +20,8 @@ from scripts.github_dev_source_gate import MAX_OUTPUT_BYTES, REPOSITORY, validat
 
 
 class SourceTransportError(ValueError):
-    def __init__(self) -> None:
+    def __init__(self, *, http_status: int | None = None) -> None:
+        self.http_status = http_status if type(http_status) is int and 100 <= http_status <= 599 else None
         super().__init__("source_transport_failed")
 
 
@@ -134,7 +135,9 @@ class SourceReadTransport:
             self._remaining()
             response = connection.getresponse()
             self._remaining()
-            if response.status != 200 or response.getheader("Content-Encoding", "identity") != "identity":
+            if response.status != 200:
+                raise SourceTransportError(http_status=response.status)
+            if response.getheader("Content-Encoding", "identity") != "identity":
                 raise SourceTransportError()
             declared = response.getheader("Content-Length")
             transfer = response.getheader("Transfer-Encoding")
@@ -168,6 +171,8 @@ class SourceReadTransport:
             if not isinstance(value, (dict, list)):
                 raise SourceTransportError()
             return value
+        except SourceTransportError:
+            raise
         except Exception:
             raise SourceTransportError() from None
         finally:

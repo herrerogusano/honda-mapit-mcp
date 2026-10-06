@@ -45,3 +45,15 @@ actually read and validated. This diagnostic is not a ninth required CI job.
 The endpoint's documented Administration-read permission may not be available
 to the Actions token; live capability is not inferred from offline tests.
 See [GitHub branch-protection permissions](https://docs.github.com/en/rest/branches/branch-protection#get-branch-protection).
+
+PR 44 merged normally to develop at `f033045`, with eight green checks. The
+develop push CI run `37490482878` also passed all eight jobs. The separate
+diagnostic run `37490483138` failed closed: environment and deployment-branch
+policy reads succeeded, but branch protection was unavailable and complete
+protection validation was false. No raw HTTP response/status was retained, so
+the result does not independently distinguish a permission denial from another
+transport rejection. The documented Administration-read requirement makes a
+limited repository-only GitHub App a proposed solution, not an activated one.
+Owner authorization for that additional credential/install scope is pending.
+No AWS operation, new STS exchange, runtime delivery, or production/main change
+followed from this diagnostic.
