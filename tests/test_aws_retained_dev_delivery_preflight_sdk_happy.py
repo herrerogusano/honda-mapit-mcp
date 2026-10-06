@@ -14,9 +14,10 @@ import copy
 from contextlib import contextmanager
 from dataclasses import replace
 import hashlib
+import json
 from typing import Any
 
-from scripts.aws_retained_dev_controls_bootstrap import _resolve_internal_template
+from scripts.aws_retained_dev_controls_bootstrap import _expected_physical, _expected_service_arns, _resolve_internal_template
 from scripts.aws_retained_dev_delivery_preflight import (
     RetainedDevDeliveryPreflight,
     _canonical,
@@ -70,9 +71,9 @@ def _receipt(kind: str, resource: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _rows(stack_id: str, stack_name: str, template: dict[str, Any]) -> list[dict[str, Any]]:
+def _rows(stack_id: str, stack_name: str, template: dict[str, Any], physical_ids: dict[str, str]) -> list[dict[str, Any]]:
     return [
-        {"LogicalResourceId": logical, "PhysicalResourceId": logical + "-physical", "ResourceType": resource["Type"],
+        {"LogicalResourceId": logical, "PhysicalResourceId": physical_ids[logical], "ResourceType": resource["Type"],
          "ResourceStatus": "CREATE_COMPLETE", "StackId": stack_id, "StackName": stack_name}
         for logical, resource in template["Resources"].items()
     ]
@@ -104,26 +105,28 @@ def _fixture(lambda_tag_shape: str = "rows"):
             "attached_policies": [],
             "inline_policies": {item["PolicyName"]: item["PolicyDocument"] for item in resolved["Policies"]},
         }
-    shutdown_arn = f"arn:aws:states:eu-west-1:{ACCOUNT}:stateMachine:honda-mapit-mcp-dev-retained-shutdown"
-    shutdown = {"stateMachineArn": shutdown_arn, "name": "honda-mapit-mcp-dev-retained-shutdown", "type": "STANDARD", "roleArn": f"arn:aws:iam::{ACCOUNT}:role/honda-mapit-mcp-dev-retained-shutdown-workflow-role", "definition": "{}", "loggingConfiguration": {"level": "OFF", "includeExecutionData": False, "destinations": []}, "tracingConfiguration": {"enabled": False}}
-    rule = {"Name": "honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule", "Arn": f"arn:aws:events:eu-west-1:{ACCOUNT}:rule/honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule"}
+    shutdown_props = _resolve_internal_template(controls_template["Resources"]["ShutdownStateMachine"]["Properties"], ACCOUNT)
+    rule_props = _resolve_internal_template(controls_template["Resources"]["RequestTripwireAlarmRule"]["Properties"], ACCOUNT)
+    shutdown_arn = _expected_service_arns(ACCOUNT)["ShutdownStateMachine"]
+    shutdown = {"stateMachineArn": shutdown_arn, "name": "honda-mapit-mcp-dev-retained-shutdown", "status": "ACTIVE", "type": "STANDARD", "roleArn": _expected_service_arns(ACCOUNT)["ShutdownWorkflowRole"], "definition": json.loads(shutdown_props["DefinitionString"]), "loggingConfiguration": {"level": "OFF", "includeExecutionData": False, "destinations": []}, "tracingConfiguration": {"enabled": False}}
+    rule = {"Name": "honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule", "Arn": _expected_service_arns(ACCOUNT)["RequestTripwireAlarmRule"], "State": "DISABLED", "EventPattern": json.dumps(rule_props["EventPattern"], separators=(",", ":"))}
     alarm = {key: value for key, value in controls_template["Resources"]["RequestTripwireAlarm"]["Properties"].items() if key != "Tags"}
     alarm["AlarmArn"] = f"arn:aws:cloudwatch:eu-west-1:{ACCOUNT}:alarm:honda-mapit-mcp-dev-retained-request-tripwire"
     control_resource = {
         "stack_id": CONTROL_STACK, "stack_status": "CREATE_COMPLETE", "termination_protection": True, "role_arn": CFN_ROLE,
-        "resource_types": list(control_types.values()), "resources": _rows(CONTROL_STACK, "honda-mapit-mcp-dev-retained-controls", controls_template),
-        "template": controls_template, "stack_tags": [], "stack_events": [], "shutdown_state_machine": shutdown,
-        "shutdown_state_machine_tags": [{"key": "Project", "value": "honda-mapit-mcp"}], "tripwire_rule": rule,
-        "tripwire_rule_tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}], "tripwire_targets": [], "tripwire_alarm": alarm,
-        "tripwire_alarm_tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}], "control_roles": control_roles,
+        "resource_types": list(control_types.values()), "resources": _rows(CONTROL_STACK, "honda-mapit-mcp-dev-retained-controls", controls_template, _expected_physical(ACCOUNT)),
+        "template": controls_template, "stack_tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"}, {"Key": "Purpose", "Value": "retained-dev-controls"}, {"Key": "OperatorRunId", "Value": "9"}], "stack_events": [], "shutdown_state_machine": shutdown,
+        "shutdown_state_machine_tags": [{"key": row["Key"], "value": row["Value"]} for row in [*shutdown_props["Tags"], {"Key": "OperatorRunId", "Value": "9"}, {"Key": "aws:cloudformation:stack-id", "Value": CONTROL_STACK}, {"Key": "aws:cloudformation:stack-name", "Value": "honda-mapit-mcp-dev-retained-controls"}, {"Key": "aws:cloudformation:logical-id", "Value": "ShutdownStateMachine"}]], "tripwire_rule": rule,
+        "tripwire_rule_tags": [*rule_props["Tags"], {"Key": "OperatorRunId", "Value": "9"}, {"Key": "aws:cloudformation:stack-id", "Value": CONTROL_STACK}, {"Key": "aws:cloudformation:stack-name", "Value": "honda-mapit-mcp-dev-retained-controls"}, {"Key": "aws:cloudformation:logical-id", "Value": "RequestTripwireAlarmRule"}], "tripwire_targets": [rule_props["Targets"][0]], "tripwire_alarm": alarm,
+        "tripwire_alarm_tags": [*controls_template["Resources"]["RequestTripwireAlarm"]["Properties"]["Tags"], {"Key": "OperatorRunId", "Value": "9"}, {"Key": "aws:cloudformation:stack-id", "Value": CONTROL_STACK}, {"Key": "aws:cloudformation:stack-name", "Value": "honda-mapit-mcp-dev-retained-controls"}, {"Key": "aws:cloudformation:logical-id", "Value": "RequestTripwireAlarm"}], "control_roles": control_roles,
     }
 
     bucket_props = artifact_template["Resources"]["RuntimeArtifactBucket"]["Properties"]
-    artifact_tags = [*bucket_props["Tags"], {"Key": "OperatorRunId", "Value": RUN_ID}, {"Key": "aws:cloudformation:stack-id", "Value": ARTIFACT_STACK}, {"Key": "aws:cloudformation:stack-name", "Value": "honda-mapit-mcp-dev-retained-runtime-artifacts"}, {"Key": "aws:cloudformation:logical-id", "Value": "RuntimeArtifactBucket"}]
+    artifact_tags = [*bucket_props["Tags"], {"Key": "OperatorRunId", "Value": "8"}, {"Key": "aws:cloudformation:stack-id", "Value": ARTIFACT_STACK}, {"Key": "aws:cloudformation:stack-name", "Value": "honda-mapit-mcp-dev-retained-runtime-artifacts"}, {"Key": "aws:cloudformation:logical-id", "Value": "RuntimeArtifactBucket"}]
     artifact_resource = {
         "stack_id": ARTIFACT_STACK, "stack_status": "CREATE_COMPLETE", "termination_protection": True, "role_arn": CFN_ROLE,
-        "resource_types": list(artifact_types.values()), "resources": _rows(ARTIFACT_STACK, "honda-mapit-mcp-dev-retained-runtime-artifacts", artifact_template),
-        "template": artifact_template, "stack_tags": [], "bucket": BUCKET, "location": "eu-west-1",
+        "resource_types": list(artifact_types.values()), "resources": _rows(ARTIFACT_STACK, "honda-mapit-mcp-dev-retained-runtime-artifacts", artifact_template, {"RuntimeArtifactBucket": BUCKET, "RuntimeArtifactBucketPolicy": BUCKET}),
+        "template": artifact_template, "stack_tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"}, {"Key": "Purpose", "Value": "retained-dev-artifacts"}, {"Key": "OperatorRunId", "Value": "8"}], "bucket": BUCKET, "location": "eu-west-1",
         "public_access_block": bucket_props["PublicAccessBlockConfiguration"],
         "encryption": {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]},
         "ownership": bucket_props["OwnershipControls"], "versioning": None,
@@ -152,7 +155,7 @@ def _fixture(lambda_tag_shape: str = "rows"):
     lambda_tags = lambda_tag_rows if lambda_tag_shape == "rows" else {row["Key"]: row["Value"] for row in lambda_tag_rows}
     lambda_resource = {"function_name": handler["FunctionName"], "code_sha256": CODE_B64, "reserved_concurrency": 0, "state": "Active", "configuration": lambda_config, "tags": lambda_tag_rows}
     api_resource = {"api_id": API_ID, "name": "honda-mapit-mcp-dev-retained-api", "protocol": "HTTP", "disabled": True, "routes_empty": True}
-    prior_resource = {"stack_id": APP_STACK, "template_sha256": hashlib.sha256(_canonical(app_template)).hexdigest(), "stack_status": "UPDATE_COMPLETE", "termination_protection": True, "role_arn": CFN_ROLE, "resource_types": list(app_types.values()), "resources": _rows(APP_STACK, "honda-mapit-mcp-dev-retained", app_template), "template": app_template, "stack_tags": app_stack_tags}
+    prior_resource = {"stack_id": APP_STACK, "template_sha256": hashlib.sha256(_canonical(app_template)).hexdigest(), "stack_status": "UPDATE_COMPLETE", "termination_protection": True, "role_arn": None, "resource_types": list(app_types.values()), "resources": _rows(APP_STACK, "honda-mapit-mcp-dev-retained", app_template, {"McpApi": API_ID, "McpApiStage": "$default", "McpHandlerRole": "honda-mapit-mcp-dev-retained-handler-role", "McpHandlerLogGroup": "/aws/lambda/honda-mapit-mcp-dev-retained-handler", "McpHandler": "honda-mapit-mcp-dev-retained-handler"}), "template": app_template, "stack_tags": app_stack_tags}
     prior_code = {"function_name": handler["FunctionName"], "code_sha256": CODE_B64, "source": "offline"}
 
     # The CD role factory is already resolved except for its CFN boundary Ref.
@@ -191,7 +194,7 @@ class Clients:
                     elif service == "cloudformation" and method == "describe_stack_events":
                         name = str(kwargs.get("StackName")); response = {"StackEvents": values["control"]["stack_events"] if "controls" in name else values["artifact"]["stack_events"]}
                     elif service == "s3":
-                        a = values["artifact"]; response = {"get_bucket_location": {"LocationConstraint": a["location"]}, "get_public_access_block": {"PublicAccessBlockConfiguration": a["public_access_block"]}, "get_bucket_encryption": {"ServerSideEncryptionConfiguration": a["encryption"]}, "get_bucket_ownership_controls": {"OwnershipControls": a["ownership"]}, "get_bucket_versioning": {"Status": a["versioning"]}, "get_lifecycle_configuration": {"Rules": a["lifecycle"]}, "get_bucket_policy_status": {"PolicyStatus": a["policy_status"]}, "get_bucket_tagging": {"TagSet": a["tags"]}, "get_bucket_policy": {"Policy": a["policy"]}}[method]
+                        a = values["artifact"]; response = {"get_bucket_location": {"LocationConstraint": a["location"]}, "get_public_access_block": {"PublicAccessBlockConfiguration": a["public_access_block"]}, "get_bucket_encryption": {"ServerSideEncryptionConfiguration": a["encryption"]}, "get_bucket_ownership_controls": {"OwnershipControls": a["ownership"]}, "get_bucket_versioning": {"Status": a["versioning"]}, "get_bucket_lifecycle_configuration": {"Rules": a["lifecycle"]}, "get_bucket_policy_status": {"PolicyStatus": a["policy_status"]}, "get_bucket_tagging": {"TagSet": a["tags"]}, "get_bucket_policy": {"Policy": a["policy"]}}[method]
                     elif service == "sfn" and method == "describe_state_machine": response = values["shutdown"]
                     elif service == "sfn" and method == "list_tags_for_resource": response = {"tags": values["control"]["shutdown_state_machine_tags"]}
                     elif service == "events" and method == "describe_rule": response = values["rule"]
@@ -278,6 +281,14 @@ def test_foreign_cloudformation_stack_tag_is_rejected_by_live_preflight_readback
         ),
     )
     assert result == {"ok": False, "category": "lambda_not_closed", "calls": 44}
+
+
+def test_matching_alarm_configuration_cannot_hide_foreign_live_arn():
+    result = _run("map", lambda values: values["alarm"].update(
+        AlarmArn="arn:aws:cloudwatch:eu-west-1:999999999999:alarm:honda-mapit-mcp-dev-retained-request-tripwire",
+    ))
+    assert result["ok"] is False
+    assert result["category"] == "controls_readback_mismatch"
 
 
 def test_pinned_botocore_confirms_lambda_map_and_iam_list_tag_shapes():

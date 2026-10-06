@@ -7,6 +7,38 @@ existing application stack is fixed as
 `honda-mapit-mcp-dev-retained`; its exact ARN is a private binding and is never
 invented or derived from a new stack name.
 
+## First-migration preflight hardening — October 6, 2026
+
+The current preflight is explicitly limited to the exact original inline-503
+scaffold with `DescribeStacks.RoleARN` absent. It does not accept an arbitrary
+prior runtime template or claim that the service role is already associated.
+The existing update coordinator supplies the exact role together with the real
+code update; only its subsequent exact readback can establish association. No
+separate no-op association write is introduced. A future recurrent delivery
+preflight must separately validate the previous retained runtime factory and
+its exact associated role before a second release can be accepted.
+
+All twelve app/artifact/control resource physical IDs are factory-bound.
+Original positive integer creation `OperatorRunId` tags for each stack remain
+separate from the new delivery UUID. Control readbacks bind the exact active
+STANDARD shutdown definition/role/logging/tracing, disabled EventBridge rule,
+JSON event pattern, single target and alarm ARN/configuration. Required factory
+tags cannot be omitted; only known, exactly bound propagation tags are allowed.
+
+CloudFormation event reads now validate bounded stack-identity projections,
+not equality of volatile timestamps/reasons or event history. Actual SDK
+timestamps may be datetime objects; raw event bodies must not be copied into
+the canonical private receipt envelope. These reads do not prove a historical
+creation token or complete event history. The accepted bootstrap journals are
+unchanged.
+
+The S3 lifecycle method is the real SDK
+`get_bucket_lifecycle_configuration`. Runtime model validation loads models and
+checks SDK name transformation without constructing clients; a separate
+network-denied test checks all 34 methods against real synthetic-credential
+SDK client metadata. This is offline evidence, not a live AWS preflight or CD
+acceptance.
+
 ## Immutable private bindings
 
 Every run must supply one bounded, duplicate-free private binding envelope with

@@ -138,7 +138,7 @@ class ReadOnlyClients:
                         return parent._meta({"PolicyVersion": {"VersionId": expected["boundary_version_id"], "IsDefaultVersion": True, "Document": expected["boundary_document"]}})
                     if service == "s3":
                         expected = parent.binding.artifact_receipt["resource"]
-                        values = {"get_bucket_location": {"LocationConstraint": "eu-west-1"}, "get_public_access_block": {"PublicAccessBlockConfiguration": expected["public_access_block"]}, "get_bucket_encryption": {"ServerSideEncryptionConfiguration": expected["encryption"]}, "get_bucket_ownership_controls": {"OwnershipControls": expected["ownership"]}, "get_bucket_versioning": {"Status": expected["versioning"]}, "get_lifecycle_configuration": {"Rules": expected["lifecycle"]}, "get_bucket_policy_status": {"PolicyStatus": expected["policy_status"]}, "get_bucket_tagging": {"TagSet": expected["tags"]}, "get_bucket_policy": {"Policy": expected["policy"]}}
+                        values = {"get_bucket_location": {"LocationConstraint": "eu-west-1"}, "get_public_access_block": {"PublicAccessBlockConfiguration": expected["public_access_block"]}, "get_bucket_encryption": {"ServerSideEncryptionConfiguration": expected["encryption"]}, "get_bucket_ownership_controls": {"OwnershipControls": expected["ownership"]}, "get_bucket_versioning": {"Status": expected["versioning"]}, "get_bucket_lifecycle_configuration": {"Rules": expected["lifecycle"]}, "get_bucket_policy_status": {"PolicyStatus": expected["policy_status"]}, "get_bucket_tagging": {"TagSet": expected["tags"]}, "get_bucket_policy": {"Policy": expected["policy"]}}
                         return parent._meta(values.get(method, {}))
                     return parent._meta({})
 
