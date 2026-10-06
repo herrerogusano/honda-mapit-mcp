@@ -29,6 +29,9 @@ class RetainedDevBinding:
     stack_id: str
     api_id: str
     execution_role_arn: str
+    # The integer OperatorRunId is part of the exact, read-only bootstrap
+    # receipt.  Keep it separate from later UUID update/recovery run ids.
+    creation_run_id: int
 
     def __repr__(self) -> str:
         return "RetainedDevBinding(private=True)"
@@ -147,7 +150,7 @@ def read_bootstrap_resource_binding(
         api_id = physical["McpApi"]
         if re.fullmatch(r"[a-z0-9]{10}", api_id) is None:
             raise RetainedDevBindingError()
-        return RetainedDevBinding(account, stack_id, api_id, f"arn:aws:iam::{account}:role/{ROLE_NAME}")
+        return RetainedDevBinding(account, stack_id, api_id, f"arn:aws:iam::{account}:role/{ROLE_NAME}", creation_run_id)
     except RetainedDevBindingError:
         raise
     except Exception:

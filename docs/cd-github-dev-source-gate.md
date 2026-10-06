@@ -57,3 +57,14 @@ limited repository-only GitHub App a proposed solution, not an activated one.
 Owner authorization for that additional credential/install scope is pending.
 No AWS operation, new STS exchange, runtime delivery, or production/main change
 followed from this diagnostic.
+
+PR 45 subsequently merged normally to develop at `3c9e351` after all eight
+required checks passed. Its diagnostic run `37493152388` confirmed
+`branch_permission_denied=true` (the fixed 401/403 category), while environment
+and deployment-branch policy reads again succeeded. Thus the ephemeral Actions
+token cannot satisfy the branch-protection gate; this is not an AWS failure.
+No personal token was copied to Actions. A repository-only, read-only GitHub
+App remains an owner decision before credential creation/installation; the
+delivery gate is not bypassed. Production/main and AWS runtime state are
+unchanged. The accepted source/ARM increment passed 2,909 tracked tests with
+twelve environment skips, compilation and model-free evaluation 12/12.

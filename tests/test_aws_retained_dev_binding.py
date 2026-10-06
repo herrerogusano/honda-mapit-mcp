@@ -6,6 +6,7 @@ import pytest
 from scripts.aws_retained_dev_binding import RetainedDevBindingError, read_bootstrap_resource_binding
 from scripts.aws_retained_dev_bootstrap import FUNCTION_NAME, LOG_GROUP_NAME, ROLE_NAME, STACK_NAME
 from scripts.build_aws_retained_dev import build_retained_dev_template
+from scripts.aws_retained_dev_delivery_update import RetainedDevCreationTagBinding, RetainedDevUpdateError
 
 ACCOUNT = "123456789012"
 CALLER = f"arn:aws:sts::{ACCOUNT}:assumed-role/operator/session"
@@ -67,6 +68,17 @@ def test_exact_private_binding_four_reads_no_write():
     assert all(name.startswith(("get_", "describe_")) for name, _ in calls)
     with pytest.raises(AttributeError):
         binding.api_id = "other"
+
+
+def test_creation_tag_binding_comes_from_verified_receipt_not_a_later_uuid():
+    clients, _, _ = fixture()
+    verified = run(clients)
+    tag_binding = RetainedDevCreationTagBinding.from_verified_bootstrap_binding(verified)
+    assert tag_binding.stack_arn == STACK
+    assert tag_binding.operator_run_id == 7
+    assert tag_binding.extra_tags() == {"OperatorRunId": "7"}
+    with pytest.raises(RetainedDevUpdateError, match="creation_tag_binding_invalid"):
+        RetainedDevCreationTagBinding.from_verified_bootstrap_binding(object())
 
 
 @pytest.mark.parametrize("field,value", [
