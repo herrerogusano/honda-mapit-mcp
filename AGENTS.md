@@ -11,6 +11,16 @@ stopped at read-only bucket compatibility preflight before technical-user
 creation or any runtime/publication/opening operation. Preserve the closed DEV
 state; resource creation is not functional acceptance. A fresh source envelope
 and independently accepted SDK-shape compatibility are required to continue.
+The subsequent SDK/form compatibility passed independent review and eight
+checks on develop 6bf4ce8. Actual hosted acceptance then created only technical
+A and stopped on a local RFC subject restriction before password assignment.
+Read-only reconciliation found A enabled in FORCE_CHANGE_PASSWORD with a
+Cognito lowercase hexadecimal subject that has non-RFC version/variant bits.
+Keep A's creation intent consumed and the original user journal immutable;
+never create an alternative A, replay its creation, or extend its 300-second
+window. A separately bound recovery may perform A's first password assignment
+and B's original-name creation/password only after fresh source/readback gates.
+No runtime publication/update/opening, real MAPIT or production operation occurred.
 
 Latest hosted DEV checkpoint, 2026-10-06: PRs 50–52 merged normally to
 develop; all eight source checks passed on 79ad52e. The independently reviewed

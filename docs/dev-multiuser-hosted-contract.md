@@ -46,7 +46,9 @@ The builder requires a lowercase observed API ID, content-addressed artifact
 and source/JWKS/manifest digests, an exact loopback callback, an expected
 12-digit account binding, and a positive execution window of at most 300
 seconds. It also requires exactly two distinct canonical Cognito UUID subjects
-and `tenant-<sha256>` keys. The Lambda environment is fixed to `MAPIT_MCP_ENV=dev`
+and `tenant-<sha256>` keys. Here the synthetic DEV subject contract is a
+lowercase hexadecimal UUID-shaped identifier, not an RFC version/variant
+restriction or a claim about every possible Cognito subject. The Lambda environment is fixed to `MAPIT_MCP_ENV=dev`
 and synthetic mode, and binds the manifest digest, account, and window. User
 passwords, tokens, and MAPIT credentials are not placed in
 CloudFormation. The generated real-bound template/manifest is private; technical
@@ -131,3 +133,19 @@ unknown hidden fields are rejected, and PKCE/token validation is unchanged.
 This field is observed HTML, not a documented stable Cognito API. Before user
 writes, the pool must read back as ESSENTIALS with threat-protection add-ons
 absent or exactly OFF. A successful form smoke is not a successful user login.
+
+On develop `6bf4ce8`, all eight source checks and the actual infrastructure,
+pool and login-form smokes passed. One initial local attempt stopped before
+user writes because a nested directory exceeded Windows path limits; a shorter
+independently verified private root resolved that without ACL relaxation.
+The subsequent attempt created technical A but stopped before assigning any
+password: Cognito's observed subject matched the existing builder's hexadecimal
+shape, but not the user operator's unjustified RFC version/variant restriction.
+A read-only lookup confirmed A enabled and `FORCE_CHANGE_PASSWORD`; B creation,
+artifact publication, runtime update and endpoint opening did not occur.
+The acknowledged A creation intent is consumed. Recovery must keep that account,
+preserve the original journal/window and use fresh separately bound provenance,
+readback and first-password/B-creation intents. It must never replay A creation.
+AWS documents `sub` as the stable identity within a user pool, not a validation
+requirement for RFC UUID version/variant:
+[Cognito user attributes](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html).
