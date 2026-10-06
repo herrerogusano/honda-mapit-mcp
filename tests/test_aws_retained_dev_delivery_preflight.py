@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import copy
+import pytest
 
 from scripts.aws_retained_dev_delivery_preflight import RetainedDevDeliveryPreflight, validate_botocore_models
 from tests.test_cd_retained_dev_delivery_contract import _binding
@@ -31,6 +32,7 @@ class Client:
 
 
 def test_pinned_botocore_models_cover_only_real_read_operations():
+    pytest.importorskip("botocore.session")
     validate_botocore_models()
 
 
@@ -41,6 +43,7 @@ def test_constructor_requires_exact_client_set():
 
 
 def test_preflight_is_injected_and_read_only():
+    pytest.importorskip("botocore.session")
     clients = {name: Client() for name in ("sts", "cloudformation", "lambda", "apigatewayv2", "iam", "s3", "sfn", "events", "cloudwatch")}
     result = RetainedDevDeliveryPreflight(clients, Journal(), binding=_binding(), wall_clock=lambda: 1900000001, monotonic=lambda: 1.0).run()
     assert result["ok"] is False

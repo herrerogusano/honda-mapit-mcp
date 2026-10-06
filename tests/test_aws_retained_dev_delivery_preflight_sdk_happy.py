@@ -236,6 +236,8 @@ class Clients:
 
 
 def _run(lambda_tag_shape="rows", mutate=None):
+    import pytest
+    pytest.importorskip("botocore.session")
     binding, values = _fixture(lambda_tag_shape)
     if mutate is not None:
         mutate(values)
@@ -279,6 +281,8 @@ def test_foreign_cloudformation_stack_tag_is_rejected_by_live_preflight_readback
 
 
 def test_pinned_botocore_confirms_lambda_map_and_iam_list_tag_shapes():
+    import pytest
+    pytest.importorskip("botocore.session")
     from botocore.session import get_session
 
     session = get_session()

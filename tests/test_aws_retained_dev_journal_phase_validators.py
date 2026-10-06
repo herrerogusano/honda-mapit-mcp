@@ -408,6 +408,7 @@ def test_actual_recovery_update_ambiguous_write_reconciles_without_ack():
 
 
 def test_actual_preflight_coordinator_uses_concrete_versioned_cas_journal():
+    pytest.importorskip("botocore.session")
     contract_binding, values = preflight_happy._fixture("map")
     values = {**values, "control": values.pop("controls")}
     clients = {name: preflight_happy.Clients(contract_binding, values).client(name) for name in ("sts", "cloudformation", "lambda", "apigatewayv2", "iam", "s3", "sfn", "events", "cloudwatch")}

@@ -148,6 +148,8 @@ class ReadOnlyClients:
 
 
 def _run(binding, journal, *, api_id=None):
+    import pytest
+    pytest.importorskip("botocore.session")
     transport = ReadOnlyClients(binding, api_id=api_id)
     clients = {name: transport.client(name) for name in ("sts", "cloudformation", "lambda", "apigatewayv2", "iam", "s3", "sfn", "events", "cloudwatch")}
     result = RetainedDevDeliveryPreflight(
