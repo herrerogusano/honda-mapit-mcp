@@ -135,6 +135,14 @@ class HostedAcceptanceError(ValueError):
         super().__init__(self.category)
 
 
+def _pair_journal_for_reset(*, needs_first_pair: bool, first_pair_journal: Any,
+                            latest_pair_journal: Any) -> Any:
+    """Choose creation provenance for reset readbacks, not the latest reset window."""
+    if type(needs_first_pair) is not bool:
+        raise ValueError
+    return first_pair_journal if needs_first_pair else latest_pair_journal
+
+
 def _fail(category: str, *, stage: str | None = None, login_category: str | None = None,
           login_reason: str | None = None) -> None:
     raise HostedAcceptanceError(category, stage=stage, login_category=login_category, login_reason=login_reason)
@@ -895,7 +903,11 @@ def run_hosted_acceptance(
                     )
                 recovery_result = prepare_confirmed_pair_reset(
                     clients={"cognito": clients["cognito"]}, original_creation_journal=existing_user_journal,
-                    latest_pair_journal=(first_confirmed_pair_journal if recurring_pair_recovery else confirmed_user_journal),
+                    latest_pair_journal=_pair_journal_for_reset(
+                        needs_first_pair=needs_first_pair,
+                        first_pair_journal=first_confirmed_pair_journal,
+                        latest_pair_journal=confirmed_user_journal,
+                    ),
                     fresh_user_journal=user_journal,
                     reset_journal=FileJournal(run_dir / "reset"), provenance_journal=FileJournal(run_dir / "recovery"),
                     account=auth["account"], user_pool_id=pool_id, source_sha256=auth["source_sha"],
