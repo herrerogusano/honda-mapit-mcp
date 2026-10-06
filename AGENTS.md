@@ -1,5 +1,18 @@
 # Project Agent Workflow
 
+On 2026-10-06 the user requested continuing multi-user MCP development.
+The opt-in local durable authorization increment is independently reviewed:
+explicit SQLite connection/schema, opaque tenant key/status/revision only,
+transactional CAS, 16-record capacity including terminal revoked tombstones,
+authority-bound sealed snapshots and fresh checks surrounding provider/business
+access. Synthetic ASGI tests verify A/B isolation, suppression after in-call
+revocation and rejection after database reopen. The default no-guard router
+behavior, deployed single-owner builders and owner-only Telegram are unchanged.
+This is not hosted multi-user acceptance: verified MAPIT account identity and
+refresh continuity, onboarding, shared durable cloud state, exact tenant secret
+publication/IAM and separately reviewed deployment remain pending. No AWS,
+MAPIT, Telegram or paid model operation follows from this offline increment.
+
 The separate retained-dev readonly-proof factory, private bootstrap/CAS runner,
 identity-only OIDC runner and initial-code direct-TLS downloader are accepted
 offline after independent review (102 focused tests). The factory is included

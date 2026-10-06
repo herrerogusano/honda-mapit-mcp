@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 import time
 from dataclasses import replace
 
@@ -8,6 +9,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from mapit.aws_prod_runtime import CognitoProdPolicy
+from mapit.durable_tenants import DurableTenantGuard, DurableTenantRecord, SQLiteTenantStore
 from mapit.tenant_router import (
     AuthenticatedTenant, InvitedTenantAuthority, TenantIsolationError,
     TenantServicesRouter, tenant_key,
@@ -257,3 +259,42 @@ def test_revocation_invalidates_already_obtained_services(signing_key):
         auth.revoke(KEY_A)
         with pytest.raises(TenantIsolationError, match="tenant_unauthorized"):
             method()
+
+
+def test_optional_durable_guard_captures_revision_and_blocks_rotation(signing_key, tmp_path):
+    auth = authority(signing_key)
+    grant = asyncio.run(auth.authenticate(token(signing_key)))
+    store = SQLiteTenantStore.initialize(sqlite3.connect(tmp_path / "router.sqlite3"))
+    assert store.cas(KEY_A, None, DurableTenantRecord(KEY_A, "active", 1))
+    guard = DurableTenantGuard(auth, store)
+    router = TenantServicesRouter(auth, Provider, authorization_guard=guard)
+    with router.bind(grant):
+        method = router.get().get_vehicle_status
+        assert method()["synthetic_tenant"] == KEY_A
+        assert store.cas(KEY_A, 1, DurableTenantRecord(KEY_A, "revoked", 2))
+        with pytest.raises(TenantIsolationError, match="tenant_durable_unauthorized"):
+            method()
+
+
+def test_durable_capture_latency_is_debited_before_provider(signing_key, tmp_path, monkeypatch):
+    auth = authority(signing_key)
+    grant = asyncio.run(auth.authenticate(token(signing_key)))
+    store = SQLiteTenantStore.initialize(sqlite3.connect(tmp_path / "slow.sqlite3"))
+    assert store.cas(KEY_A, None, DurableTenantRecord(KEY_A, "active", 1))
+    clock = [100.0]
+    monkeypatch.setattr("mapit.tenant_router.time.monotonic", lambda: clock[0])
+    original_get = store.get
+
+    def slow_get(key):
+        value = original_get(key)
+        clock[0] = 115.0
+        return value
+
+    store.get = slow_get
+    guard = DurableTenantGuard(auth, store)
+    made = []
+    router = TenantServicesRouter(auth, lambda key, deadline: made.append(key), authorization_guard=guard)
+    with pytest.raises(TenantIsolationError, match="tenant_context_expired"):
+        with router.bind(grant):
+            pass
+    assert made == []

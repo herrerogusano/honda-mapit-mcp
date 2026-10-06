@@ -31,6 +31,39 @@ Codex configuration, Telegram, or a credential store. The HTTP factory has no
 arbitrary provider argument: callers must supply the invitation-scoped router.
 No live MAPIT, AWS, Telegram or model operation is part of its acceptance.
 
+## Offline durable authorization increment
+
+Status (2026-10-06): implemented and tested offline only; not deployed. The
+opt-in `mapit.durable_tenants` module stores only an opaque tenant key, an
+`active`/`revoked` status and a positive revision. `SQLiteTenantStore` accepts
+an explicitly supplied SQLite connection and an explicitly initialized schema;
+it has no default path, autoload, migration, Telegram pair, MAPIT session,
+secret, claim or history field. Records are bounded to 16 and revoked rows are
+terminal tombstones. Compare-and-set is transactional and is exercised across
+two connections for reopen and race behavior.
+
+`DurableTenantGuard` binds the store to the exact existing invitation
+authority, seals the key/revision snapshot, and re-reads authorization before
+provider creation, before each business lookup and after the lookup. Store
+errors fail closed; an in-flight provider call is not forcibly cancelled and
+its result is discarded if the post-check fails. `TenantServicesRouter` keeps
+the guard optional and disabled by default, so the existing invitation-only
+composition is unchanged. This is a local MCP authorization seam, not a
+hosted Lambda backend, distributed lease, onboarding flow or durable delivery
+claim.
+
+Independent synthetic ASGI/MCP tests exercise two separately signed users,
+revocation during a tool call (no result disclosure), and reopening the same
+authorization database with a fresh authority/router. The existing no-guard
+Lambda deadline behavior is preserved; only the durable opt-in path resamples
+after storage latency. SQLite lock contention fails closed immediately, without
+automatic retries. This local database is not a shared Lambda storage solution.
+
+Acceptance checkpoint: independent review accepted the corrected opt-in seam;
+the integrated offline suite passed 3,079 tests with 12 environment skips,
+compilation passed, and the model-free evaluator passed 12/12. No private
+account credentials or live MAPIT requests were required.
+
 ## Offline Lambda payload-v2 composition
 
 Status (2026-10-05): independently accepted offline. The full suite passed
