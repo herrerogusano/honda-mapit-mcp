@@ -25,7 +25,7 @@ from scripts.build_cd_retained_dev_roles import build_cd_retained_dev_roles
 from scripts.dev_multiuser_closed_update import ClosedDevUpdate, APP, ROLES, CONTROLS
 from scripts.build_aws_retained_dev_support import build_retained_dev_controls
 from scripts.build_dev_multiuser_timed_controls import build_dev_multiuser_timed_controls
-from scripts.run_aws_closed_rehearsal import FileJournal
+from scripts.dev_multiuser_journal import PlainFileJournal as FileJournal
 from scripts.run_aws_retained_dev_bootstrap import (
     load_authorization, validate_private_location, validate_source_and_ci, _build_clients,
 )
