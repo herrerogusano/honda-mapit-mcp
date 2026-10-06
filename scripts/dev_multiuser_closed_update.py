@@ -159,7 +159,7 @@ class ClosedDevUpdate:
                 return {"ok": True, "phase": "acknowledged"}
             if state["phase"] not in {"intent", "acknowledged", "accepted"}:
                 raise ClosedUpdateError("write_required")
-            if stack.get("StackStatus") == "UPDATE_IN_PROGRESS":
+            if stack.get("StackStatus") in {"UPDATE_IN_PROGRESS", "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS"}:
                 return {"ok": True, "phase": "pending"}
             if (stack.get("StackStatus") != "UPDATE_COMPLETE" or stack.get("RoleARN") != self.role
                 or _digest(self._template()) != self.binding["target"]):

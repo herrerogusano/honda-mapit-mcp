@@ -73,8 +73,7 @@ class Iam:
         logical = next(k for k, v in {"RetainedDevCdExecutorRole": "honda-mapit-mcp-dev-retained-cd-executor", "RetainedDevCdCloudFormationRole": "honda-mapit-mcp-dev-retained-cfn-update"}.items() if v == RoleName)
         tags = [{"Key": key, "Value": value} for key, value in {
             "Project": "honda-mapit-mcp", "Environment": "dev", "Purpose": "CDDeliveryRetainedDev",
-            "OperatorRunId": str(RUN_ID), "aws:cloudformation:stack-id": ROLES_STACK,
-            "aws:cloudformation:stack-name": "honda-mapit-mcp-dev-retained-cd-delivery", "aws:cloudformation:logical-id": logical,
+            "OperatorRunId": str(RUN_ID),
         }.items()]
         return _ok(Tags=tags, IsTruncated=False)
 
@@ -103,6 +102,23 @@ def test_role_readback_rejects_foreign_arn_and_duplicate_tags():
     iam.list_role_tags = duplicate
     assert verify_role_pair({"iam": iam}, template, account=ACCOUNT, roles_stack_arn=ROLES_STACK, original_creation_run_id=RUN_ID)["category"] == "role_readback_mismatch"
     assert verify_role_pair({"iam": Iam(template)}, template, account=ACCOUNT, roles_stack_arn=ROLES_STACK.replace(ACCOUNT, "999999999999"), original_creation_run_id=RUN_ID)["category"] == "binding_invalid"
+
+
+def test_role_readback_rejects_cloudformation_system_tag_shape():
+    template = _template(); iam = Iam(template)
+    original = iam.list_role_tags
+
+    def system_tag(**kwargs):
+        result = original(**kwargs)
+        result["Tags"].append({"Key": "aws:cloudformation:stack-id", "Value": ROLES_STACK})
+        return result
+
+    iam.list_role_tags = system_tag
+    result = verify_role_pair(
+        {"iam": iam}, template, account=ACCOUNT,
+        roles_stack_arn=ROLES_STACK, original_creation_run_id=RUN_ID,
+    )
+    assert result["category"] == "role_readback_mismatch"
 
 
 def test_role_template_shape_and_pagination_fail_closed():

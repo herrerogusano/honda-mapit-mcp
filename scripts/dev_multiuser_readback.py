@@ -93,15 +93,17 @@ def _exact_tags(value: Any, expected: Mapping[str, str]) -> bool:
     return seen == dict(expected)
 
 
-def _stack_tags(*, run_id: int, stack_arn: str, logical: str) -> dict[str, str]:
+def _stack_tags(*, run_id: int) -> dict[str, str]:
+    """Return the exact user-managed tags exposed by IAM ListRoleTags.
+
+    CloudFormation system tags are not returned for these IAM roles, so they
+    are intentionally not treated as part of the role ownership proof.
+    """
     return {
         "Project": "honda-mapit-mcp",
         "Environment": "dev",
         "Purpose": "CDDeliveryRetainedDev",
         "OperatorRunId": str(run_id),
-        "aws:cloudformation:stack-id": stack_arn,
-        "aws:cloudformation:stack-name": STACK_NAME,
-        "aws:cloudformation:logical-id": logical,
     }
 
 
@@ -228,7 +230,7 @@ def verify_role_pair(
             if attached.get("AttachedPolicies") != []:
                 raise DevMultiuserReadbackError("role_readback_mismatch")
             tags = reader.get("list_role_tags", RoleName=role_name).get("Tags")
-            if not _exact_tags(tags, _stack_tags(run_id=original_creation_run_id, stack_arn=roles_stack_arn, logical=logical)):
+            if not _exact_tags(tags, _stack_tags(run_id=original_creation_run_id)):
                 raise DevMultiuserReadbackError("role_readback_mismatch")
         for logical, boundary_name in _BOUNDARY_LOGICALS.items():
             policy_arn = f"arn:aws:iam::{account}:policy/{boundary_name}"

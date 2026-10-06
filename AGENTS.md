@@ -1,5 +1,17 @@
 # Project Agent Workflow
 
+The 2026-10-06 isolated multi-user DEV scope is owner-approved: retained test
+pool with MFA off only there, two technical users, authorization table, bounded
+opening, unchanged regional Lambda quota ten and no real MAPIT/paid models.
+PR 49 merged to develop at 242411d after eight green checks; source push CI
+37512182212 passed. Actual role preflight stopped before write intent because
+IAM returned exactly the four matching application tags, without CloudFormation
+system tags. Bounded read-only diagnostics confirmed that shape. The strict
+four-tag verifier correction is local pending fresh source CI; no AWS resource
+update, user creation, opening or hosted acceptance has occurred at this point.
+Production/main, owner MFA and Telegram remain unchanged. A separate clean
+deployment worktree prevents in-progress tooling from contaminating source gates.
+
 On 2026-10-06 the owner explicitly approved updating the existing retained DEV
 with an isolated admin-only Cognito test pool (MFA OFF only there), two technical
 users, and a retained DynamoDB authorization table. Keep production/main,
