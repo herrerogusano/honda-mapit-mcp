@@ -27,7 +27,26 @@ subsequent same-user reset/login allowance was explicitly granted: one new
 attempt only after standards-based cookie repair, independent review and fresh
 CI. Use the latest consumed attempt's confirmed-user journal as provenance,
 preserve every historical reset journal, and stop on any unknown write/login.
-That subsequent allowance is still unconsumed at this checkpoint.
+That subsequent allowance was consumed on develop 545b7fd after eight checks,
+fresh protections and the reviewed native-cookie increment. A's reset was
+confirmed; its login reached the token endpoint and failed at token_post with
+token_invalid. B remained pending; no publication/runtime/table/opening step
+followed. The reset journal is terminal, not a replay candidate. The integrated
+local suite passed 3,358 tests with twelve environment skips (two unrelated
+packaging-fixture read failures in an earlier run passed isolated and on the
+complete rerun). The native token parser incorrectly requires response-body
+scope, absent in official Cognito examples; this is a documented incompatibility,
+not confirmation of the exact failed live field. The owner granted one new
+same-A reset/login allowance after this correction, independent review and
+fresh CI; JWT-signed scope verification must remain mandatory and unchanged.
+That new allowance remains unconsumed. The correction passed independent review,
+3,374 offline tests with twelve skips, compilation and model-free evaluation
+12/12. Body scope omission preserves unknown metadata; real RSA/JWKS tests
+confirm that signed JWT scope and signature remain mandatory. Fresh source CI
+is still required before the single new live attempt.
+Temporary wake helper was renewed:
+owned PowerShell PID 49340, start 2026-10-06T21:03:09Z, automatic expiry two hours
+later; no persistent power settings changed. Remove this helper before handoff.
 
 On 2026-10-06 the owner authorized retained isolated DEV multi-user acceptance:
 two technical users, an exclusive test Cognito pool with MFA off only there,
