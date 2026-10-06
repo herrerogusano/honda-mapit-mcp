@@ -19,6 +19,8 @@ from scripts.run_dev_multiuser_hosted_acceptance import (
     _derive_user_window,
     _validate_full_role_bindings,
     _strict_template_body,
+    _validate_bucket_encryption,
+    _exact_tag_set,
     fetch_public_jwks,
     run_hosted_acceptance,
 )
@@ -178,3 +180,47 @@ def test_template_body_rejects_duplicate_or_nonfinite_json():
         _strict_template_body('{"Resources":{},"Resources":{}}')
     with pytest.raises(HostedAcceptanceError, match="^delivery_preflight_failed$"):
         _strict_template_body('{"Resources":{"x":NaN}}')
+
+
+def test_bucket_encryption_accepts_real_sdk_optional_closed_controls():
+    assert _validate_bucket_encryption({
+        "Rules": [{
+            "ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"},
+            "BucketKeyEnabled": False,
+            "BlockedEncryptionTypes": {"EncryptionType": ["SSE-C"]},
+        }]
+    }) is True
+    assert _validate_bucket_encryption({
+        "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+    }) is True
+
+
+@pytest.mark.parametrize("value", [
+    {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms"}}]},
+    {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BucketKeyEnabled": True}]},
+    {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BlockedEncryptionTypes": {"EncryptionType": ["SSE-KMS"]}}]},
+    {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "Unexpected": False}]},
+    {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BucketKeyEnabled": 0}]},
+])
+def test_bucket_encryption_rejects_unsafe_or_unknown_variants(value):
+    assert _validate_bucket_encryption(value) is False
+
+
+def test_bucket_tag_set_is_exact_but_order_insensitive():
+    expected = [
+        {"Key": "Project", "Value": "honda-mapit-mcp"},
+        {"Key": "Environment", "Value": "dev"},
+        {"Key": "Purpose", "Value": "retained-dev-artifacts"},
+        {"Key": "OperatorRunId", "Value": "2026100601"},
+        {"Key": "aws:cloudformation:stack-id", "Value": "stack"},
+        {"Key": "aws:cloudformation:stack-name", "Value": "name"},
+        {"Key": "aws:cloudformation:logical-id", "Value": "RuntimeArtifactBucket"},
+    ]
+    assert _exact_tag_set(list(reversed(expected)), expected) is True
+    for bad in (
+        expected[:-1],
+        expected + [{"Key": "extra", "Value": "x"}],
+        [*expected[:-1], {"Key": "Project", "Value": "honda-mapit-mcp"}],
+        [*expected[:-1], {"Key": "foreign", "Value": "x"}],
+    ):
+        assert _exact_tag_set(bad, expected) is False

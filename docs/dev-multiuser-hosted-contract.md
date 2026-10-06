@@ -110,3 +110,15 @@ before any update intent. The optional customer-managed environment KMS-key
 variant exceeds that limit and remains fail-closed; it is not used in the
 approved standard DEV scope. This does not change historical role factories,
 executor permissions, or production policies.
+
+## Hosted DEV checkpoint
+
+The compacted V2 role update, closed eleven-resource setup, and timed controls
+were accepted in AWS on develop `4d1db49`, after all eight source checks passed.
+Exact role, Cognito, table and closed-runtime readbacks passed. The first hosted
+acceptance stopped during its read-only infrastructure preflight, before user
+creation, artifact publication, runtime delivery or endpoint opening. S3 returned
+the same AES256 configuration with the already-supported optional disabled
+bucket-key and exact SSE-C-blocking fields, and the exact tags in another order.
+Compatibility uses the prior artifact verifier's semantics, not relaxed security
+or an AWS configuration change. Functional multi-user acceptance remains pending.

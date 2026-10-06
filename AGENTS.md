@@ -1,5 +1,17 @@
 # Project Agent Workflow
 
+On 2026-10-06 the owner authorized retained isolated DEV multi-user acceptance:
+two technical users, an exclusive test Cognito pool with MFA off only there,
+and a durable authorization table. Shared Lambda quota remains 10, no real
+MAPIT credentials/data or paid inference, and production/owner MFA are unchanged.
+The compacted role update, closed eleven-resource setup and timed controls
+passed actual AWS readbacks on develop 4d1db49 after eight green checks. Their
+acknowledged intents are consumed; never replay them. Hosted acceptance then
+stopped at read-only bucket compatibility preflight before technical-user
+creation or any runtime/publication/opening operation. Preserve the closed DEV
+state; resource creation is not functional acceptance. A fresh source envelope
+and independently accepted SDK-shape compatibility are required to continue.
+
 Latest hosted DEV checkpoint, 2026-10-06: PRs 50–52 merged normally to
 develop; all eight source checks passed on 79ad52e. The independently reviewed
 operators passed 3,273 offline tests (12 environment skips), compilation and
