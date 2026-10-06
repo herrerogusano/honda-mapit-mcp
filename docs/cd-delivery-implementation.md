@@ -1,9 +1,70 @@
-# Operational CD — IN PROGRESS
+# Operational CD — COMPLETE for private single-owner production
 
-The owner explicitly required complete CD on October 5. Successful dev/prod
-identity proofs alone do not satisfy that goal. Completion requires a protected
-release workflow, reproducible private publication, actual CloudFormation update
-and readbacks, and independently checked recovery. No deployment is claimed here.
+Live acceptance completed on October 6, 2026 (Europe/Madrid). This is actual
+production delivery and retained-artifact recovery, not only identity proofs or
+offline preparation. The retained owner/MFA, MAPIT session, eu-west-1, regional
+quota 10 and single-owner application scope are unchanged. No paid model,
+business query, history scan, Telegram activation or multiuser deployment was
+part of these CD tests. USD 1/month remains a target, not a billing hard cap.
+
+| Live execution | Verified outcome |
+| --- | --- |
+| [First release 37387644931](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37387644931) | Source/CI and ARM gates, independent close, actual update, separate approval and open readback |
+| [Release 37389449424](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37389449424) | New source-bound package delivered with the accepted cleanup polling correction |
+| [Recovery 37389971271](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37389971271) | Previous retained package restored and separately reopened |
+| [Forward recovery 37390840498](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37390840498) | Latest retained package restored from a verified closed state and separately reopened |
+
+Parent checks independently confirmed the exact template/code/manifest, attached
+CloudFormation role, active function, open API, absent function reservation and
+terminal journal tag after these accepted executions. Separate pending reopen
+approvals were observed and approved normally; administrator bypass remained
+disabled. The first-association opt-in is now false. The same-package recovery
+[37388545756](https://github.com/herrerogusano/honda-mapit-mcp/actions/runs/37388545756)
+also verified closed-state restoration without repeating a CloudFormation write.
+
+The final local checkpoint is 2,514 passed, ten environment skips; evaluation
+remains model-free. Native CI ARM checks include 22 synthetic checks and nine
+checks of each exact private candidate. Private packages, bindings and journals
+remain outside GitHub artifacts/logs and this public repository.
+
+### Operating the accepted workflow
+
+1. Promote through protected PRs to `develop`, then `main`; all eight required
+   CI checks must pass. A successful latest-main CI triggers `cd-release.yml`.
+2. Review and approve the protected `prod` update job. Candidate acceptance and
+   scoped OIDC precede conditional publication and the closed one-shot update.
+3. After exact update readbacks, approve the separate `prod` reopen job. The
+   original one-hour authority and 900-second reopening allowance are not extended.
+   Approval, runner setup and verification consume that allowance. Expiry requires
+   fresh recovery; it is not a guaranteed maximum outage duration.
+4. For recovery, dispatch `cd-recovery.yml` on current green `main` with the exact
+   retained ZIP and manifest SHA-256 values, then review its two protected jobs.
+   A fresh run/journal is required; never rerun consumed write intents. After
+   closure, failed verification does not authorize reopening: use a fresh approved
+   recovery. A preflight failure can leave an already-open service unchanged.
+
+`develop` has protected CI/promotion and identity validation, not a retained dev
+application deployment. The deleted synthetic dev rehearsal was not recreated.
+Hosted multiuser and Telegram expansion remain outside this acceptance.
+
+### Failure observations retained, not hidden
+
+Recovery `37388126973` hit the CloudFormation cleanup transition after restoring
+the package; the narrow independently tested pending-state correction now waits
+for final exact readbacks. Forward attempt `37390377720` stopped before update
+during close verification. Later complete readbacks passed, but do not establish
+the original failing category. CloudTrail narrows the observation to the tripwire
+read portion without recording the client-side response. The subsequent fresh
+closed recovery succeeded; no old journal was adopted or write replayed. New
+fixed step/category/count/boolean diagnostics retain this distinction without
+private payloads. No speculative retry expansion or weaker acceptance was added.
+
+## Historical preparation and acceptance journal
+
+Earlier pending statements below describe their recorded checkpoint; the live
+acceptance above supersedes them. The historical owner requirement was an actual
+protected release, reproducible private publication, CloudFormation readbacks and
+checked recovery, not merely dev/prod identity proofs.
 
 ## Implemented and independently reviewed offline
 

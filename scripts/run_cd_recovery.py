@@ -268,11 +268,14 @@ class CDRecoveryRunner(ordinary.CDReleaseRunner):
         except Exception:
             raise ordinary.ReleaseError("artifact_binding_invalid") from None
         close = core.run_step("close")
+        ordinary._report_core_step(close, "close")
         if close.get("category") != "close_pending":
             raise ordinary.ReleaseError("close_failed")
         state = None
         for attempt in range(ordinary._MAX_CLOSE_POLLS):
             result = core.run_step("check-close")
+            if result.get("category") != "close_pending":
+                ordinary._report_core_step(result, "check-close")
             if result.get("verified") is True:
                 state = ordinary._journal_state(journal)
                 break
@@ -283,12 +286,15 @@ class CDRecoveryRunner(ordinary.CDReleaseRunner):
         if state is None or not ordinary._close_age(services, state, now=self.clock):
             raise ordinary.ReleaseError("close_window_expired")
         update = core.run_step("request-update")
+        ordinary._report_core_step(update, "request-update")
         if update.get("category") not in {"update_pending", "update_skipped_same_artifact"}:
             raise ordinary.ReleaseError("update_failed")
         for attempt in range(ordinary._MAX_UPDATE_POLLS):
             if not ordinary._close_age(services, state, now=self.clock):
                 raise ordinary.ReleaseError("close_window_expired")
             result = core.run_step("check-update")
+            if result.get("category") != "update_pending":
+                ordinary._report_core_step(result, "check-update")
             if result.get("verified") is True:
                 return {"status": "awaiting_approval", "phase": "update_verified",
                         "category": "release_ready_for_reopen", "source_sha": source_sha,

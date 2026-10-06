@@ -620,11 +620,14 @@ class CDReleaseRunner:
             raise ReleaseError("candidate_build_failed") from None
 
         close = core.run_step("close")
+        _report_core_step(close, "close")
         if close.get("category") != "close_pending":
             raise ReleaseError("close_failed")
         verified_close = False
         for attempt in range(_MAX_CLOSE_POLLS):
             check = core.run_step("check-close")
+            if check.get("category") != "close_pending":
+                _report_core_step(check, "check-close")
             if check.get("verified") is True:
                 verified_close = True
                 break
@@ -641,6 +644,7 @@ class CDReleaseRunner:
         if not _close_age(services, close_state, now=self.clock):
             raise ReleaseError("close_window_expired")
         update = core.run_step("request-update")
+        _report_core_step(update, "request-update")
         if update.get("category") != "update_pending":
             raise ReleaseError("update_failed")
         updated = False
@@ -648,6 +652,8 @@ class CDReleaseRunner:
             if not _close_age(services, close_state, now=self.clock):
                 raise ReleaseError("close_window_expired")
             check = core.run_step("check-update")
+            if check.get("category") != "update_pending":
+                _report_core_step(check, "check-update")
             if check.get("verified") is True:
                 updated = True
                 break
@@ -848,6 +854,18 @@ def _report_core_preflight(result: Mapping[str, Any]) -> None:
     print(json.dumps({"core_preflight": {
         "category": category if type(category) is str and category in _CATEGORIES else "upgrade_internal_error",
         "calls": calls if type(calls) is int and 0 <= calls <= 100 else 0,
+    }}, sort_keys=True))
+
+
+def _report_core_step(result: Mapping[str, Any], step: str) -> None:
+    from mapit.aws_prod_geography_upgrade import _CATEGORIES, ProdGeographyUpgrade
+
+    category, calls = result.get("category"), result.get("calls")
+    print(json.dumps({"core_step": {
+        "step": step if type(step) is str and step in ProdGeographyUpgrade.STEPS else "unknown",
+        "category": category if type(category) is str and category in _CATEGORIES else "upgrade_internal_error",
+        "calls": calls if type(calls) is int and 0 <= calls <= 100 else 0,
+        "verified": result.get("verified") is True,
     }}, sort_keys=True))
 
 
