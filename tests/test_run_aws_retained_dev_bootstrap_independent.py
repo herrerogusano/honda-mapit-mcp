@@ -95,6 +95,8 @@ def test_windows_acl_rejects_unlisted_named_principal_even_when_owner_and_system
             return types.SimpleNamespace(returncode=0, stdout="owner\n")
         return Result()
 
-    monkeypatch.setattr(runner.os, "name", "nt")
+    # Replace this module's OS facade, not the shared os.name used by pathlib
+    # and pytest itself (Python 3.11 otherwise selects WindowsPath on Linux).
+    monkeypatch.setattr(runner, "os", types.SimpleNamespace(name="nt", environ=runner.os.environ))
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
     assert runner._windows_acl_exact(Path("C:/private")) is False
