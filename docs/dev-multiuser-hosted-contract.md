@@ -363,7 +363,10 @@ The metadata role repair uses `--describe-key-repair` with the unchanged accepte
 fourteen-field crypto binding as prior input, a new immutable journal/token, and
 creates a separate fifteen-field `lambda_environment_key_describe=True` binding
 only after exact IAM readback. It cannot replay the older crypto repair. The
-integrated offline suite passed 3,478 tests with twelve environment skips;
+metadata repair and metadata-bound hosted preflight read the accepted key ARN
+directly: unlike a predefined AWS alias, this cannot initialize a missing
+AWS-managed key. The original historical alias discovery is not replayed.
+Integrated offline verification passed 3,478 tests with twelve environment skips;
 compilation and model-free evaluation passed 12/12. Independent focused review
 accepted the metadata-only policy and bounded second recurrence. CI/live gates
 remain pending; no functional E2E claim follows from local tests.
