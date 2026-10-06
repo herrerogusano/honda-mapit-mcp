@@ -22,9 +22,12 @@ from scripts.run_dev_multiuser_hosted_acceptance import (
     _strict_template_body,
     _validate_bucket_encryption,
     _exact_tag_set,
+    _pair_journal_for_reset,
     fetch_public_jwks,
     run_hosted_acceptance,
 )
+from scripts.dev_multiuser_confirmed_pair_recovery import prepare_confirmed_pair_reset
+from tests import test_dev_multiuser_confirmed_pair_recovery as pair_fixtures
 from scripts.run_aws_closed_rehearsal import FileJournal
 
 
@@ -48,6 +51,10 @@ def _private_inputs(tmp_path: Path) -> HostedAcceptanceInputs:
         controls_binding_path=root / "controls.json", role_bindings_path=root / "role-bindings.json",
         wheel_dir=tmp_path / "wheels",
     )
+
+
+def _pair_digest(value):
+    return hashlib.sha256(pair_fixtures._canonical(value)).hexdigest()
 
 
 def test_source_gate_runs_before_client_factory_or_private_bindings(tmp_path):
@@ -128,6 +135,101 @@ def test_second_recurring_pair_requires_prior_reset_provenance_before_clients(tm
     )
     assert result == {"success": False, "category": "bindings_invalid"}
     assert called == []
+
+
+def test_second_recurring_mode_passes_first_pair_journal_as_creation_source():
+    creation_828c = object()
+    current_users_f247 = object()
+    selected = _pair_journal_for_reset(
+        needs_first_pair=True,
+        first_pair_journal=creation_828c,
+        latest_pair_journal=current_users_f247,
+    )
+    assert selected is creation_828c
+    assert _pair_journal_for_reset(
+        needs_first_pair=False,
+        first_pair_journal=creation_828c,
+        latest_pair_journal=current_users_f247,
+    ) is current_users_f247
+
+
+def test_second_recurring_selection_drives_real_preparer_with_original_creation_window():
+    original, first_pair, users_8ed, reset_8ed, recovery_8ed = pair_fixtures._initial_journals()
+    cognito = pair_fixtures.Cognito()
+    first_operation = (original, first_pair, users_8ed, reset_8ed, recovery_8ed)
+    assert pair_fixtures._prepare(first_operation, cognito)["success"] is True
+    assert pair_fixtures._execute(first_operation, cognito, on_user=lambda *_: None)["success"] is True
+    history_8ed = pair_fixtures.validate_recurring_pair_history(
+        original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+        latest_pair_journal=users_8ed, previous_reset_journal=reset_8ed,
+        account=pair_fixtures.ACCOUNT, user_pool_id=pair_fixtures.POOL,
+    )
+
+    users_f247, reset_f247, recovery_f247 = (
+        pair_fixtures.Journal(), pair_fixtures.Journal(), pair_fixtures.Journal()
+    )
+    f247_start, f247_end = pair_fixtures.NEW_END + 100, pair_fixtures.NEW_END + 350
+    assert prepare_confirmed_pair_reset(
+        clients={"cognito": cognito}, original_creation_journal=original,
+        latest_pair_journal=first_pair, fresh_user_journal=users_f247,
+        reset_journal=reset_f247, provenance_journal=recovery_f247,
+        account=pair_fixtures.ACCOUNT, user_pool_id=pair_fixtures.POOL,
+        source_sha256="d" * 40, authorized_from_epoch=f247_start,
+        authorized_until_epoch=f247_end, allow_two_confirmed_user_resets=True,
+        first_confirmed_pair_sha256=history_8ed["first_pair_sha256"],
+        previous_reset_sha256=history_8ed["previous_reset_sha256"],
+        wall_clock=lambda: f247_start + 1,
+    )["success"] is True
+    assert pair_fixtures.reset_confirmed_pair_once(
+        clients={"cognito": cognito}, fresh_user_journal=users_f247,
+        reset_journal=reset_f247, account=pair_fixtures.ACCOUNT,
+        user_pool_id=pair_fixtures.POOL, run_id=pair_fixtures.RUN,
+        source_sha256="d" * 40, authorized_from_epoch=f247_start,
+        authorized_until_epoch=f247_end, allow_two_confirmed_user_resets=True,
+        on_confirmed_user=lambda *_: None,
+        password_factory=lambda slot: pair_fixtures.PASSWORD_A if slot == "A" else pair_fixtures.PASSWORD_B,
+        wall_clock=lambda: f247_start + 1,
+    )["success"] is True
+
+    selected = _pair_journal_for_reset(
+        needs_first_pair=True, first_pair_journal=first_pair,
+        latest_pair_journal=users_f247,
+    )
+    fresh_ok, reset_ok, recovery_ok = pair_fixtures.Journal(), pair_fixtures.Journal(), pair_fixtures.Journal()
+    cognito.calls.clear()
+    accepted = prepare_confirmed_pair_reset(
+        clients={"cognito": cognito}, original_creation_journal=original,
+        latest_pair_journal=selected, fresh_user_journal=fresh_ok,
+        reset_journal=reset_ok, provenance_journal=recovery_ok,
+        account=pair_fixtures.ACCOUNT, user_pool_id=pair_fixtures.POOL,
+        source_sha256="e" * 40, authorized_from_epoch=f247_end + 100,
+        authorized_until_epoch=f247_end + 350, allow_two_confirmed_user_resets=True,
+        first_confirmed_pair_sha256=history_8ed["first_pair_sha256"],
+        previous_reset_sha256=_pair_digest(reset_f247.load()),
+        consumed_pair_sha256=_pair_digest(users_f247.load()),
+        wall_clock=lambda: f247_end + 101,
+    )
+    assert accepted == {"success": True, "category": "reset_prepared", "calls": 2,
+                        "cognito_writes": 0, "users": 2}
+    assert [call[0] for call in cognito.calls] == ["get", "get"]
+
+    fresh_bad, reset_bad, recovery_bad = pair_fixtures.Journal(), pair_fixtures.Journal(), pair_fixtures.Journal()
+    cognito.calls.clear()
+    rejected = prepare_confirmed_pair_reset(
+        clients={"cognito": cognito}, original_creation_journal=original,
+        latest_pair_journal=users_f247, fresh_user_journal=fresh_bad,
+        reset_journal=reset_bad, provenance_journal=recovery_bad,
+        account=pair_fixtures.ACCOUNT, user_pool_id=pair_fixtures.POOL,
+        source_sha256="e" * 40, authorized_from_epoch=f247_end + 100,
+        authorized_until_epoch=f247_end + 350, allow_two_confirmed_user_resets=True,
+        first_confirmed_pair_sha256=history_8ed["first_pair_sha256"],
+        previous_reset_sha256=_pair_digest(reset_f247.load()),
+        consumed_pair_sha256=_pair_digest(users_f247.load()),
+        wall_clock=lambda: f247_end + 101,
+    )
+    assert rejected["success"] is False and rejected["calls"] == 2
+    assert [call[0] for call in cognito.calls] == ["get", "get"]
+    assert fresh_bad.load() is None and reset_bad.load() is None and recovery_bad.load() is None
 
 
 def test_login_failure_diagnostics_are_allowlisted_and_redacted():

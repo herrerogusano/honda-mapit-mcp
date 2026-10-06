@@ -302,6 +302,36 @@ encryption/decryption probe was executed.
 
 ### Subsequent live checkpoint (2026-10-06 UTC)
 
+Latest metadata-gate result (2026-10-07 Europe/Madrid): PRs #63/#64 and final
+develop `6b09eb2` passed all eight checks. Exact DescribeKey role update and
+readback succeeded; a separate fifteen-field accepted binding was created.
+Executor and crypto constraints remain unchanged. A preliminary long local
+journal path could not open its lock (265 characters, `errno=2`); no intent was
+written. The standard short fresh path (256 characters) passed local locking,
+full preflight and subsequent acceptance. The unused longer directory remains
+unchanged evidence. The exact retained authorizer deletion then passed (fourteen
+calls, HTTP 204 and empty readback). Do not replay either write.
+
+The hosted attempt stopped at `user_preflight_failed`, before password resets:
+the second-recurring runner selected the latest confirmed pair for preparation
+instead of the immutable first pair/B-creation window. Pure history validation
+on the actual private journals passed. All eight new users/reset/recovery/
+artifact/runtime/window/tenant journals remain absent. No login, publication,
+runtime update, endpoint opening or E2E followed. Correct this selector and add
+a positive runner-composition regression; request a new bounded hosted attempt.
+No additional IAM, key, authorizer deletion, production, MFA, MAPIT or quota
+change is needed. DEV multiuser remains unaccepted as functional.
+
+The corrected selector now consistently uses `needs_first_pair` for both
+recurring modes. The real preparer regression demonstrates two Cognito reads
+and zero writes using first-pair provenance; selecting the recent pair fails
+after two reads with all fresh journals absent. Independent review accepted
+the correction. Full offline suite: 3,482 passed, twelve environment skips;
+compilation and model-free evaluation 12/12. Six bounded final AWS reads
+confirmed exact caller/account, closed API/Lambda, original eleven app resources
+and a completed role stack. A new hosted attempt remains at the explicit owner
+gate; the accepted metadata repair and orphan cleanup must not be repeated.
+
 Superseding checkpoint, 2026-10-07 Europe/Madrid: PR #62 and develop `0221545`
 passed eight CI checks after the test-only SQLite correction. Fresh exact cleanup
 completed (HTTP 204, empty authorizer readback, fourteen calls). A/B each completed

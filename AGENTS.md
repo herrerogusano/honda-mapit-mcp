@@ -1,5 +1,32 @@
 # Project Agent Workflow
 
+Superseding live checkpoint (2026-10-07 Europe/Madrid): PRs #63/#64 and final
+develop `6b09eb2` passed eight checks. The exact-key/account DescribeKey CFN
+role/boundary update was acknowledged and fully read back; its new fifteen-field
+private binding is accepted. Crypto conditions and executor remain unchanged.
+The first metadata preflight stopped locally before any intent because its lock
+path exceeded the effective Windows path limit; an empty standard short journal
+passed preflight and was used instead. Keep the unused long-path envelope.
+The exact new orphan deletion completed with HTTP 204/empty readback (14 calls).
+These write allowances are consumed and must never be replayed. The hosted
+attempt then stopped at user_preflight_failed: second-recurring preparation
+selected the latest pair instead of the first B-creation pair. Offline readback
+confirms the real historical chain is valid and all new users/reset/recovery/
+artifact/runtime/window/tenant journals are absent: no password reset/login,
+publication, runtime update, endpoint opening or E2E followed. DEV remains
+closed and multiuser is not yet functional. Correct the runner selector and
+positive composition regression offline; a new one-attempt owner decision is
+requested before another hosted execution. No new IAM or orphan cleanup is
+needed. Preserve production/MFA/MAPIT/quota ten and all historical journals.
+The selector correction and actual preparer regression are independently
+accepted offline: original B-creation provenance succeeds with two reads and
+zero writes; the wrong recent window fails with no fresh state. Full suite
+passed 3,482 tests with twelve environment skips, compilation and model-free
+evaluation 12/12. Six final read-only AWS checks confirmed exact identity,
+closed API/Lambda, original eleven app resources and the completed metadata
+role stack. New hosted execution still requires the pending owner decision;
+do not repeat the role repair or authorizer deletion.
+
 Latest consumed DEV attempt (2026-10-07 Europe/Madrid): PRs #61/#62 merged
 normally to develop `0221545`; all eight develop checks passed. Exact orphan
 cleanup completed with HTTP 204 and empty readback (14 calls). One fresh reset
