@@ -1,5 +1,16 @@
 # Project Agent Workflow
 
+On 2026-10-07 Europe/Madrid the owner approved deletion of only the exact unused
+retained DEV JWT authorizer and one fresh bounded deployment/E2E attempt with
+one reset/login of each same confirmed A/B technical account. Implement and
+independently review exact closure/lineage/intent/readback guards and terminal
+PAIR-reset provenance before executing. Do not replay any prior operation,
+relax KMS context, expand IAM, touch production/MFA/MAPIT or raise quota ten.
+Use fresh source CI/private immutable authority; stop on any ambiguous write
+or failed attempt without another automatic reset/retry. This allowance is
+not yet consumed at this preparation checkpoint. Temporary wakefulness must
+be removed before handoff.
+
 Latest live checkpoint (2026-10-06 UTC): PR #60 merged normally to develop
 at `5b6c379`, with eight green checks on source and develop. The exact-key KMS
 CFN-role repair passed real readback; executor permissions remained unchanged.

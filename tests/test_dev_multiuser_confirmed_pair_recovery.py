@@ -4,11 +4,13 @@ from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
+import pytest
 
 from scripts.dev_multiuser_test_users import _base, _canonical, _token, _username
 from scripts.dev_multiuser_confirmed_pair_recovery import (
     prepare_confirmed_pair_reset,
     reset_confirmed_pair_once,
+    validate_recurring_pair_history,
 )
 
 
@@ -245,4 +247,71 @@ def test_a_login_failure_prevents_b_reset_and_malformed_binding_has_zero_calls()
     client.calls.clear()
     bad = _execute(journals, client, on_user=lambda *_: None, source="d" * 40)
     assert bad["success"] is False and bad["category"] == "reset_journal_invalid"
+    assert client.calls == []
+
+
+def test_recurring_pair_binds_first_pair_window_and_completed_prior_reset():
+    original, first_pair, prior_fresh, prior_reset, prior_provenance = _initial_journals()
+    client = Cognito()
+    assert _prepare((original, first_pair, prior_fresh, prior_reset, prior_provenance), client)["success"] is True
+    assert _execute((original, first_pair, prior_fresh, prior_reset, prior_provenance), client,
+                    on_user=lambda *_: None)["success"] is True
+
+    history = validate_recurring_pair_history(
+        original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+        latest_pair_journal=prior_fresh, previous_reset_journal=prior_reset,
+        account=ACCOUNT, user_pool_id=POOL,
+    )
+    assert history["latest_pair"]["authorized_from_epoch"] == NEW_START
+    assert history["first_pair"]["authorized_from_epoch"] == LATEST_START
+
+    next_fresh, next_reset, next_provenance = Journal(), Journal(), Journal()
+    prepared = prepare_confirmed_pair_reset(
+        clients={"cognito": client}, original_creation_journal=original,
+        latest_pair_journal=first_pair, fresh_user_journal=next_fresh,
+        reset_journal=next_reset, provenance_journal=next_provenance,
+        account=ACCOUNT, user_pool_id=POOL, source_sha256="d" * 40,
+        authorized_from_epoch=NEW_END + 10, authorized_until_epoch=NEW_END + 250,
+        allow_two_confirmed_user_resets=True,
+        first_confirmed_pair_sha256=history["first_pair_sha256"],
+        previous_reset_sha256=history["previous_reset_sha256"],
+        wall_clock=lambda: NEW_END + 11,
+    )
+    assert prepared["success"] is True
+    assert next_reset.load()["first_confirmed_pair_sha256"] == history["first_pair_sha256"]
+    assert next_reset.load()["previous_reset_sha256"] == history["previous_reset_sha256"]
+    assert next_reset.load()["latest_start_epoch"] == LATEST_START
+
+
+@pytest.mark.parametrize("mutation", ["first_pair_digest", "prior_reset_digest", "latest_window", "subject_rebind"])
+def test_recurring_pair_history_rejects_broken_chain_without_sdk_calls(mutation):
+    original, first_pair, prior_fresh, prior_reset, prior_provenance = _initial_journals()
+    client = Cognito()
+    assert _prepare((original, first_pair, prior_fresh, prior_reset, prior_provenance), client)["success"] is True
+    assert _execute((original, first_pair, prior_fresh, prior_reset, prior_provenance), client,
+                    on_user=lambda *_: None)["success"] is True
+    if mutation == "first_pair_digest":
+        state = prior_reset.load(); state["latest_pair_sha256"] = "f" * 64; prior_reset.save(state)
+    elif mutation == "prior_reset_digest":
+        state = prior_fresh.load(); state["authorized_from_epoch"] += 1; prior_fresh.save(state)
+    elif mutation == "subject_rebind":
+        reset_state = prior_reset.load()
+        latest_state = prior_fresh.load()
+        forged = "f" * 64
+        reset_state["slots"][0]["subject_sha256"] = forged
+        reset_state["slots"][0]["reset_token"] = hashlib.sha256(_canonical({
+            "operation": "reset-confirmed-pair-user", "binding_sha256": reset_state["binding_sha256"],
+            "slot": "A", "subject_sha256": forged,
+        })).hexdigest()
+        latest_state["slots"][0]["user_sub_sha256"] = forged
+        prior_reset.save(reset_state); prior_fresh.save(latest_state)
+    else:
+        state = first_pair.load(); state["authorized_until_epoch"] += 1; first_pair.save(state)
+    client.calls.clear()
+    with pytest.raises(ValueError):
+        validate_recurring_pair_history(
+            original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+            latest_pair_journal=prior_fresh, previous_reset_journal=prior_reset,
+            account=ACCOUNT, user_pool_id=POOL,
+        )
     assert client.calls == []

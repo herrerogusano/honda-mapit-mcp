@@ -5,6 +5,7 @@ import pytest
 
 from scripts.dev_multiuser_rollback_recovery import _digest, verify_consumed_rollback
 from scripts.dev_multiuser_test_users import _base, _token
+from tests import test_dev_multiuser_confirmed_pair_recovery as pair_fixtures
 
 
 ACCOUNT = "123456789012"
@@ -189,3 +190,41 @@ def test_recovery_does_not_accept_ambiguous_or_foreign_history(kind):
     if kind == "reset": reset = {"phase": "login_failed", "account_id": ACCOUNT, "source_sha256": "a" * 40}
     if kind == "unacknowledged": state = {"binding": BINDING, "phase": "intent"}
     assert not check(cloud, state, reset)
+
+
+def _completed_pair_history():
+    journals = pair_fixtures._initial_journals()
+    original, first_pair, fresh, reset, provenance = journals
+    cognito = pair_fixtures.Cognito()
+    assert pair_fixtures._prepare(journals, cognito)["success"] is True
+    assert pair_fixtures._execute(journals, cognito, on_user=lambda *_: None)["success"] is True
+    return original, first_pair, fresh, reset
+
+
+def test_recurring_pair_rollback_requires_and_accepts_exact_first_pair_chain():
+    original, first_pair, latest_pair, reset = _completed_pair_history()
+    binding = dict(BINDING, source=pair_fixtures.SOURCE,
+                   start=pair_fixtures.NEW_START - 100, end=pair_fixtures.NEW_END + 100)
+    auth = dict(AUTH, source_sha="e" * 40, start=pair_fixtures.NEW_END + 1000)
+    cloud = Cloud()
+    ok = verify_consumed_rollback(
+        cloud, SimpleNamespace(load=lambda: {"binding": deepcopy(binding), "phase": "acknowledged"}),
+        reset, auth=auth, app_stack=STACK, expected_setup=SETUP,
+        original_user_journal=original, latest_pair_journal=latest_pair,
+        first_confirmed_pair_journal=first_pair, recurring_pair=True, user_pool_id=POOL,
+    )
+    assert ok is True
+    assert cloud.calls == ["stack", "template", "events"]
+
+    forged = deepcopy(first_pair.load())
+    forged["authorized_until_epoch"] += 100
+    first_pair.state = forged
+    rejected_cloud = Cloud()
+    rejected = verify_consumed_rollback(
+        rejected_cloud, SimpleNamespace(load=lambda: {"binding": deepcopy(binding), "phase": "acknowledged"}),
+        reset, auth=auth, app_stack=STACK, expected_setup=SETUP,
+        original_user_journal=original, latest_pair_journal=latest_pair,
+        first_confirmed_pair_journal=first_pair, recurring_pair=True, user_pool_id=POOL,
+    )
+    assert rejected is False
+    assert rejected_cloud.calls == []

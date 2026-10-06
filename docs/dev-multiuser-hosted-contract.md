@@ -302,6 +302,34 @@ encryption/decryption probe was executed.
 
 ### Subsequent live checkpoint (2026-10-06 UTC)
 
+The owner subsequently approved the exact unused-authorizer deletion and one
+new bounded pair-reset/login/deployment attempt (2026-10-07 Europe/Madrid).
+Preparation must preserve terminal pair-reset lineage and the first B-creation
+window. Cleanup consumes a fresh write intent before its single DeleteAuthorizer,
+with closed DEV and exact old creation/delete-skipped lineage, then verifies
+absence. No 404-as-success, implicit retries, IAM expansion or KMS-context
+relaxation follows. This new allowance is pending execution, not a replay of
+the earlier writes. AWS documents successful deletion as HTTP 204 without body:
+[DeleteAuthorizer](https://docs.aws.amazon.com/apigatewayv2/latest/api-reference/apis-apiid-authorizers-authorizerid.html).
+
+The cleanup runner is `scripts/run_dev_multiuser_orphan_cleanup.py`.
+Its private `--lineage-runtime` input must be the earlier authorizer-creation
+receipt, not the later failed-runtime receipt used by hosted recovery. Exact
+physical-ID/create/delete-skipped event checks fence incorrect lineage before
+deletion. Two CLI reads plus at most thirteen core attempts are permitted;
+only one attempt can be destructive. Missing collection members remain a
+fail-closed outcome. Actual bounded DEV reads confirmed explicit empty lists
+for routes/integrations and no ApiId member on the authorizer item.
+
+Recurring hosted recovery is separately opt-in via
+`--allow-recurring-confirmed-pair-password-resets` and
+`--pair-creation-user-journal`: original A creation, first confirmed pair/B
+creation and latest terminal pair-reset journals remain distinct. Only a
+complete revision-six initial pair reset is admitted; subsequent recurrence
+is intentionally not accepted. Offline preparation passed 3,464 tests with
+twelve environment skips, compilation and model-free evaluation 12/12.
+This is preparation, not yet a successful delete/deployment/E2E.
+
 PR #60 merged normally to develop at `5b6c379` after eight green checks;
 all eight develop checks also passed. The separately journaled exact-key role
 repair was acknowledged and independently read back. Executor permissions stayed
