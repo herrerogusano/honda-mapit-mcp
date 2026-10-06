@@ -85,8 +85,39 @@ def test_two_connections_have_atomic_create_race(tmp_path):
     for thread in threads:
         thread.join(timeout=2)
     assert all(not thread.is_alive() for thread in threads)
-    assert results.count(True) == 1
-    assert stores[0].get(KEY).revision == 1
+    # With timeout=0, SQLite may reject both simultaneous BEGIN IMMEDIATE
+    # attempts with SQLITE_BUSY.  The store deliberately does not retry or
+    # sleep, so this test proves atomicity and fail-closed behavior, not
+    # eventual liveness: at most one writer may win, and a stored row exists
+    # exactly when one writer reported success.
+    assert len(results) == 2
+    assert results.count(True) <= 1
+    assert all(value is True or value is False or value == "durable_store_failed" for value in results)
+    record = stores[0].get(KEY)
+    if True in results:
+        assert record == DurableTenantRecord(KEY, "active", 1)
+    else:
+        assert results == ["durable_store_failed", "durable_store_failed"]
+        assert record is None
+
+
+def test_busy_writer_fails_closed_without_row_then_succeeds_after_release(tmp_path):
+    path = tmp_path / "locked.sqlite3"
+    store = SQLiteTenantStore.initialize(connection(path))
+    locker = sqlite3.connect(path, check_same_thread=False, timeout=0)
+    try:
+        locker.execute("BEGIN IMMEDIATE")
+        with pytest.raises(DurableTenantError, match="durable_store_failed"):
+            store.cas(KEY, None, DurableTenantRecord(KEY, "active", 1))
+        assert store.get(KEY) is None
+        locker.rollback()
+        assert store.cas(KEY, None, DurableTenantRecord(KEY, "active", 1)) is True
+        assert store.get(KEY) == DurableTenantRecord(KEY, "active", 1)
+    finally:
+        try:
+            locker.rollback()
+        finally:
+            locker.close()
 
 
 def _guard(tmp_path):

@@ -330,6 +330,17 @@ is intentionally not accepted. Offline preparation passed 3,464 tests with
 twelve environment skips, compilation and model-free evaluation 12/12.
 This is preparation, not yet a successful delete/deployment/E2E.
 
+PR #61 passed all eight checks and merged normally to develop at `9f2c5d9`.
+The develop CI then failed only an existing SQLite race test on Python 3.13;
+all other seven checks passed. No cleanup/reset/deployment followed. The unused
+private source envelope remains immutable evidence, not an allowance to bypass
+failed CI. Independent review confirmed that immediate SQLite lock rejection
+does not guarantee a winner; the test now requires exactly two outcomes, at
+most one winner and no persisted row if both operations fail closed. A held-lock
+regression also verifies rejection and a later explicit operation after release.
+Runtime behavior, retries and authorization remain unchanged. Ten focused tests
+passed. See [SQLite locking](https://www.sqlite.org/lockingv3.html).
+
 PR #60 merged normally to develop at `5b6c379` after eight green checks;
 all eight develop checks also passed. The separately journaled exact-key role
 repair was acknowledged and independently read back. Executor permissions stayed
