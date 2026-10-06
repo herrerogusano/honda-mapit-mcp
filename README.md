@@ -21,6 +21,8 @@ deployment or access to private resources.
 The separate retained-dev OIDC proof runner is offline-tested only and has not
 requested a token or contacted AWS; see
 [its bounded contract](docs/cd-retained-dev-oidc-proof.md).
+The independent read-only source gate for a future `develop` promotion is
+offline-tested only; see [the source-gate contract](docs/cd-github-dev-source-gate.md).
 
 The phase descriptions below retain their original local implementation scope;
 later acceptance and remaining gates are recorded in the linked status files.

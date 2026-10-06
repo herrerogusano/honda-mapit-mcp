@@ -87,6 +87,7 @@ class S3:
             "ContentLength": len(body),
             "ChecksumSHA256": base64.b64encode(hashlib.sha256(body).digest()).decode("ascii"),
             "ServerSideEncryption": "AES256",
+            "ContentType": "application/zip",
             "ResponseMetadata": {"HTTPStatusCode": 200},
         }
 

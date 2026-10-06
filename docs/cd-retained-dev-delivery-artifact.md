@@ -43,7 +43,11 @@ or build receipt fails closed. A verified identical intent performs a fresh exac
 `HeadObject` read before returning `artifact_already_verified`; it never
 asserts historical verification without current evidence. Every stage is
 bounded by the supplied UTC authority window and a 30-second monotonic step
-deadline; a monotonic-clock regression fails closed.
+deadline; wall/monotonic-clock regressions fail closed. The metadata state also
+binds the original authority window and persists its last observed wall clock,
+so restarting with a different window or an earlier clock cannot renew an old
+publication. Deadline checks surround journal and S3 calls, including the HEAD
+before the terminal CAS. HEAD must also report `application/zip`.
 
 The core deliberately does not prove bucket ownership, CloudFormation stack
 binding, IAM policy, service-role association, or runtime template ownership;
