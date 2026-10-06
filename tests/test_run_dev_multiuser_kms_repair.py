@@ -120,6 +120,23 @@ def test_kms_alias_accepts_only_enabled_same_account_aws_managed_key():
             repair._kms_alias({"kms": Client(changed)}, account=ACCOUNT)
 
 
+def test_metadata_key_read_never_uses_predefined_alias_or_other_key():
+    class Client:
+        def __init__(self): self.calls = []
+        def describe_key(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"KeyMetadata": {"Arn": KEY, "KeyManager": "AWS", "KeyState": "Enabled",
+                "KeySpec": "SYMMETRIC_DEFAULT", "KeyUsage": "ENCRYPT_DECRYPT", "Origin": "AWS_KMS",
+                "MultiRegion": False, "Enabled": True}, "ResponseMetadata": {"HTTPStatusCode": 200}}
+    client = Client()
+    assert repair._kms_alias({"kms": client}, account=ACCOUNT, bound_key=KEY) == KEY
+    assert client.calls == [{"KeyId": KEY}]
+    for wrong in ("alias/aws/lambda", KEY.replace(ACCOUNT, "210987654321"), True):
+        with pytest.raises(repair.KmsRepairError):
+            repair._kms_alias({"kms": client}, account=ACCOUNT, bound_key=wrong)
+    assert len(client.calls) == 1
+
+
 def test_role_templates_change_only_cfn_role_and_boundary():
     bindings = _bindings()
     prior = repair._role_templates(bindings, pool_id=POOL, key_arn=None)

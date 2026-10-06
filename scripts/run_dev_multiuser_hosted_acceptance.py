@@ -819,7 +819,10 @@ def run_hosted_acceptance(
         if verify_role_pair({"iam": clients["iam"]}, role_template, account=auth["account"], roles_stack_arn=roles_stack, original_creation_run_id=roles_run).get("success") is not True:
             _fail("roles_readback_failed")
         if pair_recovery:
-            key_result = clients["kms"].describe_key(KeyId="alias/aws/lambda")
+            key_result = clients["kms"].describe_key(
+                KeyId=(role_values["lambda_environment_key_arn"]
+                       if role_values.get("lambda_environment_key_describe") is True
+                       else "alias/aws/lambda"))
             metadata = key_result.get("KeyMetadata", {})
             if (not _ok_response(key_result) or metadata.get("Arn") != role_values["lambda_environment_key_arn"]
                 or metadata.get("AWSAccountId") != auth["account"] or metadata.get("KeyManager") != "AWS"

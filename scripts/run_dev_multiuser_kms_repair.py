@@ -291,12 +291,19 @@ def _app_snapshot(clients: Mapping[str, Any], *, account: str, app_stack_arn: st
     return template, api_id, pool_id
 
 
-def _kms_alias(clients: Mapping[str, Any], *, account: str) -> str:
-    response = clients["kms"].describe_key(KeyId="alias/aws/lambda")
+def _kms_alias(clients: Mapping[str, Any], *, account: str, bound_key: str | None = None) -> str:
+    if bound_key is not None:
+        match = _KMS_ARN.fullmatch(bound_key) if type(bound_key) is str else None
+        if match is None or match.group(1) != account:
+            raise KmsRepairError("kms_key_invalid")
+    # DescribeKey on a predefined alias can initialize an AWS-managed key.
+    # Metadata repair therefore reads only the already accepted exact key ARN.
+    response = clients["kms"].describe_key(KeyId=bound_key or "alias/aws/lambda")
     metadata = response.get("KeyMetadata") if _http_ok(response) else None
     arn = metadata.get("Arn") if isinstance(metadata, Mapping) else None
     match = _KMS_ARN.fullmatch(arn) if type(arn) is str else None
     if (match is None or match.group(1) != account
+        or bound_key is not None and arn != bound_key
         or metadata.get("KeyManager") != "AWS" or metadata.get("KeyState") != "Enabled"
         or metadata.get("KeySpec") != "SYMMETRIC_DEFAULT" or metadata.get("KeyUsage") != "ENCRYPT_DECRYPT"
         or metadata.get("Origin") != "AWS_KMS" or metadata.get("MultiRegion") is not False
@@ -423,7 +430,9 @@ def run_kms_repair_step(
         event_key = _extract_event_key(events_response.get("StackEvents"), old_token=old_token,
                                        app_stack_arn=app_stack_arn, account=account_id,
                                        describe_key=describe_key_repair)
-        key_arn = _kms_alias(metered, account=account_id)
+        key_arn = _kms_alias(metered, account=account_id,
+                             **({"bound_key": role_bindings["lambda_environment_key_arn"]}
+                                if describe_key_repair else {}))
         if key_arn != event_key:
             raise KmsRepairError("kms_key_mismatch")
         if describe_key_repair and role_bindings["lambda_environment_key_arn"] != key_arn:
