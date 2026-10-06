@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import copy
+from collections import OrderedDict
 
 import pytest
 
@@ -166,6 +167,12 @@ def test_full_app_update_has_one_write_and_same_token_completion_proof():
     _complete_readback(cfn)
     assert core.run("readback") == {"ok": True, "phase": "accepted"}
     assert clients["sts"].calls == 3
+
+
+def test_sdk_ordered_template_mapping_is_normalized_without_relaxing_shape():
+    core, cfn, _ = _core()
+    cfn.current = OrderedDict((key, value) for key, value in cfn.current.items())
+    assert core.run("preflight") == {"ok": True, "phase": "ready"}
 
 
 def test_unknown_update_response_is_permanently_fenced_without_retry():

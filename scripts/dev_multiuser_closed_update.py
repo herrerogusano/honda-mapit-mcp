@@ -12,6 +12,7 @@ import json
 import math
 import re
 import time
+from collections.abc import Mapping
 
 REGION = "eu-west-1"
 APP = "honda-mapit-mcp-dev-retained"
@@ -110,7 +111,18 @@ class ClosedDevUpdate:
     def _template(self):
         body = self.clients["cloudformation"].get_template(StackName=self.stack, TemplateStage="Original")["TemplateBody"]
         if isinstance(body, str):
-            body = json.loads(body)
+            try:
+                body = json.loads(body)
+            except Exception:
+                raise ClosedUpdateError("template_invalid") from None
+        elif isinstance(body, Mapping) and type(body) is not dict:
+            # Botocore may return an OrderedDict-like mapping.  Normalize it
+            # through strict JSON so downstream equality remains plain-data
+            # and rejects non-JSON values without accepting arbitrary objects.
+            try:
+                body = json.loads(json.dumps(body, allow_nan=False, separators=(",", ":")))
+            except Exception:
+                raise ClosedUpdateError("template_invalid") from None
         if type(body) is not dict:
             raise ClosedUpdateError("template_invalid")
         return body
