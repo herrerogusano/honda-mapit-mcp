@@ -35,7 +35,7 @@ from scripts.dev_multiuser_test_users import (
     PkceChallenge,
     new_pkce_challenge,
 )
-from scripts.dev_multiuser_cookie_policy import CookiePolicyError, apply_set_cookie_updates
+from scripts.dev_multiuser_cookie_policy import BoundedCookieStore, CookiePolicyError
 
 
 MAX_HTML_BYTES = 512 * 1024
@@ -325,6 +325,7 @@ class ManagedLoginClient:
             _fail("configuration_invalid")
         self.domain, self.client_id, self.callback_url = domain, client_id, callback_url
         self.resource, self.required_scope, self.transport, self.timeout = resource, required_scope, transport, float(timeout)
+        self._cookie_store = BoundedCookieStore(domain)
         self._cookies: dict[str, str] = {}
         self.calls = 0
         self._stage: str | None = None
@@ -342,23 +343,44 @@ class ManagedLoginClient:
         finally:
             self._stage = previous
 
-    def _cookies_header(self) -> str | None:
-        return "; ".join(f"{key}={value}" for key, value in self._cookies.items()) or None
+    def _cookies_header(self, url: str | None = None) -> str | None:
+        try:
+            target = url or f"https://{self.domain}/"
+            value = self._cookie_store.header(target)
+            self._cookies.clear()
+            self._cookies.update(self._cookie_store.values(target))
+            return value
+        except Exception:
+            _fail("cookie_invalid")
 
     def _record_cookies(self, response: HttpResponse) -> None:
-        values = [value.strip() for value in response.set_cookies]
-        if not values:
-            values = [value.strip() for key, value in response.headers.items() if key.casefold() == "set-cookie"]
         try:
-            apply_set_cookie_updates(self._cookies, values)
-        except CookiePolicyError:
+            raw_values = response.set_cookies
+            if type(raw_values) is not tuple or len(raw_values) > 32:
+                raise CookiePolicyError("cookie_headers_invalid")
+            if any(type(value) is not str for value in raw_values):
+                raise CookiePolicyError("cookie_header_invalid")
+            values = list(raw_values)
+            if not values:
+                values = []
+                for index, (key, value) in enumerate(response.headers.items()):
+                    if index >= 33:
+                        raise CookiePolicyError("cookie_headers_invalid")
+                    if key.casefold() == "set-cookie":
+                        if type(value) is not str:
+                            raise CookiePolicyError("cookie_header_invalid")
+                        values.append(value)
+            self._cookie_store.update(response.url, values)
+            self._cookies.clear()
+            self._cookies.update(self._cookie_store.values(response.url))
+        except Exception:
             _fail("cookie_invalid")
 
     def _request(self, method: str, url: str, *, body: bytes | None = None, content_type: str | None = None) -> HttpResponse:
         headers = {"Accept": "text/html,application/json", "Cache-Control": "no-store"}
         if content_type:
             headers["Content-Type"] = content_type
-        cookie = self._cookies_header()
+        cookie = self._cookies_header(url)
         if cookie:
             headers["Cookie"] = cookie
         self.calls += 1

@@ -177,10 +177,34 @@ operation/token bound to both historical journals and the new source/window,
 and stop on an ambiguous write or failed login. Offline review and fresh CI
 are prerequisites, not evidence that this new live allowance has been used.
 
-The diagnostic, narrow explicit cookie-deletion compatibility, and separate
+The diagnostic, bounded standards-based cookie compatibility, and separate
 one-shot reset recovery passed independent offline review. The integrated
 checkpoint is 3,347 passing tests, twelve environment skips, compilation and
 model-free evaluation 12/12. CLI reset opt-in requires both historical journals;
 every consumed reset phase is terminal for re-entry because credentials/tokens
 are memory-only. This checkpoint is preparation, not another live login or a
 hosted acceptance receipt. See docs/dev-multiuser-cookie-clear-hypothesis.md.
+
+The newly authorized reset was consumed on develop `064e231`, after all eight
+source checks and fresh protection checks passed. The same A reset was
+acknowledged and its confirmed identity read back; login then stopped at
+`login_post` with `cookie_invalid`. This establishes a local cookie-processing
+failure, not which cookie attribute failed or successful authentication. B
+remained pending; publication, runtime, tenant writes and opening did not run.
+The final immutable reset journal is terminal (`login_failed`). Four bounded
+read-only identity/app/API/Lambda checks confirmed eleven setup resources,
+API disabled and reservation zero. Do not repeat this reset. A standards-based
+cookie correction may be reviewed offline; another live reset requires a new
+explicit allowance, not an extension of either consumed journal/window.
+The owner subsequently granted one such new attempt, after standards-based
+cookie repair, independent review and fresh CI. Its latest-confirmed input must
+be the consumed `064e231` attempt's standard user journal; all earlier reset
+journals remain immutable and terminal. This new allowance is not yet consumed.
+
+The standards-based cookie increment passed independent offline review and
+37 focused tests. It uses a memory-only native cookie jar with exact HTTPS
+host/port fencing, domain/path/secure/expiry rules, 32-cookie/header limits,
+4 KiB per header/value and 16 KiB outgoing header cap. Foreign cookies are
+ignored rather than stored/sent; control characters and malformed/oversized
+inputs fail with a fixed category. This does not loosen PKCE, CSRF, redirect,
+JWT or user bindings and does not establish a successful live login.
