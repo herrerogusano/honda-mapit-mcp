@@ -46,6 +46,23 @@ compilation/model-free evaluation 12/12 and actual network-denied SDK client
 construction passed. No IAM role or service-role association, runtime ZIP,
 controls stack, dev delivery workflow or hosted multiuser activation follows
 from this acceptance; full dev CD remains in progress. Main/prod is unchanged.
+Subsequently, eight develop checks on 4ae5408 (CI 37473406548) passed.
+The artifact verifier completed fourteen exact readbacks with read-only client
+facades, preserving the original creation binding and storing its verification
+source separately. Its private receipt is accepted; no runtime ZIP was uploaded.
+After fresh GitHub controls and four application resource-binding reads, a new
+immutable IAM authorization fenced seven preflight reads, one acknowledged
+CreateStack and seventeen complete readback calls. The separate retained-dev
+four-resource CD role stack is accepted. That creation write is consumed and
+must never replay. Shared provider/identity-only roles, prod, owner/MFA and
+quota 10 are unchanged. No web-identity exchange, GitHub secret, application
+CFN-role association, controls stack or delivery activation occurred. The
+separate controls and closed-delivery drafts still require independent/source
+acceptance and fresh live gates; full dev CD remains IN PROGRESS.
+The separate controls coordinator/runner is subsequently independently
+accepted offline with 36 focused tests, strict resolved IAM/EventBridge
+comparisons and named-IAM acknowledgement validation. No controls AWS write
+has occurred; this does not accept the separate delivery preflight prototype.
 
 On 2026-10-05 the user explicitly authorized PR promotion to develop then main
 and preparation/creation of the narrowly scoped AWS OIDC connection for CD in

@@ -1,6 +1,21 @@
 # Retained-dev IAM bootstrap
 
-Status: independently accepted offline; no role stack has been created by this operator.
+Status: independently accepted offline, then created once and accepted live.
+
+On 2026-10-06, exact develop source
+`4ae54080636428e5b8a8dad13bd51b40143c14fd` passed eight source CI jobs
+(run `37473406548`) and fresh repository/dev-protection checks. Four bounded
+application resource-binding reads and the strict factory validated the private
+inputs, including the accepted artifact receipt. A fresh private authorization
+and journal then fenced seven preflight reads, one acknowledged CreateStack
+and seventeen complete readback calls. The new four-resource role stack and
+both exact policies/boundaries are accepted. Its original source/window/run/
+template/token are immutable and the creation write is consumed.
+
+The existing shared OIDC provider and identity-only roles were unchanged.
+No STS web-identity exchange, GitHub secret binding, persistent application
+service-role association, runtime publication or endpoint opening occurred.
+This is accepted IAM configuration, not completed dev CD.
 
 The injected coordinator derives the unchanged retained-dev role factory from
 strict private bindings. It creates only the separate
@@ -25,7 +40,7 @@ tags are unique/order-independent; only exact factory tags and exact optional
 operator/CloudFormation metadata are allowed. Journals reject impossible
 states; no write or success receipt may escape the authorized deadline.
 
-Live prerequisites remain fresh independently accepted artifact/application
+Future live delivery prerequisites remain fresh independently accepted artifact/application
 bindings, source CI/protections, exact private identity provenance, cost/scope
 and one new journal. No production workflow, existing identity role/secret,
 MFA, quota, MAPIT operation, runtime publication or endpoint activation is
