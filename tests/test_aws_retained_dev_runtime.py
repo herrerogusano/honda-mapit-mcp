@@ -4,6 +4,8 @@ import copy
 
 import pytest
 
+from mapit.aws_dev_runtime import cognito_dev_policy
+
 from scripts.build_aws_retained_dev_runtime import (
     REGION,
     RUNTIME_HANDLER,
@@ -75,6 +77,26 @@ def test_runtime_role_remains_logs_only():
         "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
         "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/honda-mapit-mcp-dev-retained-handler:*"},
     }]
+
+
+def test_generated_environment_is_accepted_by_real_dev_runtime_policy():
+    variables = _template()["Resources"]["McpHandler"]["Properties"]["Environment"]["Variables"]
+    policy = cognito_dev_policy(
+        user_pool_id=variables["MAPIT_COGNITO_USER_POOL_ID"],
+        api_id=variables["MAPIT_API_ID"],
+        client_id=variables["MAPIT_COGNITO_CLIENT_ID"],
+        owner_subject=variables["MAPIT_OWNER_SUBJECT"],
+    )
+    assert policy.environment == "dev"
+    assert policy.api_host == f"{API_ID}.execute-api.eu-west-1.amazonaws.com"
+    assert "AWS_REGION" not in variables
+
+
+def test_invalid_fixture_client_cannot_produce_a_template(monkeypatch):
+    from scripts import build_aws_retained_dev_runtime as runtime
+    monkeypatch.setattr(runtime, "SYNTHETIC_CLIENT_ID", "synthetic-invalid-client")
+    with pytest.raises(RetainedDevRuntimeTemplateError, match="^synthetic_fixture_invalid$"):
+        _template()
 
 
 def test_bucket_is_account_and_region_derived():

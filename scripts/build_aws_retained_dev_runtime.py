@@ -17,6 +17,8 @@ import copy
 import re
 from typing import Any
 
+from mapit.aws_dev_runtime import cognito_dev_policy
+
 from scripts.build_aws_retained_dev import (
     CONDITION_NAME,
     EXPECTED_RESOURCES,
@@ -28,7 +30,7 @@ from scripts.build_aws_retained_dev import (
 
 RUNTIME_HANDLER = "mapit.aws_dev_entrypoint.handler"
 SYNTHETIC_USER_POOL_ID = "eu-west-1_SYNTHETICDEV"
-SYNTHETIC_CLIENT_ID = "synthetic-retained-dev-client"
+SYNTHETIC_CLIENT_ID = "SyntheticRetainedDevClient"
 SYNTHETIC_OWNER_SUBJECT = "00000000-0000-4000-8000-000000000001"
 SYNTHETIC_EXECUTION_START = 1_893_456_000
 SYNTHETIC_EXECUTION_END = 1_893_456_300
@@ -81,6 +83,13 @@ def _validate_inputs(
         raise RetainedDevRuntimeTemplateError("execution_window_invalid")
     if _POOL_ID.fullmatch(SYNTHETIC_USER_POOL_ID) is None or _OWNER_UUID.fullmatch(SYNTHETIC_OWNER_SUBJECT) is None:
         raise RetainedDevRuntimeTemplateError("synthetic_fixture_invalid")
+    try:
+        cognito_dev_policy(
+            user_pool_id=SYNTHETIC_USER_POOL_ID, api_id=api_id,
+            client_id=SYNTHETIC_CLIENT_ID, owner_subject=SYNTHETIC_OWNER_SUBJECT,
+        )
+    except Exception:
+        raise RetainedDevRuntimeTemplateError("synthetic_fixture_invalid") from None
 
 
 def _validate_base(template: dict[str, Any]) -> None:
