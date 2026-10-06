@@ -104,7 +104,7 @@ def test_denied_response_retains_only_status_without_reading_private_body(tmp_pa
     response = _Response(b"private-provider-payload", status=403)
     reader, made = _reader(tmp_path, response)
     with pytest.raises(SourceTransportError) as raised:
-        reader.remote("branches/develop/protection")
+        reader.diagnostic_remote("branches/develop/protection")
     assert raised.value.http_status == 403
     assert str(raised.value) == "source_transport_failed"
     assert response.body == b"private-provider-payload"
@@ -152,6 +152,9 @@ def test_routes_are_allowlisted_and_ids_are_bounded(tmp_path: Path):
     reader, _ = _reader(tmp_path, _Response(b"{}"))
     assert reader._route("ref/heads/develop").endswith("/git/ref/heads/develop")
     assert reader._route("actions/runs/123/jobs").endswith("/actions/runs/123/jobs?per_page=100")
+    with pytest.raises(SourceTransportError):
+        reader._route("branches/develop/protection")
+    assert reader._route("branches/develop/protection", diagnostic=True).endswith("/branches/develop/protection")
     for endpoint in (
         "users/other",
         "actions/runs/0",

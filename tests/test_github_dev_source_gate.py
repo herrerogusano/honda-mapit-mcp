@@ -62,7 +62,9 @@ def _documents():
     return {
         "repository": {"full_name": REPOSITORY, "id": REPOSITORY_ID, "owner": {"login": "herrerogusano", "id": OWNER_ID}},
         "ref/heads/develop": {"ref": "refs/heads/develop", "object": {"sha": SHA}},
-        f"actions/runs/{RUN_ID}": {"id": RUN_ID, "status": "completed", "conclusion": "success", "head_sha": SHA, "head_branch": "develop", "event": "push", "workflow_id": 9911},
+        f"actions/runs/{RUN_ID}": {"id": RUN_ID, "status": "completed", "conclusion": "success", "head_sha": SHA, "head_branch": "develop", "event": "push", "workflow_id": 9911,
+            "repository": {"full_name": REPOSITORY, "id": REPOSITORY_ID},
+            "head_repository": {"full_name": REPOSITORY, "id": REPOSITORY_ID}},
         "actions/workflows/9911": {"id": 9911, "name": "CI", "path": ".github/workflows/ci.yml", "state": "active"},
         f"actions/runs/{RUN_ID}/jobs": {"total_count": 8, "jobs": jobs},
         "branches/develop/protection": _branch_protection(),
@@ -97,7 +99,6 @@ def test_source_gate_success_is_redacted_and_read_only():
     (lambda docs: docs[f"actions/runs/{RUN_ID}"]["conclusion"] == "failure", "ci_readback_failed"),
     (lambda docs: docs["actions/workflows/9911"].update(state="disabled"), "workflow_readback_failed"),
     (lambda docs: docs[f"actions/runs/{RUN_ID}/jobs"]["jobs"].pop(), "ci_jobs_mismatch"),
-    (lambda docs: docs["environments/dev"].update(can_admins_bypass=True), "administrator_bypass_mismatch"),
 ])
 def test_source_gate_rejects_readback_mutations(mutation, category):
     docs = _documents()
@@ -119,6 +120,35 @@ def test_dirty_checkout_stops_before_github_reads():
     }
     result = validate_source_gate(_binding(), git_reader=lambda command: git[tuple(command)], github_reader=lambda endpoint: calls.append(endpoint))
     assert result["category"] == "local_checkout_dirty" and calls == []
+
+
+def test_source_gate_never_requests_administration_or_environment_routes():
+    calls = []
+    result = validate_source_gate(
+        _binding(),
+        git_reader=lambda command: {
+            ("git", "rev-parse", "--verify", "HEAD"): (0, SHA + "\n"),
+            ("git", "branch", "--show-current"): (0, "develop\n"),
+            ("git", "status", "--porcelain=v1", "--untracked-files=all"): (0, ""),
+        }[tuple(command)],
+        github_reader=lambda endpoint: (calls.append(endpoint), _documents()[endpoint])[1],
+    )
+    assert result["ok"] is True
+    assert not any("protection" in endpoint or "environment" in endpoint for endpoint in calls)
+
+
+@pytest.mark.parametrize("field", ["repository", "head_repository"])
+def test_ci_run_rejects_foreign_repository_projection(field):
+    documents = _documents()
+    documents[f"actions/runs/{RUN_ID}"][field] = {"full_name": "other/project", "id": REPOSITORY_ID}
+    assert _run(documents)["category"] == "ci_readback_failed"
+
+
+@pytest.mark.parametrize("value", [True, 1.0, "7654321"])
+def test_ci_run_repository_projection_id_is_strict_positive_integer(value):
+    documents = _documents()
+    documents[f"actions/runs/{RUN_ID}"]["repository"]["id"] = value
+    assert _run(documents)["category"] == "ci_readback_failed"
 
 
 @pytest.mark.parametrize("field,value", [("branch", "main"), ("readonly", False), ("source_sha", "0" * 40), ("repository", "evil/example")])

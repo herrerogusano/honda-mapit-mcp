@@ -861,3 +861,21 @@ incrementally, especially:
 
 Distinguish confirmed facts, evidence found in frontend/code, hypotheses, and
 open questions. Do not invent capabilities or brute-force endpoints.
+
+On 2026-10-06 the owner decided that the dev source gate follows the existing
+production enforcement boundary. `validate_source_gate` therefore reads only
+the fixed repository, `develop` ref, bound CI run/workflow/jobs, and clean
+local source; it does not request branch-protection, environment, or
+administrator-bypass routes. Those controls remain enforced by GitHub and are
+not silently reimplemented by the gate. The normal source transport rejects
+administration routes; the separate diagnostic probe retains an explicit
+diagnostic-only adapter for capability checks. The gate remains credential-free
+apart from its injected temporary read token, uses direct TLS and bounded
+reads, and performs no writes, workflow activation, deployment, AWS operation,
+or production change. Foreign workflow-run repository projections are
+rejected. This is a source-gate parity increment, not a claim that continuous
+delivery is complete.
+The obsolete automatic protection-permission diagnostic workflow was removed;
+its historical results and separately callable read-only code remain in Git.
+The previous proposed GitHub App gate is superseded; do not create/install an
+App or upload a personal token as part of this dev source gate.

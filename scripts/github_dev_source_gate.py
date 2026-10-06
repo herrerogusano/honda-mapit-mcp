@@ -14,13 +14,7 @@ import math
 import re
 from typing import Any
 
-from scripts.github_cd_protections import (
-    REPOSITORY,
-    REQUIRED_CHECKS,
-    validate_admin_bypass_disabled,
-    validate_branch_protection_readback,
-    validate_environment_readback,
-)
+from scripts.github_cd_protections import REPOSITORY, REQUIRED_CHECKS
 
 OWNER = "herrerogusano"
 BRANCH = "develop"
@@ -38,8 +32,7 @@ class SourceGateError(ValueError):
     _CATEGORIES = frozenset({
         "binding_invalid", "local_checkout_invalid", "local_checkout_dirty",
         "repository_readback_failed", "branch_head_mismatch", "ci_readback_failed",
-        "workflow_readback_failed", "ci_jobs_mismatch", "branch_protection_mismatch",
-        "environment_protection_mismatch", "administrator_bypass_mismatch",
+        "workflow_readback_failed", "ci_jobs_mismatch",
         "call_budget_exhausted", "read_failed", "source_gate_internal_error",
     })
 
@@ -166,7 +159,7 @@ def validate_source_gate(
     git_reader: Callable[[list[str]], Any],
     github_reader: Callable[[str], Any],
 ) -> dict[str, Any]:
-    """Run the bounded, read-only source/protection gate."""
+    """Run the bounded, read-only source and CI gate."""
     try:
         binding = SourceGateBinding.from_payload(binding_payload)
         reader = _Reader(git_reader, github_reader)
@@ -198,6 +191,18 @@ def validate_source_gate(
             or type(run.get("workflow_id")) is not int or run.get("workflow_id") <= 0
         ):
             raise SourceGateError("ci_readback_failed")
+        # A run is accepted only when both GitHub repository projections bind
+        # to the fixed repository.  Without this check a foreign workflow run
+        # could satisfy the SHA/check-name tests while supplying its own CI.
+        for key in ("repository", "head_repository"):
+            projection = run.get(key)
+            if (
+                not isinstance(projection, Mapping)
+                or projection.get("full_name") != REPOSITORY
+                or not _positive_id(projection.get("id"))
+                or projection.get("id") != binding.repository_id
+            ):
+                raise SourceGateError("ci_readback_failed")
 
         workflow = reader.remote(f"actions/workflows/{run['workflow_id']}")
         if not _positive_id(workflow.get("id")) or workflow.get("id") != run["workflow_id"] or workflow.get("name") != WORKFLOW_NAME or workflow.get("path") != WORKFLOW_PATH or workflow.get("state") != "active":
@@ -206,15 +211,6 @@ def validate_source_gate(
         if not _strict_jobs(jobs, binding.source_sha):
             raise SourceGateError("ci_jobs_mismatch")
 
-        branch_protection = reader.remote("branches/develop/protection")
-        if not validate_branch_protection_readback(BRANCH, branch_protection):
-            raise SourceGateError("branch_protection_mismatch")
-        environment = reader.remote("environments/dev")
-        branch_rules = reader.remote("environments/dev/deployment-branch-policy")
-        if not validate_environment_readback(ENVIRONMENT, binding.owner_id, environment, branch_rules):
-            raise SourceGateError("environment_protection_mismatch")
-        if not validate_admin_bypass_disabled(environment.get("can_admins_bypass")):
-            raise SourceGateError("administrator_bypass_mismatch")
         return {"ok": True, "category": "source_gate_verified", "ci_jobs": len(REQUIRED_CHECKS), "read_only": True}
     except SourceGateError as exc:
         return {"ok": False, "category": exc.category, "read_only": True}

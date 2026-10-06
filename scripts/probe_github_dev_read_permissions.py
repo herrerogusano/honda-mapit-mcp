@@ -31,13 +31,17 @@ def run(environment: Mapping[str, str], *, root: Path, transport_factory=SourceR
         reader = transport_factory(environment.get("GH_TOKEN"), root)
         result["context_verified"] = True
         values = {}
+        # Protection endpoints are intentionally available only through the
+        # separate diagnostic capability.  The normal source gate's reader
+        # cannot request administration/environment routes.
+        remote = getattr(reader, "diagnostic_remote", reader.remote)
         for name, endpoint in (
             ("branch", "branches/develop/protection"),
             ("environment", "environments/dev"),
             ("branch_policy", "environments/dev/deployment-branch-policy"),
         ):
             try:
-                value = reader.remote(endpoint)
+                value = remote(endpoint)
                 if isinstance(value, dict):
                     values[name] = value
                     result[name + "_readable"] = True

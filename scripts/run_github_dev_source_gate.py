@@ -1,4 +1,4 @@
-"""Read-only entrypoint for an exact retained-dev CI/source protection check."""
+"""Read-only entrypoint for an exact retained-dev CI/source check."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
