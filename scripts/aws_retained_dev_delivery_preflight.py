@@ -7,6 +7,8 @@ receipts and never retained in the journal.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import json
 import math
@@ -16,7 +18,11 @@ from urllib.parse import unquote_to_bytes
 from typing import Any, Callable
 
 from scripts.cd_retained_dev_delivery_contract import RetainedDevDeliveryBinding, DeliveryContractError, _thaw
-from scripts.aws_retained_dev_controls_bootstrap import _resolve_internal_template
+from scripts.aws_retained_dev_controls_bootstrap import (
+    _expected_physical,
+    _expected_service_arns,
+    _resolve_internal_template,
+)
 from scripts.aws_retained_dev_delivery_update import RetainedDevCreationTagBinding, _lambda_tags_equal
 
 REGION = "eu-west-1"
@@ -41,7 +47,7 @@ _SDK_MODEL_SPECS = {
         "get_bucket_encryption": ("GetBucketEncryption", {"Bucket", "ExpectedBucketOwner"}, {"ServerSideEncryptionConfiguration"}),
         "get_bucket_ownership_controls": ("GetBucketOwnershipControls", {"Bucket", "ExpectedBucketOwner"}, {"OwnershipControls"}),
         "get_bucket_versioning": ("GetBucketVersioning", {"Bucket", "ExpectedBucketOwner"}, {"Status"}),
-        "get_lifecycle_configuration": ("GetBucketLifecycleConfiguration", {"Bucket", "ExpectedBucketOwner"}, {"Rules"}),
+        "get_bucket_lifecycle_configuration": ("GetBucketLifecycleConfiguration", {"Bucket", "ExpectedBucketOwner"}, {"Rules"}),
         "get_bucket_policy_status": ("GetBucketPolicyStatus", {"Bucket", "ExpectedBucketOwner"}, {"PolicyStatus"}),
         "get_bucket_tagging": ("GetBucketTagging", {"Bucket", "ExpectedBucketOwner"}, {"TagSet"}),
         "get_bucket_policy": ("GetBucketPolicy", {"Bucket", "ExpectedBucketOwner"}, {"Policy"}),
@@ -84,6 +90,158 @@ _PAGINATED_READS = frozenset({
     ("iam", "list_attached_role_policies"),
 })
 
+_STACK_TAG_SPECS = {
+    "app": (STACK_NAME, "retained-dev"),
+    "artifact": ("honda-mapit-mcp-dev-retained-runtime-artifacts", "retained-dev-artifacts"),
+    "controls": ("honda-mapit-mcp-dev-retained-controls", "retained-dev-controls"),
+}
+
+
+@dataclass(frozen=True)
+class RetainedDevStackCreationTags:
+    """The immutable creation-tag proof for one retained-dev stack.
+
+    The operator run id is read from that stack's original private receipt. It
+    is deliberately not taken from the later delivery binding, whose UUID is a
+    separate operation namespace.
+    """
+
+    stack_kind: str
+    stack_name: str
+    stack_arn: str
+    purpose: str
+    operator_run_id: int
+
+    @classmethod
+    def from_receipt(
+        cls,
+        *,
+        stack_kind: str,
+        stack_arn: str,
+        account_id: str,
+        tags: Any,
+    ) -> "RetainedDevStackCreationTags":
+        if stack_kind not in _STACK_TAG_SPECS or type(stack_arn) is not str or type(account_id) is not str:
+            raise DeliveryPreflightError("creation_tags_invalid")
+        stack_name, purpose = _STACK_TAG_SPECS[stack_kind]
+        expected_prefix = f"arn:aws:cloudformation:{REGION}:{account_id}:stack/{stack_name}/"
+        suffix = stack_arn[len(expected_prefix):] if stack_arn.startswith(expected_prefix) else ""
+        if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", suffix) is None:
+            raise DeliveryPreflightError("creation_tags_invalid")
+        values: dict[str, str] = {}
+        if not isinstance(tags, (list, tuple)):
+            raise DeliveryPreflightError("creation_tags_invalid")
+        for row in tags:
+            if not isinstance(row, Mapping) or set(row) != {"Key", "Value"} or type(row["Key"]) is not str or type(row["Value"]) is not str or row["Key"] in values:
+                raise DeliveryPreflightError("creation_tags_invalid")
+            values[row["Key"]] = row["Value"]
+        if set(values) != {"Project", "Environment", "Purpose", "OperatorRunId"} or values["Project"] != "honda-mapit-mcp" or values["Environment"] != "dev" or values["Purpose"] != purpose or re.fullmatch(r"[1-9][0-9]*", values["OperatorRunId"]) is None:
+            raise DeliveryPreflightError("creation_tags_invalid")
+        operator_run_id = int(values["OperatorRunId"])
+        if str(operator_run_id) != values["OperatorRunId"]:
+            raise DeliveryPreflightError("creation_tags_invalid")
+        return cls(stack_kind, stack_name, stack_arn, purpose, operator_run_id)
+
+    def rows(self) -> list[dict[str, str]]:
+        return [
+            {"Key": "Project", "Value": "honda-mapit-mcp"},
+            {"Key": "Environment", "Value": "dev"},
+            {"Key": "Purpose", "Value": self.purpose},
+            {"Key": "OperatorRunId", "Value": str(self.operator_run_id)},
+        ]
+
+
+def _owned_resource_tags(actual: Any, expected: Any, *, stack: RetainedDevStackCreationTags, logical_id: str) -> bool:
+    """Compare base tags plus only known CFN/creation propagation tags."""
+    if not isinstance(expected, list) or not isinstance(actual, (list, tuple, Mapping)):
+        return False
+    def normalize(value: Any) -> dict[str, str] | None:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str or type(v) is not str for k, v in value.items()):
+                return None
+            return dict(value)
+        result: dict[str, str] = {}
+        for row in value:
+            if not isinstance(row, Mapping) or set(row) not in ({"Key", "Value"}, {"key", "value"}):
+                return None
+            key_name, value_name = ("Key", "Value") if "Key" in row else ("key", "value")
+            if type(row[key_name]) is not str or type(row[value_name]) is not str or row[key_name] in result:
+                return None
+            result[row[key_name]] = row[value_name]
+        return result
+    base = normalize(expected)
+    observed = normalize(actual)
+    if base is None or observed is None:
+        return False
+    allowed = dict(base)
+    allowed.update({
+        "OperatorRunId": str(stack.operator_run_id),
+        "aws:cloudformation:stack-id": stack.stack_arn,
+        "aws:cloudformation:stack-name": stack.stack_name,
+        "aws:cloudformation:logical-id": logical_id,
+    })
+    return set(observed) <= set(allowed) and all(observed.get(key) == value for key, value in base.items()) and all(observed.get(key) == value for key, value in allowed.items() if key in observed)
+
+
+def _resource_rows_match(rows: Any, *, stack_arn: str, stack_name: str, expected_types: Mapping[str, str], physical_ids: Mapping[str, str]) -> bool:
+    if type(rows) is not list or set(physical_ids) != set(expected_types) or len(rows) != len(expected_types):
+        return False
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, Mapping) or type(row.get("LogicalResourceId")) is not str or row["LogicalResourceId"] in seen:
+            return False
+        logical = row["LogicalResourceId"]
+        seen.add(logical)
+        if row.get("ResourceType") != expected_types.get(logical) or row.get("PhysicalResourceId") != physical_ids.get(logical) or row.get("ResourceStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"} or row.get("StackId") != stack_arn or row.get("StackName") != stack_name:
+            return False
+    return seen == set(expected_types)
+
+
+def _stack_events_projection(rows: Any, *, stack_arn: str, stack_name: str) -> bool:
+    """Validate stable event identity while ignoring service timestamps/reasons."""
+    if type(rows) is not list or len(rows) > 64:
+        return False
+    for row in rows:
+        if not isinstance(row, Mapping) or row.get("StackId") != stack_arn or row.get("StackName") not in {None, stack_name}:
+            return False
+        if "Timestamp" in row and not isinstance(row["Timestamp"], (str, datetime)):
+            return False
+        if "EventId" in row and not isinstance(row["EventId"], str):
+            return False
+        if "ResourceStatus" in row and not isinstance(row["ResourceStatus"], str):
+            return False
+    return True
+
+
+def _shutdown_matches(actual: Any, expected: Any, *, account_id: str) -> bool:
+    if not isinstance(actual, Mapping) or not isinstance(expected, Mapping):
+        return False
+    expected_definition = _document(expected.get("DefinitionString"))
+    actual_definition = _document(actual.get("definition"))
+    logging = actual.get("loggingConfiguration")
+    tracing = actual.get("tracingConfiguration")
+    return (
+        actual.get("stateMachineArn") == _expected_service_arns(account_id)["ShutdownStateMachine"]
+        and actual.get("name") == "honda-mapit-mcp-dev-retained-shutdown"
+        and actual.get("status") == "ACTIVE"
+        and actual.get("type") == "STANDARD"
+        and actual.get("roleArn") == _expected_service_arns(account_id)["ShutdownWorkflowRole"]
+        and expected_definition is not None and actual_definition is not None and _same(actual_definition, expected_definition)
+        and isinstance(logging, Mapping) and logging.get("level", logging.get("Level")) == "OFF"
+        and logging.get("includeExecutionData", False) is False and logging.get("destinations", []) == []
+        and isinstance(tracing, Mapping) and tracing.get("enabled", tracing.get("Enabled")) is False
+    )
+
+
+def _rule_matches(actual: Any, expected: Any, *, account_id: str) -> bool:
+    return (
+        isinstance(actual, Mapping) and isinstance(expected, Mapping)
+        and actual.get("Name") == "honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule"
+        and actual.get("Arn") == _expected_service_arns(account_id)["RequestTripwireAlarmRule"]
+        and actual.get("State") == "DISABLED"
+        and _same(_document(actual.get("EventPattern")), expected.get("EventPattern"))
+    )
+
 
 class DeliveryPreflightError(ValueError):
     def __init__(self, category: str):
@@ -94,12 +252,16 @@ class DeliveryPreflightError(ValueError):
 def validate_botocore_models() -> None:
     """Validate operation names and known shapes without constructing a client."""
     try:
+        from botocore import xform_name
         from botocore.session import get_session
         session = get_session()
         service_names = {"sfn": "stepfunctions"}
         for service, operations in _SDK_MODEL_SPECS.items():
-            model = session.get_service_model(service_names.get(service, service))
+            service_name = service_names.get(service, service)
+            model = session.get_service_model(service_name)
             for method, (operation, inputs, outputs) in operations.items():
+                if xform_name(operation) != method:
+                    raise DeliveryPreflightError("sdk_model_invalid")
                 shape = model.operation_model(operation)
                 if not inputs.issubset(shape.input_shape.members) or not outputs.issubset(shape.output_shape.members):
                     raise DeliveryPreflightError("sdk_model_invalid")
@@ -299,7 +461,7 @@ def _expected_cd_role_properties(binding: RetainedDevDeliveryBinding, api_id: st
     }
 
 
-def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
+def _normative_receipts(binding: RetainedDevDeliveryBinding) -> tuple[RetainedDevStackCreationTags, RetainedDevStackCreationTags, RetainedDevStackCreationTags]:
     """Reject self-consistent but non-factory inventory before AWS reads."""
     try:
         from scripts.build_aws_retained_dev_runtime import RUNTIME_HANDLER
@@ -310,15 +472,43 @@ def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
         prior_template_receipt = _thaw(binding.prior_template_receipt)["resource"]
         api = _thaw(binding.api_receipt)["resource"]
         iam = _thaw(binding.iam_receipt)["resource"]
-        creation_tag_binding = RetainedDevCreationTagBinding.from_stack_tags(
-            stack_arn=binding.app_stack_arn,
-            stack_name=STACK_NAME,
+        app_creation = RetainedDevStackCreationTags.from_receipt(
+            stack_kind="app", stack_arn=binding.app_stack_arn, account_id=binding.account_id,
             tags=prior_template_receipt.get("stack_tags"),
+        )
+        artifact_creation = RetainedDevStackCreationTags.from_receipt(
+            stack_kind="artifact", stack_arn=binding.artifact_stack_arn, account_id=binding.account_id,
+            tags=artifact.get("stack_tags"),
+        )
+        controls_creation = RetainedDevStackCreationTags.from_receipt(
+            stack_kind="controls", stack_arn=binding.controls_stack_arn, account_id=binding.account_id,
+            tags=controls.get("stack_tags"),
         )
         expected_controls = build_retained_dev_controls(api["api_id"])
         expected_artifacts = build_retained_dev_artifacts()
+        from scripts.build_aws_retained_dev import build_retained_dev_template
+        expected_app = build_retained_dev_template()
         if not _same(controls.get("template"), expected_controls) or not _same(artifact.get("template"), expected_artifacts):
             raise DeliveryPreflightError("receipt_normative_mismatch")
+        if not _same(prior_template_receipt.get("template"), expected_app):
+            raise DeliveryPreflightError("prior_template_mismatch")
+        if prior_template_receipt.get("role_arn") is not None:
+            raise DeliveryPreflightError("app_stack_mismatch")
+        control_types = {logical: item.get("Type") for logical, item in expected_controls.get("Resources", {}).items() if isinstance(item, Mapping)}
+        artifact_types = {logical: item.get("Type") for logical, item in expected_artifacts.get("Resources", {}).items() if isinstance(item, Mapping)}
+        app_types = {logical: item.get("Type") for logical, item in expected_app.get("Resources", {}).items() if isinstance(item, Mapping)}
+        if not _resource_rows_match(controls.get("resources"), stack_arn=binding.controls_stack_arn, stack_name=controls_creation.stack_name, expected_types=control_types, physical_ids=_expected_physical(binding.account_id)):
+            raise DeliveryPreflightError("controls_readback_mismatch")
+        if not _resource_rows_match(artifact.get("resources"), stack_arn=binding.artifact_stack_arn, stack_name=artifact_creation.stack_name, expected_types=artifact_types, physical_ids={"RuntimeArtifactBucket": binding.artifact_bucket, "RuntimeArtifactBucketPolicy": binding.artifact_bucket}):
+            raise DeliveryPreflightError("artifact_readback_mismatch")
+        app_physical = {
+            "McpApi": api["api_id"], "McpApiStage": "$default",
+            "McpHandlerRole": "honda-mapit-mcp-dev-retained-handler-role",
+            "McpHandlerLogGroup": "/aws/lambda/honda-mapit-mcp-dev-retained-handler",
+            "McpHandler": "honda-mapit-mcp-dev-retained-handler",
+        }
+        if not _resource_rows_match(prior_template_receipt.get("resources"), stack_arn=binding.app_stack_arn, stack_name=app_creation.stack_name, expected_types=app_types, physical_ids=app_physical):
+            raise DeliveryPreflightError("app_resource_mismatch")
         expected_control_roles: dict[str, Mapping[str, Any]] = {}
         for resource in expected_controls.get("Resources", {}).values():
             if isinstance(resource, Mapping) and resource.get("Type") == "AWS::IAM::Role":
@@ -341,7 +531,7 @@ def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
                 or actual_role.get("RoleName") != role_name
                 or actual_role.get("Path") not in {None, "/"}
                 or not _same(_document(actual_role.get("AssumeRolePolicyDocument")), resolved_role.get("AssumeRolePolicyDocument"))
-                or not _tags_equal(observed.get("tags"), resolved_role.get("Tags"))
+                or not _owned_resource_tags(observed.get("tags"), resolved_role.get("Tags"), stack=controls_creation, logical_id=role_name)
                 or not isinstance(expected_policies, list)
                 or observed.get("policy_names") != [item.get("PolicyName") for item in expected_policies]
                 or observed.get("attached_policies") != []
@@ -351,6 +541,45 @@ def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
             expected_inline = {item.get("PolicyName"): item.get("PolicyDocument") for item in expected_policies}
             if not isinstance(inline, Mapping) or set(inline) != set(expected_inline) or any(not _same(_document(inline.get(name)), document) for name, document in expected_inline.items()):
                 raise DeliveryPreflightError("controls_readback_mismatch")
+        service_arns = _expected_service_arns(binding.account_id)
+        shutdown_props = _resolve_internal_template(expected_controls["Resources"]["ShutdownStateMachine"]["Properties"], binding.account_id)
+        shutdown = controls.get("shutdown_state_machine")
+        if not isinstance(shutdown, Mapping):
+            raise DeliveryPreflightError("controls_readback_mismatch")
+        expected_definition = _document(shutdown_props.get("DefinitionString"))
+        actual_definition = _document(shutdown.get("definition"))
+        logging = shutdown.get("loggingConfiguration")
+        tracing = shutdown.get("tracingConfiguration")
+        if (
+            shutdown.get("stateMachineArn") != service_arns["ShutdownStateMachine"]
+            or shutdown.get("name") != "honda-mapit-mcp-dev-retained-shutdown"
+            or shutdown.get("type") != "STANDARD"
+            or shutdown.get("roleArn") != service_arns["ShutdownWorkflowRole"]
+            or expected_definition is None or actual_definition is None or not _same(actual_definition, expected_definition)
+            or not isinstance(logging, Mapping) or logging.get("level", logging.get("Level")) != "OFF"
+            or logging.get("includeExecutionData", False) is not False
+            or logging.get("destinations", []) != []
+            or not isinstance(tracing, Mapping) or tracing.get("enabled", tracing.get("Enabled")) is not False
+        ):
+            raise DeliveryPreflightError("controls_readback_mismatch")
+        expected_rule = _resolve_internal_template(expected_controls["Resources"]["RequestTripwireAlarmRule"]["Properties"], binding.account_id)
+        rule = controls.get("tripwire_rule")
+        if not isinstance(rule, Mapping) or rule.get("Name") != "honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule" or rule.get("Arn") != service_arns["RequestTripwireAlarmRule"] or rule.get("State") != "DISABLED" or not _same(_document(rule.get("EventPattern")), expected_rule.get("EventPattern")):
+            raise DeliveryPreflightError("controls_readback_mismatch")
+        targets = controls.get("tripwire_targets")
+        expected_targets = expected_rule.get("Targets")
+        if type(targets) is not list or type(expected_targets) is not list or len(targets) != 1 or len(expected_targets) != 1:
+            raise DeliveryPreflightError("controls_readback_mismatch")
+        expected_target = expected_targets[0]
+        target = targets[0]
+        if not isinstance(target, Mapping) or target.get("Id") != expected_target.get("Id") or target.get("Arn") != service_arns["ShutdownStateMachine"] or target.get("RoleArn") != service_arns["RequestTripwireEventRole"] or target.get("Input") != "{}" or target.get("RetryPolicy") != expected_target.get("RetryPolicy"):
+            raise DeliveryPreflightError("controls_readback_mismatch")
+        expected_alarm = expected_controls["Resources"]["RequestTripwireAlarm"]["Properties"]
+        alarm = controls.get("tripwire_alarm")
+        if not isinstance(alarm, Mapping) or alarm.get("AlarmName") != "honda-mapit-mcp-dev-retained-request-tripwire" or alarm.get("AlarmArn") != service_arns["RequestTripwireAlarm"] or not _alarm_config_matches(alarm, expected_alarm):
+            raise DeliveryPreflightError("controls_readback_mismatch")
+        if not _owned_resource_tags(controls.get("shutdown_state_machine_tags"), shutdown_props.get("Tags"), stack=controls_creation, logical_id="ShutdownStateMachine") or not _owned_resource_tags(controls.get("tripwire_rule_tags"), expected_rule.get("Tags"), stack=controls_creation, logical_id="RequestTripwireAlarmRule") or not _owned_resource_tags(controls.get("tripwire_alarm_tags"), expected_alarm.get("Tags"), stack=controls_creation, logical_id="RequestTripwireAlarm"):
+            raise DeliveryPreflightError("controls_readback_mismatch")
         bucket = expected_artifacts["Resources"]["RuntimeArtifactBucket"]["Properties"]
         bucket_name = binding.artifact_bucket
         expected_encryption = {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]}
@@ -358,7 +587,7 @@ def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
         expected_policy = {"Version": "2012-10-17", "Statement": [{"Sid": "DenyInsecureTransportForThisBucketOnly", "Effect": "Deny", "Principal": "*", "Action": "s3:*", "Resource": [f"arn:aws:s3:::{bucket_name}", f"arn:aws:s3:::{bucket_name}/*"], "Condition": {"Bool": {"aws:SecureTransport": "false"}}}]}
         expected_tags = [
             {"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"},
-            {"Key": "Purpose", "Value": "retained-dev-artifacts"}, {"Key": "OperatorRunId", "Value": binding.run_id},
+            {"Key": "Purpose", "Value": "retained-dev-artifacts"}, {"Key": "OperatorRunId", "Value": str(artifact_creation.operator_run_id)},
             {"Key": "aws:cloudformation:stack-id", "Value": binding.artifact_stack_arn},
             {"Key": "aws:cloudformation:stack-name", "Value": "honda-mapit-mcp-dev-retained-runtime-artifacts"},
             {"Key": "aws:cloudformation:logical-id", "Value": "RuntimeArtifactBucket"},
@@ -397,7 +626,7 @@ def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
             or not _lambda_tags_equal_for_stack(
                 lambda_receipt.get("tags"), expected_tags,
                 stack_arn=binding.app_stack_arn,
-                creation_tag_binding=creation_tag_binding,
+                creation_tag_binding=RetainedDevCreationTagBinding(stack_arn=binding.app_stack_arn, operator_run_id=app_creation.operator_run_id),
             )
         ):
             raise DeliveryPreflightError("lambda_not_closed")
@@ -411,7 +640,7 @@ def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
         # the CD factory's exact CloudFormation trust/boundary/policy are not
         # caller-selected receipt assertions.
         from scripts.build_aws_retained_dev import build_retained_dev_template
-        app = build_retained_dev_template()
+        app = expected_app
         handler_role = app["Resources"]["McpHandlerRole"]["Properties"]
         controls_shutdown = controls.get("shutdown_state_machine")
         if not isinstance(controls_shutdown, Mapping):
@@ -436,7 +665,10 @@ def _normative_receipts(binding: RetainedDevDeliveryBinding) -> None:
             or iam.get("attached_policy_names") != []
         ):
             raise DeliveryPreflightError("iam_binding_mismatch")
-    except DeliveryPreflightError:
+        return app_creation, artifact_creation, controls_creation
+    except DeliveryPreflightError as exc:
+        if exc.category == "creation_tags_invalid":
+            raise DeliveryPreflightError("receipt_normative_mismatch") from None
         raise
     except Exception:
         raise DeliveryPreflightError("receipt_normative_mismatch") from None
@@ -579,7 +811,7 @@ class RetainedDevDeliveryPreflight:
                 if set(controls["control_roles"]) != set(expected_control_roles):
                     raise DeliveryPreflightError("controls_readback_mismatch")
                 control_events = self._call("cloudformation", "describe_stack_events", StackName=self.binding.controls_stack_arn).get("StackEvents")
-                if not isinstance(control_events, list) or not _same(control_events, controls["stack_events"]): raise DeliveryPreflightError("controls_readback_mismatch")
+                if not _stack_events_projection(control_events, stack_arn=self.binding.controls_stack_arn, stack_name="honda-mapit-mcp-dev-retained-controls"): raise DeliveryPreflightError("controls_readback_mismatch")
                 artifact_stack = self._call("cloudformation", "describe_stacks", StackName=self.binding.artifact_stack_arn).get("Stacks")
                 if type(artifact_stack) is not list or len(artifact_stack) != 1 or not isinstance(artifact_stack[0], Mapping): raise DeliveryPreflightError("artifact_readback_mismatch")
                 artifact = self.binding.artifact_receipt["resource"]
@@ -594,33 +826,38 @@ class RetainedDevDeliveryPreflight:
                     raise DeliveryPreflightError("artifact_factory_invalid") from None
                 if not _same(artifact_template, artifact["template"]) or not _same(artifact_template, expected_artifact_template): raise DeliveryPreflightError("artifact_readback_mismatch")
                 artifact_events = self._call("cloudformation", "describe_stack_events", StackName=self.binding.artifact_stack_arn).get("StackEvents")
-                if not isinstance(artifact_events, list) or not _same(artifact_events, artifact["stack_events"]): raise DeliveryPreflightError("artifact_readback_mismatch")
+                if not _stack_events_projection(artifact_events, stack_arn=self.binding.artifact_stack_arn, stack_name="honda-mapit-mcp-dev-retained-runtime-artifacts"): raise DeliveryPreflightError("artifact_readback_mismatch")
                 artifact_bucket = self.binding.artifact_bucket
-                for method in ("get_bucket_location", "get_public_access_block", "get_bucket_encryption", "get_bucket_ownership_controls", "get_bucket_versioning", "get_lifecycle_configuration", "get_bucket_policy_status", "get_bucket_tagging", "get_bucket_policy"):
+                for method in ("get_bucket_location", "get_public_access_block", "get_bucket_encryption", "get_bucket_ownership_controls", "get_bucket_versioning", "get_bucket_lifecycle_configuration", "get_bucket_policy_status", "get_bucket_tagging", "get_bucket_policy"):
                     response = self._call("s3", method, Bucket=artifact_bucket, ExpectedBucketOwner=self.binding.account_id)
-                    key = {"get_bucket_location": "LocationConstraint", "get_public_access_block": "PublicAccessBlockConfiguration", "get_bucket_encryption": "ServerSideEncryptionConfiguration", "get_bucket_ownership_controls": "OwnershipControls", "get_bucket_versioning": "Status", "get_lifecycle_configuration": "Rules", "get_bucket_policy_status": "PolicyStatus", "get_bucket_tagging": "TagSet", "get_bucket_policy": "Policy"}[method]
-                    expected = {"location": REGION, "public_access_block": artifact["public_access_block"], "encryption": artifact["encryption"], "ownership": artifact["ownership"], "versioning": artifact["versioning"], "lifecycle": artifact["lifecycle"], "policy_status": artifact["policy_status"], "tags": artifact["tags"], "policy": artifact["policy"]}[{"get_bucket_location": "location", "get_public_access_block": "public_access_block", "get_bucket_encryption": "encryption", "get_bucket_ownership_controls": "ownership", "get_bucket_versioning": "versioning", "get_lifecycle_configuration": "lifecycle", "get_bucket_policy_status": "policy_status", "get_bucket_tagging": "tags", "get_bucket_policy": "policy"}[method]]
+                    key = {"get_bucket_location": "LocationConstraint", "get_public_access_block": "PublicAccessBlockConfiguration", "get_bucket_encryption": "ServerSideEncryptionConfiguration", "get_bucket_ownership_controls": "OwnershipControls", "get_bucket_versioning": "Status", "get_bucket_lifecycle_configuration": "Rules", "get_bucket_policy_status": "PolicyStatus", "get_bucket_tagging": "TagSet", "get_bucket_policy": "Policy"}[method]
+                    expected = {"location": REGION, "public_access_block": artifact["public_access_block"], "encryption": artifact["encryption"], "ownership": artifact["ownership"], "versioning": artifact["versioning"], "lifecycle": artifact["lifecycle"], "policy_status": artifact["policy_status"], "tags": artifact["tags"], "policy": artifact["policy"]}[{"get_bucket_location": "location", "get_public_access_block": "public_access_block", "get_bucket_encryption": "encryption", "get_bucket_ownership_controls": "ownership", "get_bucket_versioning": "versioning", "get_bucket_lifecycle_configuration": "lifecycle", "get_bucket_policy_status": "policy_status", "get_bucket_tagging": "tags", "get_bucket_policy": "policy"}[method]]
                     actual_value = _document(response.get(key)) if method == "get_bucket_policy" else response.get(key)
                     if not _same(actual_value, expected): raise DeliveryPreflightError("artifact_readback_mismatch")
                 shutdown = controls["shutdown_state_machine"]
-                actual_shutdown = _without_metadata(self._call("sfn", "describe_state_machine", stateMachineArn=shutdown["stateMachineArn"]))
-                if not _same(actual_shutdown, shutdown): raise DeliveryPreflightError("controls_readback_mismatch")
+                actual_shutdown = _without_metadata(self._call("sfn", "describe_state_machine", stateMachineArn=_expected_service_arns(self.binding.account_id)["ShutdownStateMachine"]))
+                shutdown_props = _resolve_internal_template(expected_control_template["Resources"]["ShutdownStateMachine"]["Properties"], self.binding.account_id)
+                if not _shutdown_matches(actual_shutdown, shutdown_props, account_id=self.binding.account_id): raise DeliveryPreflightError("controls_readback_mismatch")
                 shutdown_tags = self._call("sfn", "list_tags_for_resource", resourceArn=shutdown["stateMachineArn"])
-                if not _same(shutdown_tags.get("tags"), controls["shutdown_state_machine_tags"]): raise DeliveryPreflightError("controls_readback_mismatch")
+                if not _owned_resource_tags(shutdown_tags.get("tags"), shutdown_props.get("Tags"), stack=RetainedDevStackCreationTags.from_receipt(stack_kind="controls", stack_arn=self.binding.controls_stack_arn, account_id=self.binding.account_id, tags=controls["stack_tags"]), logical_id="ShutdownStateMachine"): raise DeliveryPreflightError("controls_readback_mismatch")
                 rule = controls["tripwire_rule"]
-                actual_rule = _without_metadata(self._call("events", "describe_rule", Name=rule["Name"]))
-                if not _same(actual_rule, rule): raise DeliveryPreflightError("controls_readback_mismatch")
+                actual_rule = _without_metadata(self._call("events", "describe_rule", Name="honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule"))
+                expected_rule = _resolve_internal_template(expected_control_template["Resources"]["RequestTripwireAlarmRule"]["Properties"], self.binding.account_id)
+                if not _rule_matches(actual_rule, expected_rule, account_id=self.binding.account_id): raise DeliveryPreflightError("controls_readback_mismatch")
                 rule_tags = self._call("events", "list_tags_for_resource", ResourceARN=rule["Arn"])
-                if not _same(rule_tags.get("Tags"), controls["tripwire_rule_tags"]): raise DeliveryPreflightError("controls_readback_mismatch")
+                control_creation = RetainedDevStackCreationTags.from_receipt(stack_kind="controls", stack_arn=self.binding.controls_stack_arn, account_id=self.binding.account_id, tags=controls["stack_tags"])
+                if not _owned_resource_tags(rule_tags.get("Tags"), expected_rule.get("Tags"), stack=control_creation, logical_id="RequestTripwireAlarmRule"): raise DeliveryPreflightError("controls_readback_mismatch")
                 targets = self._call("events", "list_targets_by_rule", Rule=rule["Name"])
-                if not _same(targets.get("Targets"), controls["tripwire_targets"]): raise DeliveryPreflightError("controls_readback_mismatch")
+                expected_targets = expected_rule.get("Targets")
+                if type(targets.get("Targets")) is not list or type(expected_targets) is not list or len(targets["Targets"]) != 1 or len(expected_targets) != 1 or not _same(targets["Targets"][0], expected_targets[0]): raise DeliveryPreflightError("controls_readback_mismatch")
                 alarm = controls["tripwire_alarm"]
                 alarm_reply = self._call("cloudwatch", "describe_alarms", AlarmNames=[alarm["AlarmName"]])
                 alarms = alarm_reply.get("MetricAlarms")
                 expected_alarm = expected_control_template.get("Resources", {}).get("RequestTripwireAlarm", {}).get("Properties", {})
-                if not isinstance(alarms, list) or len(alarms) != 1 or not _alarm_config_matches(alarms[0], expected_alarm): raise DeliveryPreflightError("controls_readback_mismatch")
+                if not isinstance(alarms, list) or len(alarms) != 1 or not isinstance(alarms[0], Mapping) or alarms[0].get("AlarmArn") != _expected_service_arns(self.binding.account_id)["RequestTripwireAlarm"] or not _alarm_config_matches(alarms[0], expected_alarm): raise DeliveryPreflightError("controls_readback_mismatch")
                 alarm_tags = self._call("cloudwatch", "list_tags_for_resource", ResourceARN=alarm["AlarmArn"])
-                if not _same(alarm_tags.get("Tags"), controls["tripwire_alarm_tags"]): raise DeliveryPreflightError("controls_readback_mismatch")
+                expected_alarm_props = expected_control_template["Resources"]["RequestTripwireAlarm"]["Properties"]
+                if not _owned_resource_tags(alarm_tags.get("Tags"), expected_alarm_props.get("Tags"), stack=control_creation, logical_id="RequestTripwireAlarm"): raise DeliveryPreflightError("controls_readback_mismatch")
                 for role_name, expected_role in controls["control_roles"].items():
                     role_reply = _without_metadata(self._call("iam", "get_role", RoleName=role_name))
                     tags_reply = self._call("iam", "list_role_tags", RoleName=role_name)
@@ -633,7 +870,7 @@ class RetainedDevDeliveryPreflight:
                         or actual_role.get("RoleName") != role_name
                         or actual_role.get("Path") not in {None, "/"}
                         or not _same(_document(actual_role.get("AssumeRolePolicyDocument")), expected_props.get("AssumeRolePolicyDocument"))
-                        or not _tags_equal(tags_reply.get("Tags"), expected_props.get("Tags"))
+                        or not _owned_resource_tags(tags_reply.get("Tags"), expected_props.get("Tags"), stack=control_creation, logical_id=role_name)
                     ):
                         raise DeliveryPreflightError("controls_readback_mismatch")
                     expected_policies = expected_props.get("Policies")

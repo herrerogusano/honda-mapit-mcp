@@ -104,14 +104,17 @@ class SourceReadTransport:
             raise SourceTransportError() from None
 
     @staticmethod
-    def _route(endpoint: str) -> str:
+    def _route(endpoint: str, *, diagnostic: bool = False) -> str:
         fixed = {
             "repository": "",
             "ref/heads/develop": "/git/ref/heads/develop",
-            "branches/develop/protection": "/branches/develop/protection",
-            "environments/dev": "/environments/dev",
-            "environments/dev/deployment-branch-policy": "/environments/dev/deployment-branch-policies?per_page=100",
         }
+        if diagnostic:
+            fixed.update({
+                "branches/develop/protection": "/branches/develop/protection",
+                "environments/dev": "/environments/dev",
+                "environments/dev/deployment-branch-policy": "/environments/dev/deployment-branch-policies?per_page=100",
+            })
         if endpoint in fixed:
             return "/repos/" + REPOSITORY + fixed[endpoint]
         match = re.fullmatch(r"actions/(runs|workflows)/([1-9][0-9]*)(/jobs)?", endpoint)
@@ -119,8 +122,8 @@ class SourceReadTransport:
             raise SourceTransportError()
         return "/repos/" + REPOSITORY + "/" + endpoint + ("?per_page=100" if match[3] else "")
 
-    def remote(self, endpoint: str) -> Any:
-        path = self._route(endpoint)
+    def _remote(self, endpoint: str, *, diagnostic: bool = False) -> Any:
+        path = self._route(endpoint, diagnostic=diagnostic)
         self._call()
         connection = response = None
         try:
@@ -182,6 +185,14 @@ class SourceReadTransport:
                         resource.close()
                     except Exception:
                         pass
+
+    def remote(self, endpoint: str) -> Any:
+        """Read only source/CI data used by the normal promotion gate."""
+        return self._remote(endpoint)
+
+    def diagnostic_remote(self, endpoint: str) -> Any:
+        """Read protection metadata for the separate capability probe only."""
+        return self._remote(endpoint, diagnostic=True)
 
 
 def run_bound_source_gate(binding: dict[str, Any], *, token: str, root: Path) -> dict[str, Any]:

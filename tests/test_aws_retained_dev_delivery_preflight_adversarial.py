@@ -7,9 +7,12 @@ import pytest
 from scripts.aws_retained_dev_delivery_preflight import (
     MAX_CALLS,
     DeliveryPreflightError,
+    RetainedDevStackCreationTags,
     RetainedDevDeliveryPreflight,
     _alarm_config_matches,
     _expected_cd_role_properties,
+    _owned_resource_tags,
+    _resource_rows_match,
 )
 from scripts.aws_retained_dev_controls_bootstrap import _resolve_internal_template
 from scripts.build_aws_retained_dev_support import build_retained_dev_controls
@@ -88,3 +91,33 @@ def test_alarm_normative_check_ignores_only_service_owned_dynamic_fields():
     changed = dict(actual)
     changed["Threshold"] = 101
     assert not _alarm_config_matches(changed, expected)
+
+
+def test_creation_tags_are_receipt_bound_not_delivery_uuid_bound():
+    binding = _binding()
+    stack = RetainedDevStackCreationTags.from_receipt(
+        stack_kind="app",
+        stack_arn=binding.app_stack_arn,
+        account_id=binding.account_id,
+        tags=[
+            {"Key": "Project", "Value": "honda-mapit-mcp"},
+            {"Key": "Environment", "Value": "dev"},
+            {"Key": "Purpose", "Value": "retained-dev"},
+            {"Key": "OperatorRunId", "Value": "7"},
+        ],
+    )
+    assert stack.operator_run_id == 7
+    assert stack.operator_run_id != binding.run_id
+    assert not _owned_resource_tags(
+        [{"Key": "Project", "Value": "honda-mapit-mcp"}],
+        [{"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"}],
+        stack=stack,
+        logical_id="McpHandler",
+    )
+
+
+def test_physical_resource_ids_are_factory_normative_not_receipt_selected():
+    expected_types = {"McpApi": "AWS::ApiGatewayV2::Api"}
+    common = {"LogicalResourceId": "McpApi", "ResourceType": expected_types["McpApi"], "ResourceStatus": "CREATE_COMPLETE", "StackId": "arn:aws:cloudformation:eu-west-1:123456789012:stack/honda-mapit-mcp-dev-retained/11111111-2222-4333-8444-555555555555", "StackName": "honda-mapit-mcp-dev-retained"}
+    assert _resource_rows_match([{**common, "PhysicalResourceId": "a1b2c3d4e5"}], stack_arn=common["StackId"], stack_name=common["StackName"], expected_types=expected_types, physical_ids={"McpApi": "a1b2c3d4e5"})
+    assert not _resource_rows_match([{**common, "PhysicalResourceId": "foreign-api"}], stack_arn=common["StackId"], stack_name=common["StackName"], expected_types=expected_types, physical_ids={"McpApi": "a1b2c3d4e5"})
