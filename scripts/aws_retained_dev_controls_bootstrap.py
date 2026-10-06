@@ -188,7 +188,7 @@ def _resolve_internal_template(value: Any, account: str) -> Any:
     return resolve(value)
 
 
-def _tags_match(value: Any, required: Any, *, stack_id: str, logical_id: str, run_id: int) -> bool:
+def _tags_match(value: Any, required: Any, *, stack_id: str, logical_id: str, run_id: int, lowercase_sdk_shape: bool = False) -> bool:
     """Compare AWS tag lists as unique maps, allowing only exact CFN tags."""
     if not isinstance(required, list) or not isinstance(value, list):
         return False
@@ -199,9 +199,20 @@ def _tags_match(value: Any, required: Any, *, stack_id: str, logical_id: str, ru
         required_map[item["Key"]] = item["Value"]
     actual: dict[str, str] = {}
     for item in value:
-        if not isinstance(item, Mapping) or set(item) != {"Key", "Value"} or type(item.get("Key")) is not str or type(item.get("Value")) is not str or item["Key"] in actual:
+        if not isinstance(item, Mapping):
             return False
-        actual[item["Key"]] = item["Value"]
+        # Step Functions' ListTagsForResource model uses lowercase key/value;
+        # CloudFormation/EventBridge/CloudWatch models use Key/Value.  Accept
+        # only either complete pair and normalize before duplicate checks.
+        if set(item) == {"Key", "Value"}:
+            tag_key, tag_value = item["Key"], item["Value"]
+        elif lowercase_sdk_shape and set(item) == {"key", "value"}:
+            tag_key, tag_value = item["key"], item["value"]
+        else:
+            return False
+        if type(tag_key) is not str or type(tag_value) is not str or tag_key in actual:
+            return False
+        actual[tag_key] = tag_value
     optional = {
         "OperatorRunId": str(run_id),
         "aws:cloudformation:stack-id": stack_id,
@@ -541,7 +552,7 @@ class RetainedDevControlsCoordinator:
         ):
             raise RetainedDevControlsError("stack_readback_mismatch")
         machine_tags = self._call("sfn", "list_tags_for_resource", resourceArn=service_arns["ShutdownStateMachine"])
-        if not _tags_match(machine_tags.get("tags"), expected_machine.get("Tags"), stack_id=stack_id, logical_id="ShutdownStateMachine", run_id=self.run_id):
+        if not _tags_match(machine_tags.get("tags"), expected_machine.get("Tags"), stack_id=stack_id, logical_id="ShutdownStateMachine", run_id=self.run_id, lowercase_sdk_shape=True):
             raise RetainedDevControlsError("stack_readback_mismatch")
         rule_tags = self._call("events", "list_tags_for_resource", ResourceARN=service_arns["RequestTripwireAlarmRule"])
         if not _tags_match(rule_tags.get("Tags"), expected_rule.get("Tags"), stack_id=stack_id, logical_id="RequestTripwireAlarmRule", run_id=self.run_id):
@@ -644,7 +655,7 @@ class RetainedDevControlsCoordinator:
         template_reply = self._call("cloudformation", "get_template", StackName=self.app_stack_id)
         actual = _strict_mapping(template_reply.get("TemplateBody"))
         expected = build_retained_dev_template()
-        if actual is None or actual.get("Conditions") != expected.get("Conditions"):
+        if actual is None or _canonical(actual) != _canonical(expected):
             raise RetainedDevControlsError("binding_invalid")
         actual_resources = actual.get("Resources")
         expected_resources = expected.get("Resources")

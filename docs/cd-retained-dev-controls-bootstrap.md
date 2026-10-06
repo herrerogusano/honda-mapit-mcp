@@ -55,11 +55,17 @@ included in the result projection.
 
 ## Offline verification
 
-The coordinator and runner are independently accepted offline: 36 focused
+The coordinator and runner are independently accepted offline: 40 focused
 synthetic tests pass, including named-IAM capability, resolved CloudFormation
 intrinsics, SDK service names, typed HTTP status, uncertainty and closure
 negatives. This is not live controls acceptance. No controls stack has yet
 been created, and delivery remains in progress.
+
+The subsequent SDK-shape repair recognizes lowercase Step Functions tag
+pairs only at its dedicated readback call, retaining duplicate/unknown-field
+rejection and the uppercase model elsewhere. Bootstrap also requires the
+entire exact initial app template, not a permissive handler-properties subset.
+Offline botocore inspection confirms the lowercase Step Functions tag fields.
 
 The focused synthetic suite is:
 
