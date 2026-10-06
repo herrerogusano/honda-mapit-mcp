@@ -63,6 +63,10 @@ The separate controls coordinator/runner is subsequently independently
 accepted offline with 36 focused tests, strict resolved IAM/EventBridge
 comparisons and named-IAM acknowledgement validation. No controls AWS write
 has occurred; this does not accept the separate delivery preflight prototype.
+Before any controls write, offline SDK inspection identified lowercase
+Step Functions tags. A separate narrow repair is independently accepted with
+40 focused tests; it also binds the entire initial app template. No controls
+write has occurred; fresh repaired-source CI is required before creation.
 
 On 2026-10-05 the user explicitly authorized PR promotion to develop then main
 and preparation/creation of the narrowly scoped AWS OIDC connection for CD in
