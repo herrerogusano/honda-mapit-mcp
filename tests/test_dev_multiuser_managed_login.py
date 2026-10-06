@@ -42,12 +42,13 @@ class FlowTransport:
             self.state = parse_qs(parsed.query)["state"][0]
             return _response(302, url, Location=("https://evil.example/login" if self.external else f"https://{DOMAIN}/login?state={self.state}"), **{"Set-Cookie": "session=opaque; Path=/"})
         if method == "GET" and parsed.path == "/login":
-            html = f'''<html><form method="post" action="/login"><input type="hidden" name="csrf" value="csrf-value"><input type="hidden" name="state" value="{self.state}"><input type="text" name="username"><input type="password" name="password"><button type="submit">Sign in</button></form></html>'''.encode()
+            html = f'''<html><form method="post" action="/login"><input type="hidden" name="csrf" value="csrf-value"><input type="hidden" name="cognitoAsfData" value=""><input type="text" name="username"><input type="password" name="password"><button type="submit">Sign in</button></form></html>'''.encode()
             return _response(200, url, html)
         if method == "POST" and parsed.path == "/login":
             assert headers.get("Cookie") == "session=opaque"
             assert b"username=honda-dev-tech-a-abcdef0123456789" in body
             assert b"password=" in body
+            assert b"cognitoAsfData=" in body
             return _response(302, url, Location=f"https://{DOMAIN}/oauth2/authorize?state={self.state}&continue=1")
         if method == "GET" and parsed.path == "/oauth2/authorize":
             return _response(302, url, Location=f"{CALLBACK}?code=one-time-code&state={self.state}")
@@ -89,6 +90,27 @@ def test_login_form_requires_documented_shape_and_csrf_field():
     assert "x" not in repr(form)
     with pytest.raises(ManagedLoginError, match="login_form_unstable"):
         parse_login_form(b'<form method="post" action="/login"><input name="username"><input name="password" type="password"></form>', domain=DOMAIN)
+
+
+@pytest.mark.parametrize("field", [
+    b'<input type="hidden" name="synthASF" value="">',
+    b'<input type="hidden" name="state" value="opaque-state">',
+    b'<input type="text" name="cognitoAsfData" value="x">',
+    b'<input type="hidden" name="cognitoAsfData" value="' + b"x" * (16 * 1024 + 1) + b'">',
+    b'<input type="hidden" name="csrf" value="">',
+])
+def test_login_form_rejects_unknown_asf_wrong_type_oversize_or_empty_csrf(field):
+    body = b'<form method="post" action="/login">' + field + b'<input type="hidden" name="csrf" value="token"><input name="username"><input name="password" type="password"></form>'
+    if b'name="csrf" value=""' in field:
+        body = b'<form method="post" action="/login">' + field + b'<input name="username"><input name="password" type="password"></form>'
+    with pytest.raises(ManagedLoginError, match="login_form_unstable"):
+        parse_login_form(body, domain=DOMAIN)
+
+
+def test_login_form_preserves_bounded_nonempty_asf_field():
+    body = b'<form method="post" action="/login"><input type="hidden" name="csrf" value="token"><input type="hidden" name="cognitoAsfData" value="opaque-asf"><input name="username"><input name="password" type="password"></form>'
+    form = parse_login_form(body, domain=DOMAIN)
+    assert form.hidden["cognitoAsfData"] == "opaque-asf"
 
 
 def test_login_form_ignores_auxiliary_forms_and_accepts_safe_boolean_attributes():

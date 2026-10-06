@@ -122,3 +122,12 @@ the same AES256 configuration with the already-supported optional disabled
 bucket-key and exact SSE-C-blocking fields, and the exact tags in another order.
 Compatibility uses the prior artifact verifier's semantics, not relaxed security
 or an AWS configuration change. Functional multi-user acceptance remains pending.
+
+The next credential-free login smoke exposed a local parser bug: the exact
+owned POST `/login` form had non-empty CSRF, username/password and an empty
+hidden `cognitoAsfData` field. Only that known auxiliary field may be empty;
+it is forwarded unchanged, never synthesized. CSRF stays unique/non-empty,
+unknown hidden fields are rejected, and PKCE/token validation is unchanged.
+This field is observed HTML, not a documented stable Cognito API. Before user
+writes, the pool must read back as ESSENTIALS with threat-protection add-ons
+absent or exactly OFF. A successful form smoke is not a successful user login.
