@@ -47,6 +47,9 @@ from scripts.dev_multiuser_readback import verify_closed_setup, verify_role_pair
 from scripts.dev_multiuser_window import DevTestWindow
 from scripts.dev_multiuser_test_users import DevMultiuserTestUserOperator, MAX_AUTHORITY_SECONDS
 from scripts.dev_multiuser_user_recovery import recover_partial_users
+from scripts.dev_multiuser_confirmed_reset_recovery import (
+    prepare_confirmed_a_reset, reset_a_then_provision_b,
+)
 from scripts.run_dev_multiuser_runtime_update import (
     CasFileJournal,
     MultiuserBuildReceipt,
@@ -101,18 +104,30 @@ SAFE_CATEGORIES = frozenset({
     "iam_update_failed", "runtime_update_failed", "window_failed", "tenant_write_failed",
     "http_acceptance_failed", "closed_readback_failed", "window_expired", "runner_failed",
 })
+SAFE_LOGIN_STAGES = frozenset({
+    "authorize_get", "login_get", "login_post", "authorize_redirect",
+    "token_post", "client_factory",
+})
+SAFE_LOGIN_CATEGORIES = frozenset({
+    "configuration_invalid", "transport_failed", "response_invalid",
+    "cookie_invalid",
+    "redirect_rejected", "login_form_unstable", "login_rejected",
+    "callback_invalid", "token_invalid", "token_endpoint_rejected",
+})
 
 
 class HostedAcceptanceError(ValueError):
     """Safe category only; never includes identifiers/provider text."""
 
-    def __init__(self, category: str):
-        self.category = category if category in SAFE_CATEGORIES else "runner_failed"
+    def __init__(self, category: str, *, stage: str | None = None, login_category: str | None = None):
+        self.category = category if type(category) is str and category in SAFE_CATEGORIES else "runner_failed"
+        self.stage = stage if type(stage) is str and stage in SAFE_LOGIN_STAGES else None
+        self.login_category = login_category if type(login_category) is str and login_category in SAFE_LOGIN_CATEGORIES else None
         super().__init__(self.category)
 
 
-def _fail(category: str) -> None:
-    raise HostedAcceptanceError(category)
+def _fail(category: str, *, stage: str | None = None, login_category: str | None = None) -> None:
+    raise HostedAcceptanceError(category, stage=stage, login_category=login_category)
 
 
 def _ok_response(value: Any) -> bool:
@@ -638,6 +653,8 @@ class HostedAcceptanceInputs:
     wheel_dir: Path
     artifact_binding_path: Path | None = None
     existing_user_journal_path: Path | None = None
+    confirmed_user_journal_path: Path | None = None
+    allow_single_a_password_reset: bool = False
 
 
 def run_hosted_acceptance(
@@ -666,10 +683,20 @@ def run_hosted_acceptance(
     try:
         auth = load_authorization(validate_private_location(inputs.authorization_path, acl_checker=acl_checker))
         source_verifier(auth)
+        if type(inputs.allow_single_a_password_reset) is not bool:
+            _fail("bindings_invalid")
+        if inputs.allow_single_a_password_reset:
+            if inputs.existing_user_journal_path is None or inputs.confirmed_user_journal_path is None:
+                _fail("bindings_invalid")
+        elif inputs.confirmed_user_journal_path is not None:
+            _fail("bindings_invalid")
         root = validate_private_location(inputs.private_root, acl_checker=acl_checker)
         existing_user_journal = None
         if inputs.existing_user_journal_path is not None:
             existing_user_journal = FileJournal(validate_private_location(inputs.existing_user_journal_path, acl_checker=acl_checker))
+        confirmed_user_journal = None
+        if inputs.confirmed_user_journal_path is not None:
+            confirmed_user_journal = FileJournal(validate_private_location(inputs.confirmed_user_journal_path, acl_checker=acl_checker))
         app_binding = _read_private_json(inputs.app_binding_path, acl_checker=acl_checker)
         roles_binding = _read_private_json(inputs.roles_binding_path, acl_checker=acl_checker)
         controls_binding = _read_private_json(inputs.controls_binding_path, acl_checker=acl_checker)
@@ -743,7 +770,7 @@ def run_hosted_acceptance(
         dry = make_client().dry_login_page()
         if dry.get("success") is not True:
             _fail("login_page_failed")
-        for name in ("users", "artifact", "iam", "runtime", "window", "tenant-a", "tenant-b", "revocation", "recovery"):
+        for name in ("users", "artifact", "iam", "runtime", "window", "tenant-a", "tenant-b", "revocation", "recovery", "reset"):
             _create_dir(run_dir / name, acl_checker=acl_checker)
         revocation_journal = FileJournal(run_dir / "revocation")
         user_journal = FileJournal(run_dir / "users")
@@ -751,12 +778,24 @@ def run_hosted_acceptance(
         operator_run_id = str(auth["run_id"])
         recovered = existing_user_journal is not None
         if recovered:
-            recovery_result = recover_partial_users(
-                clients={"cognito": clients["cognito"]}, original_journal=existing_user_journal,
-                new_journal=user_journal, provenance_journal=FileJournal(run_dir / "recovery"),
-                account=auth["account"], user_pool_id=pool_id, new_source_sha256=auth["source_sha"],
-                new_authorized_from_epoch=user_start, new_authorized_until_epoch=user_end,
-            )
+            if inputs.allow_single_a_password_reset:
+                recovery_result = prepare_confirmed_a_reset(
+                    clients={"cognito": clients["cognito"]},
+                    original_creation_journal=existing_user_journal,
+                    latest_confirmed_journal=confirmed_user_journal,
+                    fresh_user_journal=user_journal, reset_journal=FileJournal(run_dir / "reset"),
+                    provenance_journal=FileJournal(run_dir / "recovery"),
+                    account=auth["account"], user_pool_id=pool_id, new_source_sha256=auth["source_sha"],
+                    new_authorized_from_epoch=user_start, new_authorized_until_epoch=user_end,
+                    allow_single_a_password_reset=True, wall_clock=clock,
+                )
+            else:
+                recovery_result = recover_partial_users(
+                    clients={"cognito": clients["cognito"]}, original_journal=existing_user_journal,
+                    new_journal=user_journal, provenance_journal=FileJournal(run_dir / "recovery"),
+                    account=auth["account"], user_pool_id=pool_id, new_source_sha256=auth["source_sha"],
+                    new_authorized_from_epoch=user_start, new_authorized_until_epoch=user_end,
+                )
             if recovery_result.get("success") is not True:
                 _fail("user_preflight_failed")
             recovered_state = user_journal.load()
@@ -771,9 +810,28 @@ def run_hosted_acceptance(
             if type(username) is not str or not hasattr(token, "access_token"):
                 _fail("user_provision_failed")
             token_map[username] = token.access_token
-        login_result = provision_and_login_pair(operator, make_client, on_tokens=receive_token)
+        if inputs.allow_single_a_password_reset:
+            class ResetPairOperator:
+                def provision(self, *, on_confirmed_user: Callable[[str, str], Any]) -> dict[str, Any]:
+                    return reset_a_then_provision_b(
+                        clients={"cognito": clients["cognito"]}, fresh_user_journal=user_journal,
+                        reset_journal=FileJournal(run_dir / "reset"), account=auth["account"],
+                        user_pool_id=pool_id, run_id=operator_run_id,
+                        new_source_sha256=auth["source_sha"], authorized_from_epoch=user_start,
+                        authorized_until_epoch=user_end, allow_single_a_password_reset=True,
+                        on_confirmed_a=on_confirmed_user, on_confirmed_b=on_confirmed_user,
+                        wall_clock=clock,
+                    )
+            login_operator = ResetPairOperator()
+        else:
+            login_operator = operator
+        login_result = provision_and_login_pair(login_operator, make_client, on_tokens=receive_token)
         if login_result.get("category") != "users_authenticated":
-            _fail("user_provision_failed")
+            _fail(
+                "user_provision_failed",
+                stage=login_result.get("stage"),
+                login_category=login_result.get("login_category"),
+            )
         state = user_journal.load()
         usernames = tuple(row.get("username") for row in state.get("slots", [])) if isinstance(state, Mapping) else ()
         if len(usernames) != 2 or any(type(name) is not str for name in usernames):
@@ -920,7 +978,12 @@ def run_hosted_acceptance(
         opened = False
         return {"success": True, "category": "hosted_multiuser_acceptance_verified", "checks": {"source_ci": True, "identity": True, "roles": True, "setup": True, "login_page": True, "users": True, "tokens": True, "archive": True, "artifact": True, "iam": True, "runtime": True, "timer": True, "http": True, "tenants": True}}
     except HostedAcceptanceError as exc:
-        return {"success": False, "category": exc.category}
+        result: dict[str, Any] = {"success": False, "category": exc.category}
+        if exc.stage is not None:
+            result["stage"] = exc.stage
+        if exc.login_category is not None:
+            result["login_category"] = exc.login_category
+        return result
     except Exception:
         return {"success": False, "category": "runner_failed"}
     finally:
@@ -946,6 +1009,8 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("authorization", "private-root", "app-binding", "roles-binding", "controls-binding", "role-bindings", "artifact-binding", "wheel-dir"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--existing-user-journal", type=Path, required=False)
+    parser.add_argument("--confirmed-user-journal", type=Path, required=False)
+    parser.add_argument("--allow-single-a-password-reset", action="store_true")
     args = parser.parse_args(argv)
     values = vars(args)
     inputs = HostedAcceptanceInputs(
@@ -954,6 +1019,8 @@ def main(argv: list[str] | None = None) -> int:
         controls_binding_path=values["controls_binding"], role_bindings_path=values["role_bindings"],
         wheel_dir=values["wheel_dir"], artifact_binding_path=values["artifact_binding"],
         existing_user_journal_path=values["existing_user_journal"],
+        confirmed_user_journal_path=values["confirmed_user_journal"],
+        allow_single_a_password_reset=values["allow_single_a_password_reset"],
     )
     result = run_hosted_acceptance(inputs, clients_factory=_build_aws_clients)
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))

@@ -149,3 +149,38 @@ readback and first-password/B-creation intents. It must never replay A creation.
 AWS documents `sub` as the stable identity within a user pool, not a validation
 requirement for RFC UUID version/variant:
 [Cognito user attributes](https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html).
+
+On develop `86e58bf`, all eight source checks passed. The separate recovery
+read back the existing A and absent B, preserved the original creation journal,
+and assigned A's first permanent password exactly once. The managed-login
+callback then failed; the private recovery journal confirms A's password write
+and B still pending. The password was discarded rather than persisted. No
+artifact publication, runtime delivery, table authorization write or endpoint
+opening followed. This is not functional multi-user acceptance.
+
+A bounded read of existing Cognito audit events matched one `login_POST` and
+two `OAuth2_Authorize_GET` events for that attempt, without a logged error;
+no `Token_POST` event matched. Only categorical projections were emitted, not
+raw audit payloads. This narrows the observed failure to before token exchange,
+but does not identify its cause or prove successful authentication. Event names
+follow [Cognito CloudTrail logging](https://docs.aws.amazon.com/cognito/latest/developerguide/logging-using-cloudtrail.html).
+The generic callback failure needs allowlisted stage/category diagnostics.
+The first-password recovery is consumed and no longer applicable to confirmed
+A. Another password assignment/login requires a separately authorized bounded
+reset, exact same-user readback and fresh provenance; never replay either
+historical creation or password intent, or create a replacement third user.
+
+The owner subsequently authorized one fresh same-A password reset/login,
+followed only on success by B and hosted DEV acceptance. The separate reset
+operator must retain A's confirmed standard journal status, use a new reset
+operation/token bound to both historical journals and the new source/window,
+and stop on an ambiguous write or failed login. Offline review and fresh CI
+are prerequisites, not evidence that this new live allowance has been used.
+
+The diagnostic, narrow explicit cookie-deletion compatibility, and separate
+one-shot reset recovery passed independent offline review. The integrated
+checkpoint is 3,347 passing tests, twelve environment skips, compilation and
+model-free evaluation 12/12. CLI reset opt-in requires both historical journals;
+every consumed reset phase is terminal for re-entry because credentials/tokens
+are memory-only. This checkpoint is preparation, not another live login or a
+hosted acceptance receipt. See docs/dev-multiuser-cookie-clear-hypothesis.md.

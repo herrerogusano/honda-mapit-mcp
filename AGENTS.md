@@ -1,5 +1,23 @@
 # Project Agent Workflow
 
+Latest DEV checkpoint on 2026-10-06 supersedes the first-password gate below:
+develop 86e58bf passed eight checks and the separately bound read-only recovery.
+A's first permanent password was acknowledged and journaled, then Managed
+Login failed before token exchange; B remains pending. A's creation and first
+password allowances are consumed. Do not rerun the original recovery, reset
+the password implicitly or create another A. DEV remains closed; no artifact,
+runtime delivery, tenant authorization or endpoint opening occurred. Bounded
+existing audit projections matched login/authorize but no token event and do
+not identify the cause. Add safe diagnostics offline; a fresh explicit bounded
+same-user reset/login allowance and independently reviewed recovery are required
+before another live attempt. See docs/dev-multiuser-hosted-contract.md.
+The owner subsequently approved one new bounded password reset/login for the
+same technical A, then B and DEV E2E. This is a new reset intent, not replay of
+the first-password write. Require separate reset provenance, exact historical
+journal/sub/account/pool binding, fresh source checks and independent recovery
+review; stop on an ambiguous write or failed login. No production approval is
+included. The new live allowance remains unconsumed at this checkpoint.
+
 On 2026-10-06 the owner authorized retained isolated DEV multi-user acceptance:
 two technical users, an exclusive test Cognito pool with MFA off only there,
 and a durable authorization table. Shared Lambda quota remains 10, no real
