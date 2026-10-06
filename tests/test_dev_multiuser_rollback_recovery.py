@@ -228,3 +228,85 @@ def test_recurring_pair_rollback_requires_and_accepts_exact_first_pair_chain():
     )
     assert rejected is False
     assert rejected_cloud.calls == []
+
+
+def test_second_recurring_rollback_binds_f247_to_8ed_and_828c():
+    original, first_pair, users_8ed, reset_8ed, prov_8ed = pair_fixtures._initial_journals()
+    client = pair_fixtures.Cognito()
+    first_journals = (original, first_pair, users_8ed, reset_8ed, prov_8ed)
+    assert pair_fixtures._prepare(first_journals, client)["success"] is True
+    assert pair_fixtures._execute(first_journals, client, on_user=lambda *_: None)["success"] is True
+    history_8ed = pair_fixtures.validate_recurring_pair_history(
+        original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+        latest_pair_journal=users_8ed, previous_reset_journal=reset_8ed,
+        account=ACCOUNT, user_pool_id=POOL,
+    )
+    users_f247, reset_f247, prov_f247 = pair_fixtures.Journal(), pair_fixtures.Journal(), pair_fixtures.Journal()
+    start, end = pair_fixtures.NEW_END + 100, pair_fixtures.NEW_END + 350
+    assert pair_fixtures.prepare_confirmed_pair_reset(
+        clients={"cognito": client}, original_creation_journal=original,
+        latest_pair_journal=first_pair, fresh_user_journal=users_f247,
+        reset_journal=reset_f247, provenance_journal=prov_f247,
+        account=ACCOUNT, user_pool_id=POOL, source_sha256="d" * 40,
+        authorized_from_epoch=start, authorized_until_epoch=end,
+        allow_two_confirmed_user_resets=True,
+        first_confirmed_pair_sha256=history_8ed["first_pair_sha256"],
+        previous_reset_sha256=history_8ed["previous_reset_sha256"],
+        wall_clock=lambda: start + 1,
+    )["success"] is True
+    assert pair_fixtures.reset_confirmed_pair_once(
+        clients={"cognito": client}, fresh_user_journal=users_f247,
+        reset_journal=reset_f247, account=ACCOUNT, user_pool_id=POOL,
+        run_id=pair_fixtures.RUN, source_sha256="d" * 40,
+        authorized_from_epoch=start, authorized_until_epoch=end,
+        allow_two_confirmed_user_resets=True, on_confirmed_user=lambda *_: None,
+        password_factory=lambda slot: pair_fixtures.PASSWORD_A if slot == "A" else pair_fixtures.PASSWORD_B,
+        wall_clock=lambda: start + 1,
+    )["success"] is True
+
+    runtime_binding = dict(BINDING, source="d" * 40, start=start - 100, end=end + 100)
+    auth = dict(AUTH, source_sha="e" * 40, start=end + 1000)
+    cloud = Cloud()
+    assert verify_consumed_rollback(
+        cloud, SimpleNamespace(load=lambda: {"binding": runtime_binding, "phase": "acknowledged"}),
+        reset_f247, auth=auth, app_stack=STACK, expected_setup=SETUP,
+        original_user_journal=original, first_confirmed_pair_journal=first_pair,
+        latest_pair_journal=users_f247, earlier_reset_journal=reset_8ed,
+        recurring_pair=True, user_pool_id=POOL,
+    ) is True
+    assert cloud.calls == ["stack", "template", "events"]
+
+    forged_earlier = reset_8ed.load()
+    forged_subject = "f" * 64
+    forged_earlier["slots"][0]["subject_sha256"] = forged_subject
+    forged_earlier["slots"][0]["reset_token"] = _digest({
+        "operation": "reset-confirmed-pair-user",
+        "binding_sha256": forged_earlier["binding_sha256"],
+        "slot": "A", "subject_sha256": forged_subject,
+    })
+    reset_8ed.save(forged_earlier)
+    forged_current = reset_f247.load()
+    forged_current["previous_reset_sha256"] = _digest(forged_earlier)
+    binding_fields = (
+        "account_id", "user_pool_id", "run_id", "source_sha256",
+        "authorized_from_epoch", "authorized_until_epoch", "original_creation_sha256",
+        "latest_pair_sha256", "original_start_epoch", "original_end_epoch",
+        "latest_start_epoch", "latest_end_epoch", "first_confirmed_pair_sha256",
+        "previous_reset_sha256",
+    )
+    forged_base = {key: forged_current[key] for key in binding_fields}
+    forged_current["binding_sha256"] = _digest(forged_base)
+    for row in forged_current["slots"]:
+        row["reset_token"] = _digest({
+            "operation": "reset-confirmed-pair-user", "binding_sha256": forged_current["binding_sha256"],
+            "slot": row["slot"], "subject_sha256": row["subject_sha256"],
+        })
+    reset_f247.save(forged_current)
+    coherent_tamper = verify_consumed_rollback(
+        Cloud(), SimpleNamespace(load=lambda: {"binding": runtime_binding, "phase": "acknowledged"}),
+        reset_f247, auth=auth, app_stack=STACK, expected_setup=SETUP,
+        original_user_journal=original, first_confirmed_pair_journal=first_pair,
+        latest_pair_journal=users_f247, earlier_reset_journal=reset_8ed,
+        recurring_pair=True, user_pool_id=POOL,
+    )
+    assert coherent_tamper is False

@@ -73,6 +73,7 @@ def test_source_gate_runs_before_client_factory_or_private_bindings(tmp_path):
     {"allow_recurring_confirmed_pair_password_resets": True},
     {"allow_recurring_confirmed_pair_password_resets": True, "allow_confirmed_pair_password_resets": True},
     {"allow_recurring_confirmed_pair_password_resets": True, "allow_single_a_password_reset": True},
+    {"allow_second_recurring_confirmed_pair_password_resets": True},
     {"confirmed_user_journal_path": Path("absent")},
 ])
 def test_pair_recovery_requires_exact_explicit_inputs_before_clients(tmp_path, flags):
@@ -103,6 +104,24 @@ def test_recurring_pair_recovery_requires_explicit_pair_creation_journal(tmp_pat
 def test_pair_creation_journal_is_rejected_outside_recurring_mode(tmp_path):
     called = []
     inputs = replace(_private_inputs(tmp_path), pair_creation_user_journal_path=Path("first/users"))
+    result = run_hosted_acceptance(
+        inputs, source_verifier=lambda _: None,
+        clients_factory=lambda: called.append(True) or {}, acl_checker=lambda _: True,
+    )
+    assert result == {"success": False, "category": "bindings_invalid"}
+    assert called == []
+
+
+def test_second_recurring_pair_requires_prior_reset_provenance_before_clients(tmp_path):
+    called = []
+    inputs = replace(
+        _private_inputs(tmp_path),
+        allow_second_recurring_confirmed_pair_password_resets=True,
+        existing_user_journal_path=Path("original/users"),
+        pair_creation_user_journal_path=Path("first-pair/users"),
+        confirmed_user_journal_path=Path("latest/users"),
+        failed_runtime_journal_path=Path("latest/runtime"),
+    )
     result = run_hosted_acceptance(
         inputs, source_verifier=lambda _: None,
         clients_factory=lambda: called.append(True) or {}, acl_checker=lambda _: True,
@@ -230,6 +249,34 @@ def test_role_binding_uses_application_stack_not_cd_delivery_stack():
         "execution_role_arn": "arn:aws:iam::123456789012:role/honda-mapit-mcp-dev-retained-handler-role",
     }
     assert _validate_full_role_bindings(values, account=ACCOUNT)["stack_arn"] == values["stack_arn"]
+
+
+def test_role_binding_loader_accepts_only_exact_describe_key_marker():
+    values = {
+        "account_id": ACCOUNT,
+        "provider_arn": f"arn:aws:iam::{ACCOUNT}:oidc-provider/token.actions.githubusercontent.com",
+        "owner_id": "1234567", "repository_id": "7654321",
+        "observed_dev_subject_format": "immutable_environment",
+        "observed_dev_subject_sha256": hashlib.sha256(b"repo:herrerogusano@1234567/honda-mapit-mcp@7654321:environment:dev").hexdigest(),
+        "stack_arn": "arn:aws:cloudformation:eu-west-1:123456789012:stack/honda-mapit-mcp-dev-retained/11111111-2222-4333-8444-555555555555",
+        "artifact_stack_arn": "arn:aws:cloudformation:eu-west-1:123456789012:stack/honda-mapit-mcp-dev-retained-runtime-artifacts/22222222-3333-4444-8555-666666666666",
+        "handler_arn": "arn:aws:lambda:eu-west-1:123456789012:function:honda-mapit-mcp-dev-retained-handler",
+        "api_arn": "arn:aws:apigateway:eu-west-1::/apis/a1b2c3d4e5",
+        "shutdown_state_machine_arn": "arn:aws:states:eu-west-1:123456789012:stateMachine:honda-mapit-mcp-dev-retained-shutdown",
+        "artifact_bucket_arn": "arn:aws:s3:::honda-mapit-mcp-dev-retained-123456789012-eu-west-1",
+        "execution_role_arn": "arn:aws:iam::123456789012:role/honda-mapit-mcp-dev-retained-handler-role",
+        "lambda_environment_key_arn": "arn:aws:kms:eu-west-1:123456789012:key/11111111-2222-4333-8444-555555555555",
+        "lambda_environment_key_describe": True,
+    }
+    loaded = _validate_full_role_bindings(values, account=ACCOUNT)
+    assert loaded["lambda_environment_key_describe"] is True
+    for invalid in (
+        {key: value for key, value in values.items() if key != "lambda_environment_key_arn"},
+        {**values, "lambda_environment_key_describe": 1},
+        {**values, "lambda_environment_key_describe": False},
+    ):
+        with pytest.raises(HostedAcceptanceError, match="^bindings_invalid$"):
+            _validate_full_role_bindings(invalid, account=ACCOUNT)
 
 
 def test_template_body_accepts_sdk_string_and_ordered_mapping_shapes():

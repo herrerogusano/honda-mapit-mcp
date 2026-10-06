@@ -315,3 +315,84 @@ def test_recurring_pair_history_rejects_broken_chain_without_sdk_calls(mutation)
             account=ACCOUNT, user_pool_id=POOL,
         )
     assert client.calls == []
+
+
+def test_second_recurring_attempt_binds_latest_pair_and_both_prior_resets():
+    original, first_pair, users_8ed, reset_8ed, prov_8ed = _initial_journals()
+    client = Cognito()
+    first_journals = (original, first_pair, users_8ed, reset_8ed, prov_8ed)
+    assert _prepare(first_journals, client)["success"] is True
+    assert _execute(first_journals, client, on_user=lambda *_: None)["success"] is True
+    history_8ed = validate_recurring_pair_history(
+        original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+        latest_pair_journal=users_8ed, previous_reset_journal=reset_8ed,
+        account=ACCOUNT, user_pool_id=POOL,
+    )
+
+    users_f247, reset_f247, prov_f247 = Journal(), Journal(), Journal()
+    start_f247, end_f247 = NEW_END + 100, NEW_END + 350
+    prepared_f247 = prepare_confirmed_pair_reset(
+        clients={"cognito": client}, original_creation_journal=original,
+        latest_pair_journal=first_pair, fresh_user_journal=users_f247,
+        reset_journal=reset_f247, provenance_journal=prov_f247,
+        account=ACCOUNT, user_pool_id=POOL, source_sha256="d" * 40,
+        authorized_from_epoch=start_f247, authorized_until_epoch=end_f247,
+        allow_two_confirmed_user_resets=True,
+        first_confirmed_pair_sha256=history_8ed["first_pair_sha256"],
+        previous_reset_sha256=history_8ed["previous_reset_sha256"],
+        wall_clock=lambda: start_f247 + 1,
+    )
+    assert prepared_f247["success"] is True
+    executed_f247 = reset_confirmed_pair_once(
+        clients={"cognito": client}, fresh_user_journal=users_f247,
+        reset_journal=reset_f247, account=ACCOUNT, user_pool_id=POOL, run_id=RUN,
+        source_sha256="d" * 40, authorized_from_epoch=start_f247,
+        authorized_until_epoch=end_f247, allow_two_confirmed_user_resets=True,
+        on_confirmed_user=lambda *_: None, password_factory=lambda slot: PASSWORD_A if slot == "A" else PASSWORD_B,
+        wall_clock=lambda: start_f247 + 1,
+    )
+    assert executed_f247["success"] is True
+
+    history_f247 = validate_recurring_pair_history(
+        original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+        latest_pair_journal=users_f247, previous_reset_journal=reset_f247,
+        earlier_reset_journal=reset_8ed, account=ACCOUNT, user_pool_id=POOL,
+    )
+    assert history_f247["latest_pair_sha256"] == hashlib.sha256(_canonical(users_f247.load())).hexdigest()
+    assert history_f247["previous_reset_sha256"] == hashlib.sha256(_canonical(reset_f247.load())).hexdigest()
+    assert history_f247["earlier_reset_sha256"] == hashlib.sha256(_canonical(reset_8ed.load())).hexdigest()
+
+    users_next, reset_next, prov_next = Journal(), Journal(), Journal()
+    next_start = end_f247 + 100
+    next_end = next_start + 250
+    result = prepare_confirmed_pair_reset(
+        clients={"cognito": client}, original_creation_journal=original,
+        latest_pair_journal=first_pair, fresh_user_journal=users_next,
+        reset_journal=reset_next, provenance_journal=prov_next,
+        account=ACCOUNT, user_pool_id=POOL, source_sha256="e" * 40,
+        authorized_from_epoch=next_start, authorized_until_epoch=next_end,
+        allow_two_confirmed_user_resets=True,
+        first_confirmed_pair_sha256=history_f247["first_pair_sha256"],
+        previous_reset_sha256=history_f247["previous_reset_sha256"],
+        consumed_pair_sha256=history_f247["latest_pair_sha256"],
+        wall_clock=lambda: next_start + 1,
+    )
+    assert result["success"] is True
+    assert reset_next.load()["consumed_pair_sha256"] == history_f247["latest_pair_sha256"]
+    assert reset_next.load()["previous_reset_sha256"] == history_f247["previous_reset_sha256"]
+    with pytest.raises(ValueError):
+        validate_recurring_pair_history(
+            original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+            latest_pair_journal=users_f247, previous_reset_journal=reset_f247,
+            account=ACCOUNT, user_pool_id=POOL,
+        )
+
+    tampered = reset_f247.load()
+    tampered["previous_reset_sha256"] = "f" * 64
+    reset_f247.save(tampered)
+    with pytest.raises(ValueError):
+        validate_recurring_pair_history(
+            original_creation_journal=original, first_confirmed_pair_journal=first_pair,
+            latest_pair_journal=users_f247, previous_reset_journal=reset_f247,
+            earlier_reset_journal=reset_8ed, account=ACCOUNT, user_pool_id=POOL,
+        )

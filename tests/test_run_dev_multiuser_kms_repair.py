@@ -129,6 +129,19 @@ def test_role_templates_change_only_cfn_role_and_boundary():
     wrong["Resources"]["RetainedDevCdExecutorRole"]["Properties"]["RoleName"] = "changed"
     with pytest.raises(repair.KmsRepairError):
         repair._verify_templates(prior, wrong)
+
+
+def test_metadata_repair_marker_is_the_only_allowed_metadata_delta():
+    bindings = _bindings()
+    prior = repair._role_templates(bindings, pool_id=POOL, key_arn=KEY)
+    target = repair._role_templates(bindings, pool_id=POOL, key_arn=KEY, describe_key=True)
+    repair._verify_templates(prior, target, describe_key=True)
+    with pytest.raises(repair.KmsRepairError, match="role_template_scope_invalid"):
+        repair._verify_templates(prior, target)
+    wrong = copy.deepcopy(target)
+    wrong["Metadata"]["KmsMetadataBinding"] = "wrong"
+    with pytest.raises(repair.KmsRepairError, match="role_template_scope_invalid"):
+        repair._verify_templates(prior, wrong, describe_key=True)
     wrong = copy.deepcopy(target)
     wrong["Metadata"]["NoRuntimeTenantWrites"] = False
     with pytest.raises(repair.KmsRepairError):
@@ -136,9 +149,12 @@ def test_role_templates_change_only_cfn_role_and_boundary():
 
 
 @pytest.mark.parametrize("phase", ["pending", "accepted"])
-def test_check_update_defers_target_role_readback_until_acceptance(monkeypatch, phase):
+@pytest.mark.parametrize("metadata_repair", [False, True])
+def test_check_update_defers_target_role_readback_until_acceptance(monkeypatch, phase, metadata_repair):
     prior = _prior_setup()
     roles_binding = _bindings()
+    if metadata_repair:
+        roles_binding["lambda_environment_key_arn"] = KEY
     fake_roles = {"Resources": {
         "RetainedDevCdExecutorRole": {}, "RetainedDevCdExecutorBoundary": {},
         "RetainedDevCdCloudFormationRole": {}, "RetainedDevCdCloudFormationBoundary": {},
@@ -146,7 +162,9 @@ def test_check_update_defers_target_role_readback_until_acceptance(monkeypatch, 
     event_rows = [
         {"ClientRequestToken": OLD_TOKEN, "LogicalResourceId": "McpHandler",
          "ResourceType": "AWS::Lambda::Function", "ResourceStatus": "UPDATE_FAILED",
-         "StackId": APP, "ResourceStatusReason": KEY},
+         "StackId": APP, "ResourceStatusReason": (
+             f"AccessDeniedException arn:aws:sts::{ACCOUNT}:assumed-role/honda-mapit-mcp-dev-retained-cfn-update/cfn kms:DescribeKey {KEY}"
+             if metadata_repair else KEY)},
         {"ClientRequestToken": OLD_TOKEN, "LogicalResourceId": "honda-mapit-mcp-dev-retained",
          "ResourceType": "AWS::CloudFormation::Stack", "ResourceStatus": "UPDATE_ROLLBACK_COMPLETE",
          "StackId": APP},
@@ -167,7 +185,12 @@ def test_check_update_defers_target_role_readback_until_acceptance(monkeypatch, 
     clients = {name: object() for name in repair._METHODS}
     clients.update(sts=Sts(), cloudformation=Cfn(), kms=Kms())
     monkeypatch.setattr(repair, "_app_snapshot", lambda *a, **k: (prior, "abcdefghij", POOL))
-    monkeypatch.setattr(repair, "_role_templates", lambda *a, **k: fake_roles)
+    template_inputs = []
+    def templates(bindings, **kwargs):
+        assert set(bindings) == repair._ROLE_BINDINGS
+        template_inputs.append(kwargs)
+        return fake_roles
+    monkeypatch.setattr(repair, "_role_templates", templates)
     monkeypatch.setattr(repair, "_verify_templates", lambda *a, **k: None)
     pair_reads = []
     def verify_pair(*args, **kwargs):
@@ -200,6 +223,7 @@ def test_check_update_defers_target_role_readback_until_acceptance(monkeypatch, 
         source_sha=SOURCE, run_token=TOKEN, authorized_from_epoch=1_900_000_301,
         authorized_until_epoch=1_900_003_301, clock=lambda: 1_900_000_400,
         accepted_key_sink=output.append,
+        describe_key_repair=metadata_repair,
     )
     if phase == "pending":
         assert result["category"] == "update_pending"
@@ -208,9 +232,14 @@ def test_check_update_defers_target_role_readback_until_acceptance(monkeypatch, 
         assert result["category"] == "readback_verified"
         assert result["success"] is True and pair_reads == [True] and output == [KEY]
     assert old == _old_state(prior)
+    assert template_inputs == [
+        {"pool_id": POOL, "key_arn": KEY if metadata_repair else None},
+        {"pool_id": POOL, "key_arn": KEY, **({"describe_key": True} if metadata_repair else {})},
+    ]
 
 
-def test_cli_check_update_writes_fourteenth_binding_only_after_accepted_result(tmp_path, monkeypatch):
+@pytest.mark.parametrize("metadata_repair", [False, True])
+def test_cli_check_update_writes_fourteenth_binding_only_after_accepted_result(tmp_path, monkeypatch, metadata_repair):
     from scripts import dev_multiuser_journal, run_aws_retained_dev_bootstrap
 
     base = tmp_path / "private"
@@ -225,6 +254,8 @@ def test_cli_check_update_writes_fourteenth_binding_only_after_accepted_result(t
     auth_path = base / "authorization.json"
     auth_path.write_text(json.dumps(auth), encoding="utf-8")
     bindings = _bindings()
+    if metadata_repair:
+        bindings["lambda_environment_key_arn"] = KEY
     bindings_path = base / "role-bindings.json"
     bindings_path.write_text(json.dumps(bindings), encoding="utf-8")
     app_path = base / "app-binding.json"
@@ -247,6 +278,7 @@ def test_cli_check_update_writes_fourteenth_binding_only_after_accepted_result(t
         assert kwargs["step"] == "check-update"
         assert kwargs["old_runtime_journal"] == prior
         assert kwargs["role_bindings"] == bindings
+        assert kwargs["describe_key_repair"] is metadata_repair
         sink = kwargs["accepted_key_sink"]
         assert callable(sink)
         sink(KEY)
@@ -259,11 +291,14 @@ def test_cli_check_update_writes_fourteenth_binding_only_after_accepted_result(t
         "check-update", accepted_bindings_path=output_path,
         acl_checker=lambda _path: True, source_ci_validator=lambda _auth: None,
         client_factory=lambda: {"synthetic": object()}, journal_factory=NewJournal,
+        describe_key_repair=metadata_repair,
     )
     assert result == {"success": True, "category": "readback_verified", "calls": 23}
     assert produced == [True]
     output = json.loads(output_path.read_text(encoding="ascii"))
-    assert set(output) == set(bindings) | {"lambda_environment_key_arn"}
+    assert set(output) == set(bindings) | {"lambda_environment_key_arn"} | ({"lambda_environment_key_describe"} if metadata_repair else set())
+    if metadata_repair:
+        assert output["lambda_environment_key_describe"] is True
     assert output["lambda_environment_key_arn"] == KEY
     assert KEY not in json.dumps(result)
     assert old_state_path.read_bytes() == old_bytes
@@ -276,6 +311,7 @@ def test_cli_check_update_writes_fourteenth_binding_only_after_accepted_result(t
         "check-update", accepted_bindings_path=output_path,
         acl_checker=lambda _path: True, source_ci_validator=lambda _auth: None,
         client_factory=lambda: called.append(True), journal_factory=NewJournal,
+        describe_key_repair=metadata_repair,
     )
     assert blocked["category"] == "accepted_bindings_path_exists"
     assert called == []
@@ -317,3 +353,58 @@ def test_private_accepted_bindings_never_overwrites_and_rejects_wrong_account(tm
     with pytest.raises(repair.KmsRepairError):
         repair._write_accepted_role_bindings(tmp_path / "wrong.json", bindings, other,
                                             acl_checker=lambda _path: True)
+
+
+def test_metadata_repair_requires_exact_describe_key_denial_actor_and_key():
+    actor = f"arn:aws:sts::{ACCOUNT}:assumed-role/honda-mapit-mcp-dev-retained-cfn-update/cfn-session"
+    reason = f"AccessDeniedException User {actor} not authorized kms:DescribeKey on {KEY}"
+    rows = [
+        {"ClientRequestToken": OLD_TOKEN, "LogicalResourceId": "McpHandler",
+         "ResourceType": "AWS::Lambda::Function", "ResourceStatus": "UPDATE_FAILED",
+         "StackId": APP, "ResourceStatusReason": reason},
+        {"ClientRequestToken": OLD_TOKEN, "ResourceType": "AWS::CloudFormation::Stack",
+         "ResourceStatus": "UPDATE_ROLLBACK_COMPLETE", "StackId": APP},
+    ]
+    assert repair._extract_event_key(rows, old_token=OLD_TOKEN, app_stack_arn=APP,
+                                    account=ACCOUNT, describe_key=True) == KEY
+    for bad_reason in (reason.replace("kms:DescribeKey", "kms:Encrypt"),
+                       reason.replace("cfn-update/", "handler-role/"),
+                       reason.replace("AccessDeniedException", "OtherException"),
+                       reason.replace("kms:DescribeKey", "kms:DescribeKeyOther"),
+                       reason.replace(actor, actor.replace(ACCOUNT, "210987654321"))):
+        bad = copy.deepcopy(rows)
+        bad[0]["ResourceStatusReason"] = bad_reason
+        with pytest.raises(repair.KmsRepairError):
+            repair._extract_event_key(bad, old_token=OLD_TOKEN, app_stack_arn=APP,
+                                      account=ACCOUNT, describe_key=True)
+
+
+def test_metadata_accepted_binding_is_new_and_preserves_exact_prior_key(tmp_path):
+    prior = {**_bindings(), "lambda_environment_key_arn": KEY}
+    original = copy.deepcopy(prior)
+    path = tmp_path / "metadata.json"
+    repair._write_accepted_role_bindings(path, prior, KEY, acl_checker=lambda _path: True,
+                                        describe_key_repair=True)
+    assert json.loads(path.read_text()) == {**prior, "lambda_environment_key_describe": True}
+    assert prior == original
+    with pytest.raises(repair.KmsRepairError):
+        repair._write_accepted_role_bindings(path, prior, KEY, acl_checker=lambda _path: True,
+                                            describe_key_repair=True)
+    for bindings, key in ((_bindings(), KEY), (prior, KEY.replace("33333333", "44444444")),
+                          ({**prior, "lambda_environment_key_describe": True}, KEY)):
+        with pytest.raises(repair.KmsRepairError):
+            repair._write_accepted_role_bindings(tmp_path / "bad.json", bindings, key,
+                                                acl_checker=lambda _path: True,
+                                                describe_key_repair=True)
+
+
+def test_metadata_repair_templates_have_only_exact_reviewed_marker_difference():
+    prior = repair._role_templates(_bindings(), pool_id=POOL, key_arn=KEY)
+    target = repair._role_templates(_bindings(), pool_id=POOL, key_arn=KEY, describe_key=True)
+    repair._verify_templates(prior, target, describe_key=True)
+    with pytest.raises(repair.KmsRepairError):
+        repair._verify_templates(prior, target)
+    bad = copy.deepcopy(target)
+    bad["Metadata"]["KmsMetadataBinding"] = "unbound"
+    with pytest.raises(repair.KmsRepairError):
+        repair._verify_templates(prior, bad, describe_key=True)

@@ -258,7 +258,20 @@ def _validate_full_role_bindings(value: Mapping[str, Any], *, account: str) -> d
         "artifact_stack_arn", "handler_arn", "api_arn", "shutdown_state_machine_arn",
         "artifact_bucket_arn", "execution_role_arn",
     }
-    if set(value) not in (required, required | {"lambda_environment_key_arn"}):
+    # The metadata-repair path may carry the builder's strict opt-in marker.
+    # It is accepted only together with the exact existing Lambda key; the
+    # builder validates the marker's type and key/account binding before any
+    # client is constructed.  Ordinary hosted acceptance remains the 13- or
+    # 14-field shape.
+    allowed = (
+        required,
+        required | {"lambda_environment_key_arn"},
+        required | {"lambda_environment_key_arn", "lambda_environment_key_describe"},
+    )
+    if set(value) not in allowed:
+        _fail("bindings_invalid")
+    if (set(value) == required | {"lambda_environment_key_arn", "lambda_environment_key_describe"}
+        and value.get("lambda_environment_key_describe") is not True):
         _fail("bindings_invalid")
     if value.get("account_id") != account:
         _fail("bindings_invalid")
@@ -669,7 +682,9 @@ class HostedAcceptanceInputs:
     allow_single_a_password_reset: bool = False
     allow_confirmed_pair_password_resets: bool = False
     allow_recurring_confirmed_pair_password_resets: bool = False
+    allow_second_recurring_confirmed_pair_password_resets: bool = False
     pair_creation_user_journal_path: Path | None = None
+    prior_pair_reset_journal_path: Path | None = None
     failed_runtime_journal_path: Path | None = None
 
 
@@ -705,16 +720,23 @@ def run_hosted_acceptance(
             or type(inputs.allow_recurring_confirmed_pair_password_resets) is not bool):
             _fail("bindings_invalid")
         recurring_pair_recovery = inputs.allow_recurring_confirmed_pair_password_resets
-        pair_recovery = inputs.allow_confirmed_pair_password_resets or recurring_pair_recovery
+        second_recurring_pair_recovery = inputs.allow_second_recurring_confirmed_pair_password_resets
+        if type(second_recurring_pair_recovery) is not bool:
+            _fail("bindings_invalid")
+        pair_recovery = (inputs.allow_confirmed_pair_password_resets or recurring_pair_recovery
+                         or second_recurring_pair_recovery)
         if (sum((inputs.allow_single_a_password_reset, inputs.allow_confirmed_pair_password_resets,
-                 recurring_pair_recovery)) > 1):
+                 recurring_pair_recovery, second_recurring_pair_recovery)) > 1):
             _fail("bindings_invalid")
         if inputs.allow_single_a_password_reset or pair_recovery:
             if inputs.existing_user_journal_path is None or inputs.confirmed_user_journal_path is None:
                 _fail("bindings_invalid")
         elif inputs.confirmed_user_journal_path is not None:
             _fail("bindings_invalid")
-        if recurring_pair_recovery != (inputs.pair_creation_user_journal_path is not None):
+        needs_first_pair = recurring_pair_recovery or second_recurring_pair_recovery
+        if needs_first_pair != (inputs.pair_creation_user_journal_path is not None):
+            _fail("bindings_invalid")
+        if second_recurring_pair_recovery != (inputs.prior_pair_reset_journal_path is not None):
             _fail("bindings_invalid")
         root = validate_private_location(inputs.private_root, acl_checker=acl_checker)
         existing_user_journal = None
@@ -724,13 +746,19 @@ def run_hosted_acceptance(
         if inputs.confirmed_user_journal_path is not None:
             confirmed_user_journal = FileJournal(validate_private_location(inputs.confirmed_user_journal_path, acl_checker=acl_checker))
         first_confirmed_pair_journal = None
-        if recurring_pair_recovery:
+        if needs_first_pair:
             first_path = validate_private_location(inputs.pair_creation_user_journal_path, acl_checker=acl_checker)
             latest_confirmed_path = validate_private_location(inputs.confirmed_user_journal_path, acl_checker=acl_checker)
             original_path = validate_private_location(inputs.existing_user_journal_path, acl_checker=acl_checker)
             if first_path.name != "users" or first_path in {latest_confirmed_path, original_path}:
                 _fail("bindings_invalid")
             first_confirmed_pair_journal = FileJournal(first_path)
+        earlier_reset_journal = None
+        if second_recurring_pair_recovery:
+            earlier_reset_path = validate_private_location(inputs.prior_pair_reset_journal_path, acl_checker=acl_checker)
+            if earlier_reset_path.name != "reset" or earlier_reset_path == latest_confirmed_path.parent / "reset":
+                _fail("bindings_invalid")
+            earlier_reset_journal = FileJournal(earlier_reset_path)
         failed_runtime_journal = None
         latest_reset_journal = None
         if pair_recovery:
@@ -804,8 +832,9 @@ def run_hosted_acceptance(
                                            original_user_journal=existing_user_journal,
                                            latest_pair_journal=confirmed_user_journal,
                                            user_pool_id=pool_id,
-                                           recurring_pair=recurring_pair_recovery,
-                                           first_confirmed_pair_journal=first_confirmed_pair_journal):
+                                           recurring_pair=needs_first_pair,
+                                           first_confirmed_pair_journal=(first_confirmed_pair_journal if needs_first_pair else None),
+                                           earlier_reset_journal=earlier_reset_journal):
                 _fail("setup_readback_failed")
         setup_result = verify_closed_setup(
             {"cloudformation": clients["cloudformation"], "cognito": clients["cognito"], "apigateway": clients["apigateway"], "dynamodb": clients["dynamodb"]},
@@ -852,13 +881,14 @@ def run_hosted_acceptance(
         recovered = existing_user_journal is not None
         if recovered:
             if pair_recovery:
-                if recurring_pair_recovery:
+                if needs_first_pair:
                     history = validate_recurring_pair_history(
                         original_creation_journal=existing_user_journal,
                         first_confirmed_pair_journal=first_confirmed_pair_journal,
                         latest_pair_journal=confirmed_user_journal,
                         previous_reset_journal=latest_reset_journal,
                         account=auth["account"], user_pool_id=pool_id,
+                        earlier_reset_journal=earlier_reset_journal,
                     )
                 recovery_result = prepare_confirmed_pair_reset(
                     clients={"cognito": clients["cognito"]}, original_creation_journal=existing_user_journal,
@@ -867,8 +897,9 @@ def run_hosted_acceptance(
                     reset_journal=FileJournal(run_dir / "reset"), provenance_journal=FileJournal(run_dir / "recovery"),
                     account=auth["account"], user_pool_id=pool_id, source_sha256=auth["source_sha"],
                     authorized_from_epoch=user_start, authorized_until_epoch=user_end,
-                    first_confirmed_pair_sha256=(history["first_pair_sha256"] if recurring_pair_recovery else None),
-                    previous_reset_sha256=(history["previous_reset_sha256"] if recurring_pair_recovery else None),
+                    first_confirmed_pair_sha256=(history["first_pair_sha256"] if needs_first_pair else None),
+                    previous_reset_sha256=(history["previous_reset_sha256"] if needs_first_pair else None),
+                    consumed_pair_sha256=(history["latest_pair_sha256"] if second_recurring_pair_recovery else None),
                     allow_two_confirmed_user_resets=True, wall_clock=clock,
                 )
             elif inputs.allow_single_a_password_reset:
@@ -1139,7 +1170,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-single-a-password-reset", action="store_true")
     parser.add_argument("--allow-confirmed-pair-password-resets", action="store_true")
     parser.add_argument("--allow-recurring-confirmed-pair-password-resets", action="store_true")
+    parser.add_argument("--allow-second-recurring-confirmed-pair-password-resets", action="store_true")
     parser.add_argument("--pair-creation-user-journal", type=Path)
+    parser.add_argument("--prior-pair-reset-journal", type=Path)
     parser.add_argument("--failed-runtime-journal", type=Path)
     args = parser.parse_args(argv)
     values = vars(args)
@@ -1153,10 +1186,12 @@ def main(argv: list[str] | None = None) -> int:
         allow_single_a_password_reset=values["allow_single_a_password_reset"],
         allow_confirmed_pair_password_resets=values["allow_confirmed_pair_password_resets"],
         allow_recurring_confirmed_pair_password_resets=values["allow_recurring_confirmed_pair_password_resets"],
+        allow_second_recurring_confirmed_pair_password_resets=values["allow_second_recurring_confirmed_pair_password_resets"],
         pair_creation_user_journal_path=values["pair_creation_user_journal"],
+        prior_pair_reset_journal_path=values["prior_pair_reset_journal"],
         failed_runtime_journal_path=values["failed_runtime_journal"],
     )
-    result = run_hosted_acceptance(inputs, clients_factory=lambda: _build_aws_clients(include_kms=(inputs.allow_confirmed_pair_password_resets or inputs.allow_recurring_confirmed_pair_password_resets)))
+    result = run_hosted_acceptance(inputs, clients_factory=lambda: _build_aws_clients(include_kms=(inputs.allow_confirmed_pair_password_resets or inputs.allow_recurring_confirmed_pair_password_resets or inputs.allow_second_recurring_confirmed_pair_password_resets)))
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0 if result.get("success") is True else 1
 

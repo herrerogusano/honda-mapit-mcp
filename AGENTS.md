@@ -1,5 +1,25 @@
 # Project Agent Workflow
 
+Latest consumed DEV attempt (2026-10-07 Europe/Madrid): PRs #61/#62 merged
+normally to develop `0221545`; all eight develop checks passed. Exact orphan
+cleanup completed with HTTP 204 and empty readback (14 calls). One fresh reset
+and real signed-token login per same A/B account succeeded. The private ARM
+artifact was published, but the acknowledged runtime update rolled back fully:
+the exact CFN assumed role was denied `kms:DescribeKey` on the already bound
+AWS-managed Lambda key. DEV API/Lambda remain closed with the original eleven
+resources; no E2E, tenant publication or production/MFA/MAPIT operation occurred.
+This allowance is consumed, including both resets. One new unused authorizer
+was retained by this failed update; its exact create/delete-skipped lineage is
+separate from the authorizer already deleted. Never replay prior journals.
+The owner now approves only the separate exact-key CFN metadata permission and
+boundary repair, deletion of that new exact orphan, and one new same A/B attempt
+after independent review and fresh CI. Keep crypto-context restrictions and
+executor permissions unchanged. `DescribeKey` has no encryption context;
+metadata permission must be separate. Second recurring-reset provenance must
+bind both prior reset journals, original A and first B creation. This new
+allowance has not been executed. Temporary wakefulness is currently active and
+must be removed before handoff.
+
 On 2026-10-07 Europe/Madrid the owner approved deletion of only the exact unused
 retained DEV JWT authorizer and one fresh bounded deployment/E2E attempt with
 one reset/login of each same confirmed A/B technical account. Implement and
@@ -8,7 +28,7 @@ PAIR-reset provenance before executing. Do not replay any prior operation,
 relax KMS context, expand IAM, touch production/MFA/MAPIT or raise quota ten.
 Use fresh source CI/private immutable authority; stop on any ambiguous write
 or failed attempt without another automatic reset/retry. This allowance is
-not yet consumed at this preparation checkpoint. Temporary wakefulness must
+not yet consumed at this historical preparation checkpoint (consumed above). Temporary wakefulness must
 be removed before handoff.
 
 Latest live checkpoint (2026-10-06 UTC): PR #60 merged normally to develop

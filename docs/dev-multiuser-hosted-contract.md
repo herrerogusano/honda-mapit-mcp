@@ -302,6 +302,32 @@ encryption/decryption probe was executed.
 
 ### Subsequent live checkpoint (2026-10-06 UTC)
 
+Superseding checkpoint, 2026-10-07 Europe/Madrid: PR #62 and develop `0221545`
+passed eight CI checks after the test-only SQLite correction. Fresh exact cleanup
+completed (HTTP 204, empty authorizer readback, fourteen calls). A/B each completed
+one new reset, Managed Login and signed-token validation. ARM verification and
+private publication passed; the acknowledged runtime update reached a complete
+rollback. This time the failed handler event identifies `kms:DescribeKey`, the
+exact bound AWS-managed Lambda key, and the exact CFN assumed role. Both API and
+Lambda were verified closed, original eleven resources intact. No tenant
+publication, endpoint opening or HTTP E2E occurred. All those allowances are
+consumed. The failed update retained another exact unused JWT authorizer, with
+matching create/delete-skipped lineage and no routes/integrations.
+
+The owner separately approved adding only exact-key/account `kms:DescribeKey`
+to the CFN role and boundary, deleting this new exact orphan and one new same
+A/B attempt after independent review/CI. Metadata permission is a separate
+statement; existing crypto actions, ViaService and encryption-context constraints
+stay unchanged. AWS documents that DescribeKey has no encryption-context input
+and warns against applying that condition to metadata operations:
+[DescribeKey](https://docs.aws.amazon.com/kms/latest/APIReference/API_DescribeKey.html),
+[KMS least privilege](https://docs.aws.amazon.com/kms/latest/developerguide/least-privilege.html).
+No CreateGrant, wildcard key, executor change, new key or production operation
+is included. This is a new repair intent, never replay of the accepted crypto
+role update. Second recurring reset must explicitly bind both consumed prior
+PAIR resets and latest confirmed users, preserving original A/B creation.
+Live repair and functional DEV acceptance are still pending.
+
 The owner subsequently approved the exact unused-authorizer deletion and one
 new bounded pair-reset/login/deployment attempt (2026-10-07 Europe/Madrid).
 Preparation must preserve terminal pair-reset lineage and the first B-creation
@@ -324,11 +350,23 @@ for routes/integrations and no ApiId member on the authorizer item.
 Recurring hosted recovery is separately opt-in via
 `--allow-recurring-confirmed-pair-password-resets` and
 `--pair-creation-user-journal`: original A creation, first confirmed pair/B
-creation and latest terminal pair-reset journals remain distinct. Only a
-complete revision-six initial pair reset is admitted; subsequent recurrence
-is intentionally not accepted. Offline preparation passed 3,464 tests with
+creation and latest terminal pair-reset journals remain distinct. The first
+recurrence admits a complete revision-six initial pair reset. The new separately
+approved second recurrence also requires `--prior-pair-reset-journal` and
+`--allow-second-recurring-confirmed-pair-password-resets`, validates the earlier
+reset and latest consumed pair, and binds `consumed_pair_sha256` in the new reset.
+A third recurrence remains rejected. Earlier offline preparation passed 3,464 tests with
 twelve environment skips, compilation and model-free evaluation 12/12.
 This is preparation, not yet a successful delete/deployment/E2E.
+
+The metadata role repair uses `--describe-key-repair` with the unchanged accepted
+fourteen-field crypto binding as prior input, a new immutable journal/token, and
+creates a separate fifteen-field `lambda_environment_key_describe=True` binding
+only after exact IAM readback. It cannot replay the older crypto repair. The
+integrated offline suite passed 3,478 tests with twelve environment skips;
+compilation and model-free evaluation passed 12/12. Independent focused review
+accepted the metadata-only policy and bounded second recurrence. CI/live gates
+remain pending; no functional E2E claim follows from local tests.
 
 PR #61 passed all eight checks and merged normally to develop at `9f2c5d9`.
 The develop CI then failed only an existing SQLite race test on Python 3.13;

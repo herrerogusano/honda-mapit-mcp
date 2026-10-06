@@ -6,6 +6,7 @@ import json
 import pytest
 
 from scripts.build_cd_retained_dev_multiuser_roles import (
+    KMS_METADATA_BINDING_MARKER,
     RetainedDevMultiuserRoleError,
     build_cd_retained_dev_multiuser_roles,
 )
@@ -244,6 +245,59 @@ def test_kms_wrong_key_service_context_and_action_remain_denied():
         for statement in [*cfn, *boundary]
         for action in (statement.get("Action", []) if isinstance(statement.get("Action", []), list) else [statement.get("Action")])
     )
+
+
+def test_describe_key_metadata_mode_is_exact_and_keeps_crypto_context_grants():
+    key = f"arn:aws:kms:eu-west-1:{ACCOUNT}:key/11111111-2222-4333-8444-555555555555"
+    legacy = _build(lambda_environment_key_arn=key, observed_user_pool_id=POOL_ID)
+    template = _build(
+        lambda_environment_key_arn=key,
+        lambda_environment_key_describe=True,
+        observed_user_pool_id=POOL_ID,
+    )
+    cfn = _cfn_statements(template)
+    boundary = template["Resources"]["RetainedDevCdCloudFormationBoundary"]["Properties"]["PolicyDocument"]["Statement"]
+    metadata = [item for item in cfn if item.get("Sid") == "ReadExactRetainedDevLambdaEnvironmentKeyMetadata"]
+    assert metadata == [{
+        "Sid": "ReadExactRetainedDevLambdaEnvironmentKeyMetadata",
+        "Effect": "Allow",
+        "Action": "kms:DescribeKey",
+        "Resource": key,
+        "Condition": {"StringEquals": {"kms:CallerAccount": ACCOUNT}},
+    }]
+    boundary_metadata = [item for item in boundary if item.get("Action") == "kms:DescribeKey"]
+    assert boundary_metadata == [{
+        "Effect": "Allow",
+        "Action": "kms:DescribeKey",
+        "Resource": key,
+        "Condition": {"StringEquals": {"kms:CallerAccount": ACCOUNT}},
+    }]
+    assert all("kms:ViaService" not in item.get("Condition", {}).get("StringEquals", {})
+               for item in metadata + boundary_metadata)
+    assert all("kms:EncryptionContext:aws:lambda:FunctionArn" not in item.get("Condition", {}).get("StringEquals", {})
+               for item in metadata + boundary_metadata)
+    # The three existing context-specific denies remain crypto-only; they must
+    # not turn a DescribeKey request into a context-bearing request.
+    assert all("kms:DescribeKey" not in item.get("Action", [])
+               for item in boundary if item.get("Effect") == "Deny")
+    assert {"kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"}.issubset(_actions(cfn))
+    assert template["Metadata"]["KmsMetadataBinding"] == KMS_METADATA_BINDING_MARKER
+    assert "KmsMetadataBinding" not in legacy["Metadata"]
+    assert template["Resources"]["RetainedDevCdExecutorRole"] == legacy["Resources"]["RetainedDevCdExecutorRole"]
+    assert template["Resources"]["RetainedDevCdExecutorBoundary"] == legacy["Resources"]["RetainedDevCdExecutorBoundary"]
+
+
+def test_describe_key_metadata_mode_is_strictly_opt_in():
+    key = f"arn:aws:kms:eu-west-1:{ACCOUNT}:key/11111111-2222-4333-8444-555555555555"
+    with pytest.raises(RetainedDevMultiuserRoleError, match="multiuser_environment_key_invalid"):
+        _build(lambda_environment_key_describe=True)
+    with pytest.raises(RetainedDevMultiuserRoleError, match="multiuser_environment_key_invalid"):
+        _build(lambda_environment_key_describe=1, lambda_environment_key_arn=key)
+    # The pre-existing key variant remains unchanged unless the new explicit
+    # marker is supplied.
+    old = _build(lambda_environment_key_arn=key)
+    assert "KmsMetadataBinding" not in old["Metadata"]
+    assert not any(item.get("Action") == "kms:DescribeKey" for item in _cfn_statements(old))
 
 
 @pytest.mark.parametrize("key", [
