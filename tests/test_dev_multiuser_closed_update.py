@@ -175,6 +175,21 @@ def test_sdk_ordered_template_mapping_is_normalized_without_relaxing_shape():
     assert core.run("preflight") == {"ok": True, "phase": "ready"}
 
 
+def test_rollback_complete_is_accepted_only_with_exact_prior_and_fresh_journal():
+    core, cfn, _ = _core()
+    cfn.status = "UPDATE_ROLLBACK_COMPLETE"
+    assert core.run("preflight") == {"ok": True, "phase": "ready"}
+    assert core.run("update") == {"ok": True, "phase": "acknowledged"}
+
+
+def test_rollback_complete_with_prior_template_drift_fails_closed():
+    core, cfn, _ = _core()
+    cfn.status = "UPDATE_ROLLBACK_COMPLETE"
+    cfn.current["Marker"] = "foreign"
+    with pytest.raises(ClosedUpdateError, match="prior_mismatch"):
+        core.run("preflight")
+
+
 def test_unknown_update_response_is_permanently_fenced_without_retry():
     journal = Journal()
     core, cfn, _ = _core(journal=journal)

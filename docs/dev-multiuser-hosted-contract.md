@@ -97,3 +97,16 @@ JSON text and observed mapping responses while retaining exact source hashes.
 These operators are preparation until an actual hosted receipt succeeds.
 Neither offline tests nor resource creation alone establish functional DEV,
 real MAPIT multi-user onboarding, production readiness, or completed DEV CD.
+
+## IAM size compatibility
+
+The first closed V2 role update rolled back when AWS rejected its managed
+boundary size. The original role pair subsequently passed exact readback;
+that acknowledged intent is consumed, not a retry candidate. Equivalent
+compaction removes non-authorizing `Sid` labels and unions actions only when
+every other authorization field matches. The materialized boundary must fit
+IAM's [6,144-character managed-policy limit](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html)
+before any update intent. The optional customer-managed environment KMS-key
+variant exceeds that limit and remains fail-closed; it is not used in the
+approved standard DEV scope. This does not change historical role factories,
+executor permissions, or production policies.

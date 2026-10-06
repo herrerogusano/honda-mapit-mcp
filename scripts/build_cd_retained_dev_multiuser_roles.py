@@ -38,6 +38,8 @@ class RetainedDevMultiuserRoleError(RetainedDevRoleError):
         allowed = {
             "invalid_configuration", "subject_digest_mismatch", "artifact_binding_invalid",
             "multiuser_user_pool_binding_invalid", "multiuser_executor_changed",
+            "multiuser_boundary_too_large",
+            "multiuser_environment_key_unsupported",
         }
         self.category = category if category in allowed else "invalid_configuration"
         super(RetainedDevRoleError, self).__init__(self.category)
@@ -212,6 +214,47 @@ def _multiuser_cfn_statements(*, account_id: str, api_arn: str,
     return statements
 
 
+def _compact_boundary(policy: dict[str, Any]) -> dict[str, Any]:
+    """Compact equivalent statements to stay below IAM's 6144-byte limit.
+
+    Sids are informational.  Statements with identical authorization context
+    (effect/resource/conditions and any other non-Action fields) can safely
+    share one statement with the union of their actions.  The deny
+    ``NotAction`` statement is retained as-is; no permission is removed or
+    added by this transformation.
+    """
+    statements = policy.get("Statement") if isinstance(policy, dict) else None
+    if not isinstance(statements, list):
+        _fail("invalid_configuration")
+    output: list[dict[str, Any]] = []
+    by_context: dict[str, int] = {}
+    for statement in statements:
+        if not isinstance(statement, dict):
+            _fail("invalid_configuration")
+        action = statement.get("Action")
+        context = {key: value for key, value in statement.items()
+                   if key not in {"Sid", "Action"}}
+        context_key = _canonical(context).decode("ascii")
+        if action is not None and context_key in by_context:
+            target = output[by_context[context_key]]
+            old_action = target.get("Action")
+            old_values = old_action if isinstance(old_action, list) else [old_action]
+            new_values = action if isinstance(action, list) else [action]
+            if all(type(value) is str for value in (*old_values, *new_values)):
+                target["Action"] = sorted(set((*old_values, *new_values)))
+                continue
+        compacted = dict(context)
+        if action is not None:
+            actions = sorted(set(action if isinstance(action, list) else [action]))
+            compacted["Action"] = actions[0] if len(actions) == 1 else actions
+        output.append(compacted)
+        by_context[context_key] = len(output) - 1
+    compacted_policy = {"Version": policy.get("Version"), "Statement": output}
+    if len(_canonical(compacted_policy)) > 6144:
+        _fail("multiuser_boundary_too_large")
+    return compacted_policy
+
+
 def build_cd_retained_dev_multiuser_roles(
     *,
     account_id: str,
@@ -237,6 +280,10 @@ def build_cd_retained_dev_multiuser_roles(
     resources and uses the tag-scoped bootstrap wildcard.  Passing an observed
     pool ID produces the recurrent, pool-ARN-scoped policy.
     """
+    if lambda_environment_key_arn is not None:
+        # This opt-in DEV contract excludes the optional customer-managed
+        # environment-key variant in both bootstrap and recurrent phases.
+        _fail("multiuser_environment_key_unsupported")
     if observed_user_pool_id is not None and (
         type(observed_user_pool_id) is not str or _POOL_ID.fullmatch(observed_user_pool_id) is None
     ):
@@ -257,10 +304,12 @@ def build_cd_retained_dev_multiuser_roles(
         account_id=account_id, api_arn=api_arn, handler_arn=handler_arn,
         execution_role_arn=execution_role_arn, pool_id=observed_user_pool_id,
     ))
-    template["Resources"][cfn_boundary_id]["Properties"]["PolicyDocument"] = _permissions_boundary(
-        cfn_policy,
-        environment_key=lambda_environment_key_arn,
-        handler_arn=handler_arn,
+    template["Resources"][cfn_boundary_id]["Properties"]["PolicyDocument"] = _compact_boundary(
+        _permissions_boundary(
+            cfn_policy,
+            environment_key=lambda_environment_key_arn,
+            handler_arn=handler_arn,
+        )
     )
     metadata = template.setdefault("Metadata", {})
     metadata.update({

@@ -1,5 +1,20 @@
 # Project Agent Workflow
 
+Latest hosted DEV checkpoint, 2026-10-06: PRs 50–52 merged normally to
+develop; all eight source checks passed on 79ad52e. The independently reviewed
+operators passed 3,273 offline tests (12 environment skips), compilation and
+model-free evaluation 12/12. SDK mapping and durable-journal integration defects
+were fixed before any AWS write. One fresh roles update was acknowledged, then
+AWS rejected the CloudFormation boundary policy size and rolled back completely.
+A subsequent exact 14-read verifier accepted the original roles/boundaries.
+No pool, table, technical users, runtime artifact or opening has been created.
+The consumed acknowledged intent must never be repeated. Policy compaction
+must preserve permissions, fit the 6,144-character managed-policy limit, pass
+independent review/source CI, and use a new private envelope/journal. Stable
+rollback status is not enough: require exact prior template, closed runtime and
+original role readback before a new intent. Production, owner MFA, Telegram and
+regional quota ten remain unchanged; hosted DEV E2E is still pending.
+
 The 2026-10-06 isolated multi-user DEV scope is owner-approved: retained test
 pool with MFA off only there, two technical users, authorization table, bounded
 opening, unchanged regional Lambda quota ten and no real MAPIT/paid models.
