@@ -67,6 +67,9 @@ def build_retained_dev_artifacts() -> dict[str, Any]:
             if tag.get("Key") == "Purpose":
                 tag["Value"] = "retained-dev-artifacts"
         if resource["Type"] == "AWS::S3::Bucket":
+            resource["Properties"]["BucketName"] = {
+                "Fn::Sub": "honda-mapit-mcp-dev-retained-${AWS::AccountId}-${AWS::Region}"
+            }
             resource["Properties"]["LifecycleConfiguration"] = {"Rules": [{
                 "Id": "DevTerminalJournalRetention", "Status": "Enabled",
                 "Prefix": "journals/", "TagFilters": [{"Key": "cd-terminal", "Value": "true"}],

@@ -21,6 +21,7 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "application_draft", "shutdown_lambda_draft", "shutdown_control_draft",
         "cleanup_schedule_draft", "combined_control_draft", "closed_bootstrap_draft",
         "retained_dev_closed_bootstrap_draft",
+        "retained_dev_closed_runtime_draft",
         "retained_dev_controls_draft", "retained_dev_artifacts_draft",
         "retained_dev_oauth_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
@@ -34,6 +35,10 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "prod_bootstrap_draft", "prod_controls_draft", "prod_artifacts_draft", "prod_artifacts_cd_retention",
         "prod_oauth_draft", "prod_runtime_draft",
         "cd_identity_legacy_draft", "cd_identity_immutable_draft",
+        "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",
+        "cd_delivery_lambda_key_draft",
+        "cd_retained_dev_legacy_draft", "cd_retained_dev_immutable_draft",
+        "cd_retained_dev_lambda_key_draft",
         "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",
         "cd_delivery_lambda_key_draft",
     }

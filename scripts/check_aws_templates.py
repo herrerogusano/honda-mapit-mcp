@@ -57,6 +57,7 @@ def fixed_documents() -> dict[str, str]:
     from mapit.aws_dev_runtime import cognito_dev_policy
     from scripts.build_aws_dev_bootstrap import fixed_bootstrap_template
     from scripts.build_aws_retained_dev import build_retained_dev_template
+    from scripts.build_aws_retained_dev_runtime import build_retained_dev_runtime_template
     from scripts.build_aws_retained_dev_support import build_retained_dev_artifacts, build_retained_dev_controls
     from scripts.build_aws_retained_dev_oauth import build_retained_dev_oauth_setup
     from scripts.build_aws_identity_template import fixed_identity_template
@@ -74,6 +75,7 @@ def fixed_documents() -> dict[str, str]:
     from mapit.aws_prod_runtime import CognitoProdPolicy
     from scripts.build_cd_identity_bootstrap import build_cd_identity_bootstrap
     from scripts.build_cd_delivery_roles import build_cd_delivery_roles
+    from scripts.build_cd_retained_dev_roles import build_cd_retained_dev_roles
 
     documents = {}
     for label, filename in (
@@ -100,6 +102,9 @@ def fixed_documents() -> dict[str, str]:
     ))
     documents["closed_bootstrap_draft"] = json.dumps(fixed_bootstrap_template())
     documents["retained_dev_closed_bootstrap_draft"] = json.dumps(build_retained_dev_template())
+    documents["retained_dev_closed_runtime_draft"] = json.dumps(build_retained_dev_runtime_template(
+        "123456789012", "a1b2c3d4e5", "a" * 64, "b" * 64,
+    ))
     documents["retained_dev_controls_draft"] = json.dumps(build_retained_dev_controls("a1b2c3d4e5"))
     documents["retained_dev_artifacts_draft"] = json.dumps(build_retained_dev_artifacts())
     documents["retained_dev_oauth_draft"] = json.dumps(build_retained_dev_oauth_setup(
@@ -255,6 +260,41 @@ def fixed_documents() -> dict[str, str]:
         if subject_format == "immutable_environment":
             documents["cd_delivery_lambda_key_draft"] = json.dumps(build_cd_delivery_roles(
                 **delivery_arguments,
+                lambda_environment_key_arn=(f"arn:aws:kms:eu-west-1:{identity_account_id}:key/"
+                                            "11111111-2222-4333-8444-555555555555"),
+            ))
+    retained_stack = (f"arn:aws:cloudformation:eu-west-1:{identity_account_id}:stack/"
+                      "honda-mapit-mcp-dev-retained/11111111-2222-4333-8444-555555555555")
+    retained_artifact_stack = (f"arn:aws:cloudformation:eu-west-1:{identity_account_id}:stack/"
+                               "honda-mapit-mcp-dev-retained-runtime-artifacts/22222222-3333-4444-8555-666666666666")
+    retained_base = dict(
+        account_id=identity_account_id, provider_arn=identity_provider_arn,
+        owner_id=identity_owner_id, repository_id=identity_repository_id,
+        stack_arn=retained_stack, artifact_stack_arn=retained_artifact_stack,
+        handler_arn=(f"arn:aws:lambda:eu-west-1:{identity_account_id}:function:"
+                     "honda-mapit-mcp-dev-retained-handler"),
+        api_arn="arn:aws:apigateway:eu-west-1::/apis/a1b2c3d4e5",
+        shutdown_state_machine_arn=(f"arn:aws:states:eu-west-1:{identity_account_id}:stateMachine:"
+                                    "honda-mapit-mcp-dev-retained-shutdown"),
+        artifact_bucket_arn=(f"arn:aws:s3:::honda-mapit-mcp-dev-retained-"
+                             f"{identity_account_id}-eu-west-1"),
+        execution_role_arn=(f"arn:aws:iam::{identity_account_id}:role/"
+                            "honda-mapit-mcp-dev-retained-handler-role"),
+    )
+    for subject_format in ("legacy_environment", "immutable_environment"):
+        dev_subject = (
+            "repo:herrerogusano/honda-mapit-mcp:environment:dev"
+            if subject_format == "legacy_environment" else
+            f"repo:herrerogusano@{identity_owner_id}/honda-mapit-mcp@{identity_repository_id}:environment:dev"
+        )
+        retained_args = dict(retained_base,
+                             observed_dev_subject_format=subject_format,
+                             observed_dev_subject_sha256=hashlib.sha256(dev_subject.encode("ascii")).hexdigest())
+        label = "cd_retained_dev_legacy_draft" if subject_format == "legacy_environment" else "cd_retained_dev_immutable_draft"
+        documents[label] = json.dumps(build_cd_retained_dev_roles(**retained_args))
+        if subject_format == "immutable_environment":
+            documents["cd_retained_dev_lambda_key_draft"] = json.dumps(build_cd_retained_dev_roles(
+                **retained_args,
                 lambda_environment_key_arn=(f"arn:aws:kms:eu-west-1:{identity_account_id}:key/"
                                             "11111111-2222-4333-8444-555555555555"),
             ))
