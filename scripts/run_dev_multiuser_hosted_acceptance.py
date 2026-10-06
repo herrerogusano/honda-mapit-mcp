@@ -46,6 +46,7 @@ from scripts.dev_multiuser_managed_login import (
 from scripts.dev_multiuser_readback import verify_closed_setup, verify_role_pair
 from scripts.dev_multiuser_window import DevTestWindow
 from scripts.dev_multiuser_test_users import DevMultiuserTestUserOperator, MAX_AUTHORITY_SECONDS
+from scripts.dev_multiuser_user_recovery import recover_partial_users
 from scripts.run_dev_multiuser_runtime_update import (
     CasFileJournal,
     MultiuserBuildReceipt,
@@ -87,7 +88,7 @@ _ACCOUNT = re.compile(r"[0-9]{12}\Z")
 _API = re.compile(r"[a-z0-9]{10}\Z")
 _POOL = re.compile(r"eu-west-1_[A-Za-z0-9]{9,64}\Z")
 _CLIENT = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
-_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z")
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 _STACK = re.compile(r"arn:aws:cloudformation:eu-west-1:([0-9]{12}):stack/([^/]+)/[0-9a-f-]{36}\Z")
 
 SAFE_CATEGORIES = frozenset({
@@ -636,6 +637,7 @@ class HostedAcceptanceInputs:
     role_bindings_path: Path
     wheel_dir: Path
     artifact_binding_path: Path | None = None
+    existing_user_journal_path: Path | None = None
 
 
 def run_hosted_acceptance(
@@ -665,6 +667,9 @@ def run_hosted_acceptance(
         auth = load_authorization(validate_private_location(inputs.authorization_path, acl_checker=acl_checker))
         source_verifier(auth)
         root = validate_private_location(inputs.private_root, acl_checker=acl_checker)
+        existing_user_journal = None
+        if inputs.existing_user_journal_path is not None:
+            existing_user_journal = FileJournal(validate_private_location(inputs.existing_user_journal_path, acl_checker=acl_checker))
         app_binding = _read_private_json(inputs.app_binding_path, acl_checker=acl_checker)
         roles_binding = _read_private_json(inputs.roles_binding_path, acl_checker=acl_checker)
         controls_binding = _read_private_json(inputs.controls_binding_path, acl_checker=acl_checker)
@@ -738,16 +743,29 @@ def run_hosted_acceptance(
         dry = make_client().dry_login_page()
         if dry.get("success") is not True:
             _fail("login_page_failed")
-        for name in ("users", "artifact", "iam", "runtime", "window", "tenant-a", "tenant-b", "revocation"):
+        for name in ("users", "artifact", "iam", "runtime", "window", "tenant-a", "tenant-b", "revocation", "recovery"):
             _create_dir(run_dir / name, acl_checker=acl_checker)
         revocation_journal = FileJournal(run_dir / "revocation")
         user_journal = FileJournal(run_dir / "users")
         user_start, user_end = _derive_user_window(int(clock()), auth["start"], auth["end"])
+        operator_run_id = str(auth["run_id"])
+        recovered = existing_user_journal is not None
+        if recovered:
+            recovery_result = recover_partial_users(
+                clients={"cognito": clients["cognito"]}, original_journal=existing_user_journal,
+                new_journal=user_journal, provenance_journal=FileJournal(run_dir / "recovery"),
+                account=auth["account"], user_pool_id=pool_id, new_source_sha256=auth["source_sha"],
+                new_authorized_from_epoch=user_start, new_authorized_until_epoch=user_end,
+            )
+            if recovery_result.get("success") is not True:
+                _fail("user_preflight_failed")
+            recovered_state = user_journal.load()
+            operator_run_id = recovered_state["run_id"] if isinstance(recovered_state, Mapping) else operator_run_id
         operator = DevMultiuserTestUserOperator(
             {"cognito": clients["cognito"]}, user_journal, account_id=auth["account"], user_pool_id=pool_id,
-            run_id=str(auth["run_id"]), authorized_from_epoch=user_start, authorized_until_epoch=user_end, wall_clock=clock,
+            run_id=operator_run_id, authorized_from_epoch=user_start, authorized_until_epoch=user_end, wall_clock=clock,
         )
-        if operator.preflight().get("category") != "preflight_verified":
+        if not recovered and operator.preflight().get("category") != "preflight_verified":
             _fail("user_preflight_failed")
         def receive_token(username: str, token: Any) -> None:
             if type(username) is not str or not hasattr(token, "access_token"):
@@ -761,6 +779,11 @@ def run_hosted_acceptance(
         if len(usernames) != 2 or any(type(name) is not str for name in usernames):
             _fail("user_readback_failed")
         subjects = _user_rows(clients["cognito"], pool=pool_id, usernames=(usernames[0], usernames[1]))
+        if recovered:
+            recovered_digest = state.get("slots", [{}])[0].get("user_sub_sha256") if isinstance(state, Mapping) else None
+            if (type(recovered_digest) is not str or hashlib.sha256(subjects[0].encode("ascii")).hexdigest() != recovered_digest
+                or subjects[0] == subjects[1]):
+                _fail("user_readback_failed")
         if set(token_map) != set(usernames):
             _fail("token_verify_failed")
         jwks, jwks_sha = jwks_fetcher(user_pool_id=pool_id)
@@ -922,6 +945,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("authorization", "private-root", "app-binding", "roles-binding", "controls-binding", "role-bindings", "artifact-binding", "wheel-dir"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--existing-user-journal", type=Path, required=False)
     args = parser.parse_args(argv)
     values = vars(args)
     inputs = HostedAcceptanceInputs(
@@ -929,6 +953,7 @@ def main(argv: list[str] | None = None) -> int:
         app_binding_path=values["app_binding"], roles_binding_path=values["roles_binding"],
         controls_binding_path=values["controls_binding"], role_bindings_path=values["role_bindings"],
         wheel_dir=values["wheel_dir"], artifact_binding_path=values["artifact_binding"],
+        existing_user_journal_path=values["existing_user_journal"],
     )
     result = run_hosted_acceptance(inputs, clients_factory=_build_aws_clients)
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
