@@ -18,6 +18,7 @@ fallback, never a guessed form or USER_PASSWORD_AUTH.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from html.parser import HTMLParser
 import json
@@ -34,6 +35,7 @@ from scripts.dev_multiuser_test_users import (
     PkceChallenge,
     new_pkce_challenge,
 )
+from scripts.dev_multiuser_cookie_policy import CookiePolicyError, apply_set_cookie_updates
 
 
 MAX_HTML_BYTES = 512 * 1024
@@ -46,7 +48,6 @@ _RESOURCE = re.compile(r"https://[a-z0-9]{10}\.execute-api\.eu-west-1\.amazonaws
 _CLIENT = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 _CALLBACK = re.compile(r"http://localhost:[1-9][0-9]{2,5}/[A-Za-z0-9._~/-]+\Z")
 _USERNAME = re.compile(r"[A-Za-z0-9._+@-]{1,128}\Z")
-_COOKIE_NAME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}\Z")
 _CSRF_NAMES = frozenset({"csrf", "csrf_token", "_csrf", "_csrf_token"})
 MAX_COGNITO_ASF_BYTES = 16 * 1024
 
@@ -56,12 +57,18 @@ class ManagedLoginError(ValueError):
 
     _ALLOWED = frozenset({
         "configuration_invalid", "transport_failed", "response_invalid",
+        "cookie_invalid",
         "redirect_rejected", "login_form_unstable", "login_rejected",
         "callback_invalid", "token_invalid", "token_endpoint_rejected",
     })
+    _STAGES = frozenset({
+        "authorize_get", "login_get", "login_post", "authorize_redirect",
+        "token_post", "client_factory",
+    })
 
-    def __init__(self, category: str):
-        self.category = category if category in self._ALLOWED else "response_invalid"
+    def __init__(self, category: str, *, stage: str | None = None):
+        self.category = category if type(category) is str and category in self._ALLOWED else "response_invalid"
+        self.stage = stage if type(stage) is str and stage in self._STAGES else None
         super().__init__(self.category)
 
 
@@ -320,6 +327,20 @@ class ManagedLoginClient:
         self.resource, self.required_scope, self.transport, self.timeout = resource, required_scope, transport, float(timeout)
         self._cookies: dict[str, str] = {}
         self.calls = 0
+        self._stage: str | None = None
+
+    @contextmanager
+    def _stage_scope(self, stage: str):
+        previous = self._stage
+        self._stage = stage if type(stage) is str and stage in ManagedLoginError._STAGES else None
+        try:
+            yield
+        except ManagedLoginError as exc:
+            if exc.stage is None:
+                exc.stage = self._stage
+            raise
+        finally:
+            self._stage = previous
 
     def _cookies_header(self) -> str | None:
         return "; ".join(f"{key}={value}" for key, value in self._cookies.items()) or None
@@ -328,14 +349,10 @@ class ManagedLoginClient:
         values = [value.strip() for value in response.set_cookies]
         if not values:
             values = [value.strip() for key, value in response.headers.items() if key.casefold() == "set-cookie"]
-        for raw in values:
-            first = raw.split(";", 1)[0]
-            if "=" not in first:
-                _fail("response_invalid")
-            name, value = first.split("=", 1)
-            if _COOKIE_NAME.fullmatch(name) is None or not _bounded_text(value, 2048) or any(char in value for char in ";,"):
-                _fail("response_invalid")
-            self._cookies[name] = value
+        try:
+            apply_set_cookie_updates(self._cookies, values)
+        except CookiePolicyError:
+            _fail("cookie_invalid")
 
     def _request(self, method: str, url: str, *, body: bytes | None = None, content_type: str | None = None) -> HttpResponse:
         headers = {"Accept": "text/html,application/json", "Cache-Control": "no-store"}
@@ -447,42 +464,53 @@ class ManagedLoginClient:
         if type(username) is not str or _USERNAME.fullmatch(username) is None or type(password) is not str or not password or len(password.encode("utf-8")) > 512:
             _fail("configuration_invalid")
         challenge = new_pkce_challenge()
-        response = self._request("GET", self._authorize_url(challenge))
-        if response.status not in {301, 302, 303, 307, 308}:
-            _fail("response_invalid")
-        location, code = self._follow_intermediate(self._location(response), allow_callback=False, state=challenge.state)
+        with self._stage_scope("authorize_get"):
+            response = self._request("GET", self._authorize_url(challenge))
+            if response.status not in {301, 302, 303, 307, 308}:
+                _fail("response_invalid")
+        with self._stage_scope("authorize_redirect"):
+            location, code = self._follow_intermediate(self._location(response), allow_callback=False, state=challenge.state)
         form: LoginForm | None = None
         if code is None:
             if urllib.parse.urlsplit(location).path != "/login":
-                response = self._request("GET", location)
-                if response.status not in {301, 302, 303}:
-                    _fail("response_invalid")
-                location, code = self._follow_intermediate(self._location(response), allow_callback=False, state=challenge.state)
+                with self._stage_scope("login_get"):
+                    response = self._request("GET", location)
+                    if response.status not in {301, 302, 303}:
+                        _fail("response_invalid")
+                with self._stage_scope("authorize_redirect"):
+                    location, code = self._follow_intermediate(self._location(response), allow_callback=False, state=challenge.state)
             if code is None:
-                page = self._request("GET", location)
-                if page.status != 200:
-                    _fail("login_rejected")
-                form = parse_login_form(page.body, domain=self.domain)
+                with self._stage_scope("login_get"):
+                    page = self._request("GET", location)
+                    if page.status != 200:
+                        _fail("login_rejected")
+                    form = parse_login_form(page.body, domain=self.domain)
                 values = dict(form.hidden)
                 values[form.username_name] = username
                 values[form.password_name] = password
                 body = urllib.parse.urlencode(values).encode("utf-8")
                 if len(body) > MAX_HTML_BYTES:
                     _fail("response_invalid")
-                posted = self._request("POST", form.action, body=body, content_type="application/x-www-form-urlencoded")
-                if posted.status not in {301, 302, 303}:
-                    _fail("login_rejected")
-                location, code = self._follow_intermediate(self._location(posted), allow_callback=True, state=challenge.state)
+                with self._stage_scope("login_post"):
+                    posted = self._request("POST", form.action, body=body, content_type="application/x-www-form-urlencoded")
+                    if posted.status not in {301, 302, 303}:
+                        _fail("login_rejected")
+                with self._stage_scope("login_post"):
+                    location, code = self._follow_intermediate(self._location(posted), allow_callback=True, state=challenge.state)
                 for _ in range(MAX_REDIRECTS):
                     if code is not None:
                         break
-                    next_response = self._request("GET", location)
-                    if next_response.status not in {301, 302, 303}:
-                        _fail("login_rejected")
-                    location, code = self._follow_intermediate(self._location(next_response), allow_callback=True, state=challenge.state)
+                    with self._stage_scope("authorize_redirect"):
+                        next_response = self._request("GET", location)
+                        if next_response.status not in {301, 302, 303}:
+                            _fail("login_rejected")
+                    with self._stage_scope("authorize_redirect"):
+                        location, code = self._follow_intermediate(self._location(next_response), allow_callback=True, state=challenge.state)
         if code is None:
-            _fail("callback_invalid")
-        return self._token_exchange(code, challenge)
+            with self._stage_scope("authorize_redirect"):
+                _fail("callback_invalid")
+        with self._stage_scope("token_post"):
+            return self._token_exchange(code, challenge)
 
 
 def provision_and_login_pair(operator: Any, client_factory: Callable[[], ManagedLoginClient], *,
@@ -497,23 +525,38 @@ def provision_and_login_pair(operator: Any, client_factory: Callable[[], Managed
     if not callable(getattr(operator, "provision", None)) or not callable(client_factory) or on_tokens is not None and not callable(on_tokens):
         _fail("configuration_invalid")
     authenticated = 0
+    failure: tuple[str, str] | None = None
 
     def _login(username: str, password: str) -> None:
-        nonlocal authenticated
-        client = client_factory()
-        if not isinstance(client, ManagedLoginClient):
-            _fail("configuration_invalid")
-        tokens = client.login(username=username, password=password)
-        if on_tokens is not None:
-            on_tokens(username, tokens)
-        authenticated += 1
+        nonlocal authenticated, failure
+        try:
+            client = client_factory()
+            if not isinstance(client, ManagedLoginClient):
+                _fail("configuration_invalid")
+            tokens = client.login(username=username, password=password)
+            if on_tokens is not None:
+                on_tokens(username, tokens)
+            authenticated += 1
+        except ManagedLoginError as exc:
+            category = exc.category if type(exc.category) is str and exc.category in ManagedLoginError._ALLOWED else "response_invalid"
+            stage = exc.stage if type(exc.stage) is str and exc.stage in ManagedLoginError._STAGES else "client_factory"
+            failure = (category, stage)
+            raise
 
     result = operator.provision(on_confirmed_user=_login)
     if not isinstance(result, Mapping):
         _fail("response_invalid")
     if result.get("success") is True and authenticated == 2:
         return {"success": True, "category": "users_authenticated", "users": 2}
-    return {"success": False, "category": result.get("category", "response_invalid"), "users": authenticated}
+    if failure is not None:
+        return {
+            "success": False, "category": "login_failed",
+            "login_category": failure[0], "stage": failure[1], "users": authenticated,
+        }
+    category = result.get("category")
+    if type(category) is not str or category not in DevMultiuserUserError._ALLOWED:
+        category = "response_invalid"
+    return {"success": False, "category": category, "users": authenticated}
 
 
 __all__ = [

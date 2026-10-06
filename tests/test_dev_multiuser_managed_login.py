@@ -137,6 +137,35 @@ def test_multiple_set_cookie_values_are_kept_in_memory_and_response_url_is_bound
         _client(bad).login(username=USERNAME, password=PASSWORD)
 
 
+def test_full_login_redirect_accepts_explicit_known_cookie_clear():
+    class ClearingFlow(FlowTransport):
+        def __call__(self, method, url, headers, body, timeout):
+            response = super().__call__(method, url, headers, body, timeout)
+            if method == "POST" and urlsplit(url).path == "/login":
+                return _response(response.status, response.url, response.body,
+                                 set_cookies=("session=; Max-Age=0; Path=/",), **response.headers)
+            return response
+
+    transport = ClearingFlow()
+    tokens = _client(transport).login(username=USERNAME, password=PASSWORD)
+    assert tokens.access_token == "opaque-access"
+    assert len(transport.calls) == 5
+
+
+def test_empty_cookie_without_explicit_deletion_fails_at_login_post_stage():
+    class UnsafeClearingFlow(FlowTransport):
+        def __call__(self, method, url, headers, body, timeout):
+            response = super().__call__(method, url, headers, body, timeout)
+            if method == "POST" and urlsplit(url).path == "/login":
+                return _response(response.status, response.url, response.body,
+                                 set_cookies=("session=; Path=/",), **response.headers)
+            return response
+
+    with pytest.raises(ManagedLoginError, match="cookie_invalid") as caught:
+        _client(UnsafeClearingFlow()).login(username=USERNAME, password=PASSWORD)
+    assert caught.value.stage == "login_post"
+
+
 def test_wrong_callback_state_and_unbounded_body_fail_closed():
     transport = FlowTransport()
     client = _client(transport)
@@ -148,8 +177,9 @@ def test_wrong_callback_state_and_unbounded_body_fail_closed():
             if "continue" in query:
                 return _response(302, url, Location=f"{CALLBACK}?code=x&state=foreign")
         return transport(method, url, headers, body, timeout)
-    with pytest.raises(ManagedLoginError, match="callback_invalid"):
+    with pytest.raises(ManagedLoginError, match="callback_invalid") as caught:
         ManagedLoginClient(account_id=ACCOUNT, domain=DOMAIN, client_id=CLIENT, callback_url=CALLBACK, resource=RESOURCE, required_scope=SCOPE, transport=bad_callback).login(username=USERNAME, password=PASSWORD)
+    assert caught.value.stage == "authorize_redirect"
 
 
 def test_pair_bridge_keeps_password_and_tokens_in_memory_only():
@@ -169,3 +199,24 @@ def test_pair_bridge_keeps_password_and_tokens_in_memory_only():
     assert result == {"success": True, "category": "users_authenticated", "users": 2}
     assert consumed == ["opaque-access", "opaque-access"]
     assert "opaque-access" not in repr(result)
+
+
+def test_pair_bridge_returns_allowlisted_login_category_and_stage_on_callback_failure():
+    class FailedClient(ManagedLoginClient):
+        def login(self, *, username, password):
+            raise ManagedLoginError("callback_invalid", stage="authorize_redirect")
+
+    class FakeOperator:
+        def provision(self, *, on_confirmed_user):
+            try:
+                on_confirmed_user("synthetic-a", PASSWORD)
+            except ManagedLoginError:
+                pass
+            return {"success": False, "category": "login_failed", "users": 0}
+
+    result = provision_and_login_pair(FakeOperator(), lambda: FailedClient.__new__(FailedClient))
+    assert result == {
+        "success": False, "category": "login_failed",
+        "login_category": "callback_invalid", "stage": "authorize_redirect", "users": 0,
+    }
+    assert "synthetic" not in repr(result)
