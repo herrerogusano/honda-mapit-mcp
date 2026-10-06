@@ -2,6 +2,30 @@
 
 ## Scope
 
+On 2026-10-06 the owner approved permanent retained dev, with an additional
+gross USD 1/month target (not a hard billing cap), synthetic owner-access-only
+runtime and independent closure outside bounded tests. Preserve eu-west-1,
+regional Lambda quota 10, working single-owner prod, definitive owner/MFA and
+MAPIT data/session. No paid models, real guests or Telegram expansion follows.
+The new five-resource honda-mapit-mcp-dev-retained stack was created once from
+5d6e31a and accepted with 15 exact readbacks. It is closed: disabled API,
+reserve-zero inline Lambda, no routes/invocation permission/OAuth/environment
+or business/secret path. Its private original creation source/window/token/
+journal is immutable and consumed; never replay it or write a new verifier
+source into the original creation binding.
+PR #36 subsequently merged the independently reviewed exact retained-dev
+executor/service-role drafts, deterministic private bucket, closed synthetic
+runtime and read-only CloudFormation resource-binding helper to develop at
+befbb9f. Eight PR CI checks passed; local acceptance is 2,654 passed, eleven
+environment skips, compilation, model-free evaluation 12/12 and 37 pinned
+synthetic schema fixtures. The fixture client now validates against the real
+CognitoDevPolicy, not only CloudFormation shape. Runtime resource bindings
+alone do not prove current closure or out-of-band drift absence. No dev CD
+roles, S3/control resources, runtime update, activation or multiuser hosting
+were created by this increment; full dev CD remains IN PROGRESS. Production
+main remains unchanged. Subsequent artifact bootstrap work is preparation only
+until fresh source/CI/authorization/intents/readbacks are independently accepted.
+
 On 2026-10-05 the user explicitly authorized PR promotion to develop then main
 and preparation/creation of the narrowly scoped AWS OIDC connection for CD in
 eu-west-1. Present the exact artifact/change and recovery before a production
