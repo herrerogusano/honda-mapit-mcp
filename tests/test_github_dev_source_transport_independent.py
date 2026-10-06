@@ -100,6 +100,17 @@ def test_remote_rejects_redirect_encoding_and_duplicate_json_keys(tmp_path: Path
         assert made[0][0].closed is True
 
 
+def test_denied_response_retains_only_status_without_reading_private_body(tmp_path: Path):
+    response = _Response(b"private-provider-payload", status=403)
+    reader, made = _reader(tmp_path, response)
+    with pytest.raises(SourceTransportError) as raised:
+        reader.remote("branches/develop/protection")
+    assert raised.value.http_status == 403
+    assert str(raised.value) == "source_transport_failed"
+    assert response.body == b"private-provider-payload"
+    assert made[0][0].closed is True
+
+
 def test_remote_rejects_body_over_limit(tmp_path: Path):
     reader, _ = _reader(tmp_path, _Response(b"{" + b"a" * MAX_OUTPUT_BYTES + b"}"))
 

@@ -1,5 +1,6 @@
 import scripts.probe_github_dev_read_permissions as probe
 from scripts.probe_github_dev_read_permissions import run
+from scripts.github_dev_source_transport import SourceTransportError
 
 
 def context():
@@ -37,6 +38,17 @@ def test_wrong_ref_never_constructs_transport(tmp_path):
     env = context(); env["GITHUB_REF"] = "refs/heads/main"
     def reader(*args): raise AssertionError("called")
     assert run(env, root=tmp_path, transport_factory=reader)["context_verified"] is False
+
+
+def test_permission_denial_is_a_boolean_not_raw_provider_payload(tmp_path):
+    class Reader:
+        def __init__(self, *args): pass
+        def remote(self, endpoint):
+            raise SourceTransportError(http_status=403)
+    result = run(context(), root=tmp_path, transport_factory=Reader)
+    assert result["branch_permission_denied"] is True
+    assert result["branch_readable"] is False
+    assert "403" not in repr(result)
 
 
 def test_read_permission_probe_must_not_exit_success_when_protection_reads_are_denied(monkeypatch, capsys):

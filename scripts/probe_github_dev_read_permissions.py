@@ -18,7 +18,7 @@ from scripts.github_dev_source_transport import SourceReadTransport
 def run(environment: Mapping[str, str], *, root: Path, transport_factory=SourceReadTransport) -> dict[str, Any]:
     result = {"read_only": True, "context_verified": False, "branch_readable": False,
               "environment_readable": False, "branch_policy_readable": False,
-              "protections_verified": False}
+              "protections_verified": False, "branch_permission_denied": False}
     try:
         owner = environment.get("GITHUB_REPOSITORY_OWNER_ID")
         sha = environment.get("GITHUB_SHA")
@@ -41,8 +41,9 @@ def run(environment: Mapping[str, str], *, root: Path, transport_factory=SourceR
                 if isinstance(value, dict):
                     values[name] = value
                     result[name + "_readable"] = True
-            except Exception:
-                pass
+            except Exception as exc:
+                if name == "branch" and getattr(exc, "http_status", None) in (401, 403):
+                    result["branch_permission_denied"] = True
         if len(values) == 3:
             result["protections_verified"] = (
                 validate_branch_protection_readback("develop", values["branch"])
