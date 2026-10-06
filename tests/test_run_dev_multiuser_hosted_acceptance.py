@@ -70,6 +70,9 @@ def test_source_gate_runs_before_client_factory_or_private_bindings(tmp_path):
     {"allow_confirmed_pair_password_resets": True},
     {"allow_confirmed_pair_password_resets": "yes"},
     {"allow_confirmed_pair_password_resets": True, "allow_single_a_password_reset": True},
+    {"allow_recurring_confirmed_pair_password_resets": True},
+    {"allow_recurring_confirmed_pair_password_resets": True, "allow_confirmed_pair_password_resets": True},
+    {"allow_recurring_confirmed_pair_password_resets": True, "allow_single_a_password_reset": True},
     {"confirmed_user_journal_path": Path("absent")},
 ])
 def test_pair_recovery_requires_exact_explicit_inputs_before_clients(tmp_path, flags):
@@ -78,6 +81,34 @@ def test_pair_recovery_requires_exact_explicit_inputs_before_clients(tmp_path, f
                                    clients_factory=lambda: called.append(True) or {}, acl_checker=lambda _: True)
     assert result == {"success": False, "category": "bindings_invalid"}
     assert not called
+
+
+def test_recurring_pair_recovery_requires_explicit_pair_creation_journal(tmp_path):
+    called = []
+    inputs = replace(
+        _private_inputs(tmp_path),
+        allow_recurring_confirmed_pair_password_resets=True,
+        existing_user_journal_path=Path("original/users"),
+        confirmed_user_journal_path=Path("latest/users"),
+        failed_runtime_journal_path=Path("latest/runtime"),
+    )
+    result = run_hosted_acceptance(
+        inputs, source_verifier=lambda _: None,
+        clients_factory=lambda: called.append(True) or {}, acl_checker=lambda _: True,
+    )
+    assert result == {"success": False, "category": "bindings_invalid"}
+    assert called == []
+
+
+def test_pair_creation_journal_is_rejected_outside_recurring_mode(tmp_path):
+    called = []
+    inputs = replace(_private_inputs(tmp_path), pair_creation_user_journal_path=Path("first/users"))
+    result = run_hosted_acceptance(
+        inputs, source_verifier=lambda _: None,
+        clients_factory=lambda: called.append(True) or {}, acl_checker=lambda _: True,
+    )
+    assert result == {"success": False, "category": "bindings_invalid"}
+    assert called == []
 
 
 def test_login_failure_diagnostics_are_allowlisted_and_redacted():

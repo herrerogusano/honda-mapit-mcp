@@ -1,5 +1,38 @@
 # Project Agent Workflow
 
+On 2026-10-07 Europe/Madrid the owner approved deletion of only the exact unused
+retained DEV JWT authorizer and one fresh bounded deployment/E2E attempt with
+one reset/login of each same confirmed A/B technical account. Implement and
+independently review exact closure/lineage/intent/readback guards and terminal
+PAIR-reset provenance before executing. Do not replay any prior operation,
+relax KMS context, expand IAM, touch production/MFA/MAPIT or raise quota ten.
+Use fresh source CI/private immutable authority; stop on any ambiguous write
+or failed attempt without another automatic reset/retry. This allowance is
+not yet consumed at this preparation checkpoint. Temporary wakefulness must
+be removed before handoff.
+
+Latest live checkpoint (2026-10-06 UTC): PR #60 merged normally to develop
+at `5b6c379`, with eight green checks on source and develop. The exact-key KMS
+CFN-role repair passed real readback; executor permissions remained unchanged.
+One reset/login per same confirmed technical A/B account and both signed-token
+checks succeeded. These allowances are consumed. The private ARM artifact was
+published; the runtime update was acknowledged then rolled back completely:
+JWT authorizer creation failed with AlreadyExists. Read-only evidence matched
+the retained authorizer to the prior create and DELETE_SKIPPED events; exact
+audience/issuer matched, with zero route references. Dev is closed (API disabled,
+Lambda reserve zero), with its original eleven-resource stack. No hosted E2E,
+tenant publication, production/MFA/MAPIT operation or quota change occurred.
+Deletion of that exact orphan and a fresh bounded pair-reset/deployment attempt
+were requested, not authorized or executed at this checkpoint. Never replay
+consumed writes. The latest terminal reset journal is PAIR-kind, not accepted
+by the older A-only rollback validator; retain original B-creation provenance.
+The strict KMS context remains untested. DEV multiuser is not yet functional.
+See docs/dev-multiuser-hosted-contract.md.
+Offline API-child prevention passed independent review and 3,442 full tests
+(twelve environment skips), compilation and model-free evaluation 12/12. The
+owned temporary wakefulness helper was stopped before handoff; original power
+scheme was unchanged. No persistent display setting was modified.
+
 Latest DEV checkpoint on 2026-10-06 supersedes the first-password gate below:
 develop 86e58bf passed eight checks and the separately bound read-only recovery.
 A's first permanent password was acknowledged and journaled, then Managed

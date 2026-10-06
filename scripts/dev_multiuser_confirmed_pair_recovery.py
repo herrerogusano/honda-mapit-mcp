@@ -112,18 +112,22 @@ def _latest_pair(value: Any, *, account: str, pool: str,
     return dict(state)
 
 
-def _reset_state(value: Any) -> dict[str, Any]:
+def _reset_state(value: Any, *, allow_complete: bool = False) -> dict[str, Any]:
+    if type(allow_complete) is not bool:
+        raise ValueError
     fields = {"schema", "kind", "revision", "phase", "account_id", "user_pool_id", "run_id",
               "source_sha256", "authorized_from_epoch", "authorized_until_epoch",
               "original_creation_sha256", "latest_pair_sha256", "original_start_epoch",
               "original_end_epoch", "latest_start_epoch", "latest_end_epoch",
               "binding_sha256", "slots"}
-    if type(value) is not dict or set(value) != fields:
+    recurring_fields = {"first_confirmed_pair_sha256", "previous_reset_sha256"}
+    recurring = type(value) is dict and recurring_fields.issubset(value)
+    if type(value) is not dict or (set(value) != fields and set(value) != fields | recurring_fields):
         raise ValueError
     if (type(value["schema"]) is not int or value["schema"] != 1
         or value["kind"] != _KIND or type(value["revision"]) is not int
         or isinstance(value["revision"], bool) or value["revision"] < 0
-        or value["phase"] != "prepared"
+        or value["phase"] not in ({"prepared", "complete"} if allow_complete else {"prepared"})
         or type(value["account_id"]) is not str or _ACCOUNT.fullmatch(value["account_id"]) is None
         or value["account_id"] == "0" * 12 or type(value["user_pool_id"]) is not str
         or _POOL.fullmatch(value["user_pool_id"]) is None
@@ -139,7 +143,9 @@ def _reset_state(value: Any) -> dict[str, Any]:
         or value["original_end_epoch"] > value["latest_start_epoch"]
         or value["latest_end_epoch"] > value["authorized_from_epoch"]
         or any(type(value[k]) is not str or _SHA256.fullmatch(value[k]) is None
-               for k in ("original_creation_sha256", "latest_pair_sha256", "binding_sha256"))):
+               for k in ("original_creation_sha256", "latest_pair_sha256", "binding_sha256"))
+        or recurring and any(type(value[k]) is not str or _SHA256.fullmatch(value[k]) is None
+                             for k in recurring_fields)):
         raise ValueError
     slots = value["slots"]
     if type(slots) is not list or len(slots) != 2:
@@ -153,6 +159,8 @@ def _reset_state(value: Any) -> dict[str, Any]:
         "authorized_until_epoch", "original_creation_sha256", "latest_pair_sha256")}
     base.update({key: value[key] for key in ("original_start_epoch", "original_end_epoch",
                                              "latest_start_epoch", "latest_end_epoch")})
+    if recurring:
+        base.update({key: value[key] for key in sorted(recurring_fields)})
     if value["binding_sha256"] != _digest(base):
         raise ValueError
     for index, row in enumerate(slots):
@@ -161,7 +169,7 @@ def _reset_state(value: Any) -> dict[str, Any]:
         if (row.get("slot") != expected[index]["slot"] or row.get("username") != expected[index]["username"]
             or type(row.get("subject_sha256")) is not str or _SHA256.fullmatch(row["subject_sha256"]) is None
             or type(row.get("reset_token")) is not str or _SHA256.fullmatch(row["reset_token"]) is None
-            or row.get("phase") != "pending"):
+            or row.get("phase") != ("confirmed" if value["phase"] == "complete" else "pending")):
             raise ValueError
         token = _digest({"operation": "reset-confirmed-pair-user", "binding_sha256": value["binding_sha256"],
                          "slot": row["slot"], "subject_sha256": row["subject_sha256"]})
@@ -176,12 +184,15 @@ def prepare_confirmed_pair_reset(
     provenance_journal: Any, account: str, user_pool_id: str, source_sha256: str,
     authorized_from_epoch: int, authorized_until_epoch: int,
     allow_two_confirmed_user_resets: bool = False,
+    first_confirmed_pair_sha256: str | None = None,
+    previous_reset_sha256: str | None = None,
     wall_clock: Callable[[], float] = time.time,
 ) -> dict[str, Any]:
     """Read and bind both confirmed identities, then create only fresh journals."""
     calls = 0
     if allow_two_confirmed_user_resets is not True:
         return {"success": False, "category": "reset_authorization_required", "calls": 0}
+    recurring = first_confirmed_pair_sha256 is not None or previous_reset_sha256 is not None
     if (not isinstance(clients, Mapping) or set(clients) != {"cognito"}
         or clients.get("cognito") is None or type(account) is not str
         or _ACCOUNT.fullmatch(account) is None or account == "0" * 12
@@ -190,7 +201,9 @@ def prepare_confirmed_pair_reset(
         or type(authorized_from_epoch) is not int or isinstance(authorized_from_epoch, bool)
         or type(authorized_until_epoch) is not int or isinstance(authorized_until_epoch, bool)
         or not 0 < authorized_until_epoch - authorized_from_epoch <= 300
-        or not callable(wall_clock)):
+        or not callable(wall_clock)
+        or recurring and (type(first_confirmed_pair_sha256) is not str or _SHA256.fullmatch(first_confirmed_pair_sha256) is None
+                          or type(previous_reset_sha256) is not str or _SHA256.fullmatch(previous_reset_sha256) is None)):
         return {"success": False, "category": "reset_inputs_invalid", "calls": 0}
     journals = (original_creation_journal, latest_pair_journal, fresh_user_journal,
                 reset_journal, provenance_journal)
@@ -246,6 +259,9 @@ def prepare_confirmed_pair_reset(
                             "original_end_epoch": original["authorized_until_epoch"],
                             "latest_start_epoch": latest["authorized_from_epoch"],
                             "latest_end_epoch": latest["authorized_until_epoch"]}
+            if recurring:
+                binding_base["first_confirmed_pair_sha256"] = first_confirmed_pair_sha256
+                binding_base["previous_reset_sha256"] = previous_reset_sha256
             binding_sha = _digest(binding_base)
             reset_state = {
                 "schema": 1, "kind": _KIND, "revision": 0, "phase": "prepared",
@@ -282,6 +298,69 @@ def prepare_confirmed_pair_reset(
     except Exception:
         return {"success": False, "category": "reset_readback_failed" if calls else "reset_journal_invalid",
                 "calls": calls}
+
+
+def validate_recurring_pair_history(*, original_creation_journal: Any,
+                                    first_confirmed_pair_journal: Any,
+                                    latest_pair_journal: Any,
+                                    previous_reset_journal: Any,
+                                    account: str, user_pool_id: str) -> dict[str, Any]:
+    """Validate immutable first-pair provenance and the latest completed reset.
+
+    This is read-only. It proves B's creation window from the first confirmed
+    pair journal, not from later password-reset windows.
+    """
+    original = _validate_original(original_creation_journal.load(), account=account, pool=user_pool_id)
+    first = _latest_pair(first_confirmed_pair_journal.load(), account=account, pool=user_pool_id,
+                         original=original)
+    prior_reset = _reset_state(previous_reset_journal.load(), allow_complete=True)
+    if (prior_reset["phase"] != "complete" or prior_reset["revision"] != 6
+        or "first_confirmed_pair_sha256" in prior_reset
+        or "previous_reset_sha256" in prior_reset):
+        raise ValueError
+    first_sha, original_sha = _digest(first), _digest(original)
+    if (prior_reset["account_id"] != account or prior_reset["user_pool_id"] != user_pool_id
+        or prior_reset["run_id"] != original["run_id"]
+        or prior_reset["original_creation_sha256"] != original_sha
+        or prior_reset["latest_pair_sha256"] != first_sha
+        or prior_reset["original_start_epoch"] != original["authorized_from_epoch"]
+        or prior_reset["original_end_epoch"] != original["authorized_until_epoch"]
+        or prior_reset["latest_start_epoch"] != first["authorized_from_epoch"]
+        or prior_reset["latest_end_epoch"] != first["authorized_until_epoch"]):
+        raise ValueError
+    if ("first_confirmed_pair_sha256" in prior_reset
+        and prior_reset["first_confirmed_pair_sha256"] != first_sha):
+        raise ValueError
+    if ("previous_reset_sha256" in prior_reset
+        and type(prior_reset["previous_reset_sha256"]) is not str):
+        raise ValueError
+    latest = latest_pair_journal.load()
+    if not isinstance(latest, Mapping):
+        raise ValueError
+    start, end = latest.get("authorized_from_epoch"), latest.get("authorized_until_epoch")
+    binding = _digest({"account_id": account, "user_pool_id": user_pool_id,
+                       "run_id": original["run_id"], "authorized_from_epoch": start,
+                       "authorized_until_epoch": end})
+    current = _validate_state(latest, account=account, pool=user_pool_id,
+                              run_id=original["run_id"], binding_sha256=binding,
+                              start=start, end=end)
+    if (current["preflight"] is not True or start != prior_reset["authorized_from_epoch"]
+        or end != prior_reset["authorized_until_epoch"]
+        or start < first["authorized_until_epoch"]
+        or end > prior_reset["authorized_until_epoch"]):
+        raise ValueError
+    for index, slot in enumerate(("A", "B")):
+        row, first_row, reset_row = current["slots"][index], first["slots"][index], prior_reset["slots"][index]
+        if (row["create_status"] != "reconciled" or row["create_intent"] != first_row["create_intent"]
+            or row["password_status"] != "confirmed" or row["password_intent"] != first_row["password_intent"]
+            or row["user_sub_sha256"] != reset_row["subject_sha256"]
+            or reset_row["subject_sha256"] != first_row["user_sub_sha256"]
+            or reset_row["slot"] != slot or reset_row["phase"] != "confirmed"):
+            raise ValueError
+    return {"original": original, "first_pair": first, "latest_pair": current,
+            "previous_reset": prior_reset, "original_sha256": original_sha,
+            "first_pair_sha256": first_sha, "latest_pair_sha256": _digest(current),
+            "previous_reset_sha256": _digest(prior_reset)}
 
 
 def reset_confirmed_pair_once(

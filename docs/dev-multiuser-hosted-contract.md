@@ -299,3 +299,70 @@ are not proof of the environment-variable context. The approved FunctionArn
 condition stays fail-closed; a mismatch must stop the one live attempt, not
 silently remove the condition or broaden permissions. No new key or KMS
 encryption/decryption probe was executed.
+
+### Subsequent live checkpoint (2026-10-06 UTC)
+
+The owner subsequently approved the exact unused-authorizer deletion and one
+new bounded pair-reset/login/deployment attempt (2026-10-07 Europe/Madrid).
+Preparation must preserve terminal pair-reset lineage and the first B-creation
+window. Cleanup consumes a fresh write intent before its single DeleteAuthorizer,
+with closed DEV and exact old creation/delete-skipped lineage, then verifies
+absence. No 404-as-success, implicit retries, IAM expansion or KMS-context
+relaxation follows. This new allowance is pending execution, not a replay of
+the earlier writes. AWS documents successful deletion as HTTP 204 without body:
+[DeleteAuthorizer](https://docs.aws.amazon.com/apigatewayv2/latest/api-reference/apis-apiid-authorizers-authorizerid.html).
+
+The cleanup runner is `scripts/run_dev_multiuser_orphan_cleanup.py`.
+Its private `--lineage-runtime` input must be the earlier authorizer-creation
+receipt, not the later failed-runtime receipt used by hosted recovery. Exact
+physical-ID/create/delete-skipped event checks fence incorrect lineage before
+deletion. Two CLI reads plus at most thirteen core attempts are permitted;
+only one attempt can be destructive. Missing collection members remain a
+fail-closed outcome. Actual bounded DEV reads confirmed explicit empty lists
+for routes/integrations and no ApiId member on the authorizer item.
+
+Recurring hosted recovery is separately opt-in via
+`--allow-recurring-confirmed-pair-password-resets` and
+`--pair-creation-user-journal`: original A creation, first confirmed pair/B
+creation and latest terminal pair-reset journals remain distinct. Only a
+complete revision-six initial pair reset is admitted; subsequent recurrence
+is intentionally not accepted. Offline preparation passed 3,464 tests with
+twelve environment skips, compilation and model-free evaluation 12/12.
+This is preparation, not yet a successful delete/deployment/E2E.
+
+PR #60 merged normally to develop at `5b6c379` after eight green checks;
+all eight develop checks also passed. The separately journaled exact-key role
+repair was acknowledged and independently read back. Executor permissions stayed
+byte-identical; only the CloudFormation role/boundary gained the reviewed grant.
+This accepts role configuration, not Lambda environment-encryption compatibility.
+
+The fresh confirmed-pair recovery completed one reset/login per existing A/B
+account and signed-token validation for both. Its pair-reset journal is terminal
+and consumed. The pinned ARM package passed verification and was published
+privately. The new runtime update was acknowledged, then rolled back completely:
+the JWT authorizer creation failed with `AlreadyExists`. No endpoint opening,
+tenant publication or hosted HTTP E2E occurred. Dev remains disabled with Lambda
+reserved concurrency zero and the original eleven-resource stack.
+
+Bounded read-only evidence matched the sole named JWT authorizer to the prior
+attempt's exact creation and `DELETE_SKIPPED` events. Its audience/issuer matched
+and no route referenced it. The template's retention policy explains why it
+survived rollback outside the stack's resource list. Do not infer an empty API
+from the rolled-back template: the new offline preflight checks authorizers,
+routes and integrations before login or password changes.
+
+Deleting that exact orphan and another bounded pair-reset/deployment attempt
+require a fresh owner decision. No deletion is implemented or executed here.
+The prior reset/runtime/role write intents must never be replayed. Further pair
+recovery must validate the terminal pair-reset journal and retain the original
+B-creation window provenance, rather than reuse the older A-only reset validator.
+Production, owner MFA, MAPIT and quota ten remain unchanged. DEV multiuser is
+not yet accepted as functional; the strict KMS context remains untested.
+
+The independent API-child helper/order tests passed (18 cases). Final integrated
+offline verification passed 3,442 tests with twelve environment skips, compilation
+and model-free evaluation 12/12. An earlier run hit an unrelated restart-fixture
+failure that passed in isolation and in the final full run; no unrelated repair
+was made. This checkpoint does not accept another live attempt. The owned
+temporary wakefulness process was stopped before handoff; the original power
+scheme was read back unchanged and no persistent display setting was modified.
