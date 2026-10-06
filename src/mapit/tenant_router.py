@@ -21,6 +21,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Iterator, Mapping
 
 from .aws_prod_runtime import CognitoProdPolicy
+from .aws_dev_runtime import CognitoDevPolicy
 from .durable_tenants import DurableTenantError, DurableTenantGuard, DurableTenantSnapshot
 from .remote_http import FixedRS256TokenVerifier
 
@@ -81,12 +82,15 @@ class InvitedTenantAuthority:
     This is a library boundary, not HTTP/OAuth or Telegram account enrollment.
     """
 
-    def __init__(self, policies: Mapping[str, CognitoProdPolicy], public_keys: Mapping[str, bytes | str]):
+    def __init__(self, policies: Mapping[str, CognitoProdPolicy | CognitoDevPolicy], public_keys: Mapping[str, bytes | str], *, environment: str = "prod"):
         if not isinstance(policies, Mapping) or not 1 <= len(policies) <= MAX_INVITED_TENANTS:
             raise TenantIsolationError("tenant_configuration_invalid")
+        if environment not in {"prod", "dev"}:
+            raise TenantIsolationError("tenant_configuration_invalid")
+        expected_type = CognitoProdPolicy if environment == "prod" else CognitoDevPolicy
         selected = dict(policies)
         if any(type(key) is not str or not _TENANT_KEY.fullmatch(key)
-               or type(policy) is not CognitoProdPolicy for key, policy in selected.items()):
+               or type(policy) is not expected_type for key, policy in selected.items()):
             raise TenantIsolationError("tenant_configuration_invalid")
         identities = {(p.issuer_url, p.owner_subject) for p in selected.values()}
         endpoints = {(p.issuer_url, p.audience, p.client_id, p.required_scope) for p in selected.values()}
@@ -100,6 +104,7 @@ class InvitedTenantAuthority:
         self._verifiers = MappingProxyType(verifiers)
         self._active = set(selected)
         self._seal_key = secrets.token_bytes(32)
+        self._environment = environment
 
     def __repr__(self) -> str:
         return "InvitedTenantAuthority(<redacted>)"
@@ -109,9 +114,10 @@ class InvitedTenantAuthority:
             raise TenantIsolationError("tenant_unauthorized")
         self._active.discard(key)
 
-    def matches_token_policy(self, policy: CognitoProdPolicy) -> bool:
+    def matches_token_policy(self, policy: CognitoProdPolicy | CognitoDevPolicy) -> bool:
         """Check the shared issuer/resource/client/scope without exposing owners."""
-        if type(policy) is not CognitoProdPolicy or not self._policies:
+        expected_type = CognitoProdPolicy if self._environment == "prod" else CognitoDevPolicy
+        if type(policy) is not expected_type or not self._policies:
             return False
         selected = next(iter(self._policies.values()))
         return (

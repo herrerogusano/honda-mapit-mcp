@@ -16,6 +16,8 @@ from types import MappingProxyType
 from typing import Any, Callable
 
 from .aws_prod_runtime import CognitoProdPolicy
+from .aws_dev_runtime import CognitoDevPolicy
+from .durable_tenants import DurableTenantGuard, TenantAuthorizationStore
 from .invited_mcp import create_invited_mcp_app
 from .lambda_adapter import _build_synthetic_lambda_handler, _safe_envelope
 from .tenant_router import (
@@ -93,13 +95,15 @@ class InvitedLambdaRuntime:
         return "InvitedLambdaRuntime(<redacted>)"
 
 
-def create_invited_lambda_runtime(
-    policy: CognitoProdPolicy,
-    invited_policies: Mapping[str, CognitoProdPolicy],
+def _create_invited_lambda_runtime(
+    policy: CognitoProdPolicy | CognitoDevPolicy,
+    invited_policies: Mapping[str, CognitoProdPolicy | CognitoDevPolicy],
     public_keys: Mapping[str, bytes | str],
     *,
     provider_factory: Callable[[str, float], Any],
     geographic_queries: bool = False,
+    authorization_store: TenantAuthorizationStore | None = None,
+    environment: str = "prod",
 ) -> InvitedLambdaRuntime:
     """Build an offline handler with a fixed invitation set and lazy providers.
 
@@ -109,16 +113,28 @@ def create_invited_lambda_runtime(
     each Lambda invocation gets a new HTTP/MCP app while the shared router's
     ContextVar scopes each operation and a lock protects provider claims.
     """
+    if environment not in {"prod", "dev"}:
+        raise ValueError("invited environment is invalid")
+    expected_type = CognitoProdPolicy if environment == "prod" else CognitoDevPolicy
     if (
-        type(policy) is not CognitoProdPolicy
+        type(policy) is not expected_type
         or not isinstance(invited_policies, Mapping)
         or not 1 <= len(invited_policies) <= 16
-        or any(type(key) is not str or type(value) is not CognitoProdPolicy
+        or any(type(key) is not str or type(value) is not expected_type
                for key, value in invited_policies.items())
         or not callable(provider_factory)
         or type(geographic_queries) is not bool
+        or (authorization_store is not None and (
+            not callable(getattr(authorization_store, "get", None))
+            or not callable(getattr(authorization_store, "cas", None))
+        ))
     ):
         raise ValueError("explicit invited Lambda policy is required")
+    if environment == "dev" and (
+        authorization_store is None
+        or policy.request_deadline_seconds != 14.0
+    ):
+        raise ValueError("dev invited Lambda requires durable authorization and a 14 second deadline")
     copied_policies = dict(invited_policies)
     policy_snapshot = MappingProxyType(copied_policies)
     if not all(
@@ -154,13 +170,18 @@ def create_invited_lambda_runtime(
     def validate_and_build_authority(config: Any, material: Mapping[str, bytes | str]):
         if config is not policy or authority_holder:
             raise ValueError("invited policy changed")
-        authority = InvitedTenantAuthority(policy_snapshot, material)
+        authority = InvitedTenantAuthority(policy_snapshot, material, environment=environment)
         if not authority.matches_token_policy(policy):
             raise ValueError("invited token binding changed")
+        authorization_guard = (
+            DurableTenantGuard(authority, authorization_store)
+            if authorization_store is not None else None
+        )
         router = TenantServicesRouter(
             authority,
             provider_factory,
             deadline_provider=current_deadline,
+            authorization_guard=authorization_guard,
         )
         authority_holder["value"] = authority
         router_holder["value"] = router
@@ -174,7 +195,7 @@ def create_invited_lambda_runtime(
             authority is None
             or router is None
             or material is not key_snapshot_holder.get("value")
-            or type(config) is not CognitoProdPolicy
+            or type(config) is not expected_type
             or replace(config, request_deadline_seconds=policy.request_deadline_seconds) != policy
             or not 0 < config.request_deadline_seconds <= policy.request_deadline_seconds
         ):
@@ -259,4 +280,55 @@ def create_invited_lambda_runtime(
     return InvitedLambdaRuntime(authority=authority, handler=handler)
 
 
-__all__ = ["InvitedLambdaRuntime", "create_invited_lambda_runtime"]
+def create_invited_lambda_runtime(
+    policy: CognitoProdPolicy,
+    invited_policies: Mapping[str, CognitoProdPolicy],
+    public_keys: Mapping[str, bytes | str],
+    *,
+    provider_factory: Callable[[str, float], Any],
+    geographic_queries: bool = False,
+    authorization_store: TenantAuthorizationStore | None = None,
+) -> InvitedLambdaRuntime:
+    """Build the existing production composition with its historical defaults."""
+    return _create_invited_lambda_runtime(
+        policy,
+        invited_policies,
+        public_keys,
+        provider_factory=provider_factory,
+        geographic_queries=geographic_queries,
+        authorization_store=authorization_store,
+        environment="prod",
+    )
+
+
+def create_invited_dev_lambda_runtime(
+    policy: CognitoDevPolicy,
+    invited_policies: Mapping[str, CognitoDevPolicy],
+    public_keys: Mapping[str, bytes | str],
+    *,
+    provider_factory: Callable[[str, float], Any],
+    authorization_store: TenantAuthorizationStore,
+    geographic_queries: bool = False,
+) -> InvitedLambdaRuntime:
+    """Build the explicitly opted-in, durable-authorized DEV composition.
+
+    This factory is intentionally separate from the production entrypoint: it
+    accepts only the exact DEV policy type, requires an injected authorization
+    store, and never constructs SDK credentials or a default provider.
+    """
+    return _create_invited_lambda_runtime(
+        policy,
+        invited_policies,
+        public_keys,
+        provider_factory=provider_factory,
+        geographic_queries=geographic_queries,
+        authorization_store=authorization_store,
+        environment="dev",
+    )
+
+
+__all__ = [
+    "InvitedLambdaRuntime",
+    "create_invited_lambda_runtime",
+    "create_invited_dev_lambda_runtime",
+]
