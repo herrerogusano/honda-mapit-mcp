@@ -438,7 +438,7 @@ class RetainedDevArtifactCoordinator:
         if type(encryption_rows) is not list or len(encryption_rows) != 1 or not isinstance(encryption_rows[0], Mapping):
             raise RetainedDevArtifactError("stack_readback_mismatch")
         encryption_row = encryption_rows[0]
-        if set(encryption_row) - {"ApplyServerSideEncryptionByDefault", "BucketKeyEnabled"} or encryption_row.get("ApplyServerSideEncryptionByDefault") != {"SSEAlgorithm": "AES256"} or ("BucketKeyEnabled" in encryption_row and encryption_row["BucketKeyEnabled"] is not False):
+        if set(encryption_row) - {"ApplyServerSideEncryptionByDefault", "BucketKeyEnabled", "BlockedEncryptionTypes"} or encryption_row.get("ApplyServerSideEncryptionByDefault") != {"SSEAlgorithm": "AES256"} or ("BucketKeyEnabled" in encryption_row and encryption_row["BucketKeyEnabled"] is not False) or ("BlockedEncryptionTypes" in encryption_row and encryption_row["BlockedEncryptionTypes"] != {"EncryptionType": ["SSE-C"]}):
             raise RetainedDevArtifactError("stack_readback_mismatch")
         ownership = self._call("s3", "get_bucket_ownership_controls", Bucket=bucket, ExpectedBucketOwner=self.account_id)
         if ownership.get("OwnershipControls") != {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]}:

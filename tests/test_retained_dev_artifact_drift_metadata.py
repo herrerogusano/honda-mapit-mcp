@@ -37,6 +37,10 @@ def test_exact_unchecked_metadata_only(metadata, accepted):
 @pytest.mark.parametrize("configuration,accepted", [
     ({"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]}, True),
     ({"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BucketKeyEnabled": False}]}, True),
+    ({"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BucketKeyEnabled": False, "BlockedEncryptionTypes": {"EncryptionType": ["SSE-C"]}}]}, True),
+    ({"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BlockedEncryptionTypes": {"EncryptionType": []}}]}, False),
+    ({"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BlockedEncryptionTypes": {"EncryptionType": ["NONE"]}}]}, False),
+    ({"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}, "BlockedEncryptionTypes": {"EncryptionType": ["SSE-C"], "extra": True}}]}, False),
     ([{"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}], False),
     ({"Rules": []}, False),
     ({"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "aws:kms"}}]}, False),
