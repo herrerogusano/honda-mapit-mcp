@@ -408,7 +408,8 @@ class RetainedDevArtifactCoordinator:
             raise RetainedDevArtifactError("stack_readback_mismatch")
         by_logical = {item.get("LogicalResourceId"): item for item in resources if isinstance(item, Mapping)}
         if set(by_logical) != set(_RESOURCE_TYPES) or any(
-            set(by_logical[k]) - {"LogicalResourceId", "ResourceType", "PhysicalResourceId", "ResourceStatus", "StackId", "StackName", "Timestamp", "ResourceStatusReason"}
+            set(by_logical[k]) - {"LogicalResourceId", "ResourceType", "PhysicalResourceId", "ResourceStatus", "StackId", "StackName", "Timestamp", "ResourceStatusReason", "DriftInformation"}
+            or ("DriftInformation" in by_logical[k] and by_logical[k]["DriftInformation"] != {"StackResourceDriftStatus": "NOT_CHECKED"})
             or by_logical[k].get("ResourceType") != v
             or by_logical[k].get("ResourceStatus") != "CREATE_COMPLETE"
             or by_logical[k].get("StackId") != stack_id
@@ -430,11 +431,14 @@ class RetainedDevArtifactCoordinator:
         if public.get("PublicAccessBlockConfiguration") != {"BlockPublicAcls": True, "IgnorePublicAcls": True, "BlockPublicPolicy": True, "RestrictPublicBuckets": True}:
             raise RetainedDevArtifactError("stack_readback_mismatch")
         encryption = self._call("s3", "get_bucket_encryption", Bucket=bucket, ExpectedBucketOwner=self.account_id)
-        encryption_rows = encryption.get("ServerSideEncryptionConfiguration")
+        encryption_config = encryption.get("ServerSideEncryptionConfiguration")
+        if not isinstance(encryption_config, Mapping) or set(encryption_config) != {"Rules"}:
+            raise RetainedDevArtifactError("stack_readback_mismatch")
+        encryption_rows = encryption_config["Rules"]
         if type(encryption_rows) is not list or len(encryption_rows) != 1 or not isinstance(encryption_rows[0], Mapping):
             raise RetainedDevArtifactError("stack_readback_mismatch")
         encryption_row = encryption_rows[0]
-        if set(encryption_row) - {"ServerSideEncryptionByDefault", "BucketKeyEnabled"} or encryption_row.get("ServerSideEncryptionByDefault") != {"SSEAlgorithm": "AES256"} or ("BucketKeyEnabled" in encryption_row and encryption_row["BucketKeyEnabled"] is not False):
+        if set(encryption_row) - {"ApplyServerSideEncryptionByDefault", "BucketKeyEnabled"} or encryption_row.get("ApplyServerSideEncryptionByDefault") != {"SSEAlgorithm": "AES256"} or ("BucketKeyEnabled" in encryption_row and encryption_row["BucketKeyEnabled"] is not False):
             raise RetainedDevArtifactError("stack_readback_mismatch")
         ownership = self._call("s3", "get_bucket_ownership_controls", Bucket=bucket, ExpectedBucketOwner=self.account_id)
         if ownership.get("OwnershipControls") != {"Rules": [{"ObjectOwnership": "BucketOwnerEnforced"}]}:

@@ -104,7 +104,7 @@ class S3:
 
     def get_bucket_encryption(self, **kwargs):
         self.calls.append(("get_bucket_encryption", kwargs))
-        return _ok(ServerSideEncryptionConfiguration=[{"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}])
+        return _ok(ServerSideEncryptionConfiguration={"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]})
 
     def get_bucket_ownership_controls(self, **kwargs):
         self.calls.append(("get_bucket_ownership_controls", kwargs))
