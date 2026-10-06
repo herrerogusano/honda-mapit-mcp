@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import secrets
 import sys
@@ -24,7 +25,35 @@ def _read(path, acl_checker=None):
     if not 0 < path.stat().st_size <= 32768:
         raise ValueError("metadata_invalid")
     from scripts.run_aws_retained_dev_bootstrap import _reject_duplicates
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_reject_duplicates)
+    with path.open("rb") as stream:
+        raw = stream.read(32769)
+    if len(raw) > 32768:
+        raise ValueError("metadata_invalid")
+    return json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=_reject_duplicates)
+
+
+def _create_private_directory(path, acl_checker=None):
+    path.mkdir(mode=0o700)
+    if os.name == "nt" and acl_checker is None:
+        # Tighten only this newly created empty directory. Directory readback
+        # deliberately rejects inherited ACLs, even when the parent is private.
+        import ntsecuritycon
+        import win32api
+        import win32security
+        token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32security.TOKEN_QUERY)
+        try:
+            owner = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+        finally:
+            token.Close()
+        system = win32security.ConvertStringSidToSid("S-1-5-18")
+        dacl = win32security.ACL()
+        inheritance = win32security.OBJECT_INHERIT_ACE | win32security.CONTAINER_INHERIT_ACE
+        for principal in (owner, system):
+            dacl.AddAccessAllowedAceEx(win32security.ACL_REVISION, inheritance, ntsecuritycon.FILE_ALL_ACCESS, principal)
+        win32security.SetNamedSecurityInfo(str(path), win32security.SE_FILE_OBJECT,
+            win32security.OWNER_SECURITY_INFORMATION | win32security.DACL_SECURITY_INFORMATION |
+            win32security.PROTECTED_DACL_SECURITY_INFORMATION, owner, None, dacl, None)
+    validate_private_location(path, acl_checker=acl_checker)
 
 
 def prepare(parent, *, app_directory, roles_directory, controls_directory,
@@ -49,8 +78,7 @@ def prepare(parent, *, app_directory, roles_directory, controls_directory,
     from scripts.run_aws_retained_dev_bootstrap import validate_authorization
     validate_authorization(auth)
     target = parent / ("dev-multiuser-" + secrets.token_hex(16))
-    target.mkdir(mode=0o700)
-    validate_private_location(target, acl_checker=acl_checker)
+    _create_private_directory(target, acl_checker)
     write_private_authorization(target / "authorization.json", auth, acl_checker=acl_checker)
     metadata = {
         "app-binding.json": {"stack_arn": app["stack_id"], "original_creation_run_id": app["run_id"]},
@@ -61,7 +89,7 @@ def prepare(parent, *, app_directory, roles_directory, controls_directory,
         with (target / name).open("x", encoding="utf-8") as stream:
             json.dump(value, stream, sort_keys=True, separators=(",", ":"))
     for operation in ("roles", "setup", "controls"):
-        (target / f"{operation}-{run_id}-{source_sha[:12]}").mkdir(mode=0o700)
+        _create_private_directory(target / f"{operation}-{run_id}-{source_sha[:12]}", acl_checker)
     return target
 
 
