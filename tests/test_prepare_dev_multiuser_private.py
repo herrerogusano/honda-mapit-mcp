@@ -57,3 +57,41 @@ def test_unaccepted_history_creates_nothing(tmp_path):
     with pytest.raises(ValueError, match="historical_acceptance_required"):
         prepare(**args)
     assert set(tmp_path.iterdir()) == before
+
+
+def test_optional_artifact_binding_preserves_original_accepted_metadata(tmp_path):
+    args = fixture(tmp_path)
+    directory = tmp_path / "artifacts"
+    directory.mkdir()
+    stack = ("arn:aws:cloudformation:eu-west-1:123456789012:stack/"
+             "honda-mapit-mcp-dev-retained-runtime-artifacts/12345678-1234-1234-1234-123456789012")
+    receipt = dict(readback=True, account="123456789012", run_id=4,
+                   readback_receipt={"stack_id": stack})
+    path = directory / "rehearsal-state.json"
+    path.write_text(json.dumps(receipt))
+    original = path.read_bytes()
+    target = prepare(**args, artifact_directory=directory)
+    assert json.loads((target / "artifact-binding.json").read_text()) == {
+        "stack_arn": stack, "original_creation_run_id": 4}
+    assert path.read_bytes() == original
+    receipt["readback"] = False
+    path.write_text(json.dumps(receipt))
+    before = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match="historical_acceptance_required"):
+        prepare(**args, artifact_directory=directory)
+    assert set(tmp_path.iterdir()) == before
+
+
+@pytest.mark.parametrize("receipt", [
+    dict(readback=True, account="123456789012", run_id=4),
+    dict(readback=True, account="123456789012", run_id=True, readback_receipt={"stack_id": "wrong"}),
+])
+def test_invalid_artifact_metadata_has_no_partial_outputs(tmp_path, receipt):
+    args = fixture(tmp_path)
+    directory = tmp_path / "artifacts"
+    directory.mkdir()
+    (directory / "rehearsal-state.json").write_text(json.dumps(receipt))
+    before = set(tmp_path.iterdir())
+    with pytest.raises(ValueError, match="metadata_invalid"):
+        prepare(**args, artifact_directory=directory)
+    assert set(tmp_path.iterdir()) == before

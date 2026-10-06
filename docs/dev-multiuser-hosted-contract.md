@@ -77,3 +77,23 @@ all runtime properties unchanged. This obtains actual Cognito identifiers
 before the private runtime artifact can be built. The second closed phase has
 nineteen resources, with the endpoint disabled and Lambda reservation zero.
 Opening and shutdown acceptance are separate from these closed updates.
+
+## Private acceptance operator
+
+The opt-in hosted acceptance operator composes the closed setup, exact V2
+infrastructure readbacks, two administrator-created technical users, managed
+login/PKCE, pinned public JWKS, private ARM artifact, recurrent IAM narrowing,
+and bounded HTTP MCP checks. Passwords and tokens remain in memory. It checks
+tenant-specific synthetic results, foreign-route denial, anonymous denial,
+terminal revocation of A, and continued access for B. The fixed existing remote
+stop waits five minutes only for a bounded probe; tripwire shutdown stays
+immediate. Both local stop primitives must be read back before handoff.
+
+Multi-user journals use a separate strict durable envelope over the existing
+atomic file/lock mechanics. Historical rehearsal journals and expired write
+intents are not migrated, extended, or replayed. SDK template readback accepts
+JSON text and observed mapping responses while retaining exact source hashes.
+
+These operators are preparation until an actual hosted receipt succeeds.
+Neither offline tests nor resource creation alone establish functional DEV,
+real MAPIT multi-user onboarding, production readiness, or completed DEV CD.
