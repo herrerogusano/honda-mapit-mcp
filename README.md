@@ -1,6 +1,6 @@
 # Honda MAPIT read-only MCP
 
-## Portfolio checkpoint — 2026-10-05
+## Portfolio checkpoint — 2026-10-06
 
 The current development includes a retained private, single-owner AWS MCP,
 with twelve tools when geographic queries are enabled. Public IGN boundaries
@@ -11,12 +11,13 @@ credentials, motorcycle data or a public signup flow.
 
 Invitation-only multiuser HTTP/Lambda components are tested offline with
 synthetic accounts, not enabled in production. Telegram remains owner-only.
-The protected production release and retained-artifact recovery workflows are
-implemented and independently tested offline. Live bootstrap, deployment and
-recovery acceptance are tracked in [CD status](docs/cd-delivery-implementation.md);
-until those receipts pass, complete operational CD is not claimed. Development is reviewed
-in [PR #1](https://github.com/herrerogusano/honda-mapit-mcp/pull/1); pending
-changes are not implicitly merged into `main` or deployed.
+Protected production CD is live and verified: green eight-check CI, exact ARM
+package tests, scoped OIDC, independent closure, CloudFormation update and
+separately approved reopening. Actual rollback and forward retained-artifact
+recovery also passed; see [CD acceptance and operating instructions](docs/cd-delivery-implementation.md).
+`develop` has protected CI/promotion, not a retained dev application deployment.
+Updates still require owner approvals; public source does not imply unattended
+deployment or access to private resources.
 
 The phase descriptions below retain their original local implementation scope;
 later acceptance and remaining gates are recorded in the linked status files.
