@@ -21,6 +21,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Iterator, Mapping
 
 from .aws_prod_runtime import CognitoProdPolicy
+from .durable_tenants import DurableTenantError, DurableTenantGuard, DurableTenantSnapshot
 from .remote_http import FixedRS256TokenVerifier
 
 MAX_INVITED_TENANTS = 16
@@ -33,7 +34,8 @@ class TenantIsolationError(ValueError):
     def __init__(self, category: str):
         allowed = {"tenant_configuration_invalid", "tenant_unauthorized", "tenant_context_missing",
                    "tenant_context_expired", "tenant_context_already_bound", "tenant_provider_failed",
-                   "tenant_provider_reused", "tenant_clock_invalid", "tenant_clock_rollback"}
+                   "tenant_provider_reused", "tenant_clock_invalid", "tenant_clock_rollback",
+                   "tenant_durable_unauthorized", "tenant_durable_store_failed"}
         self.category = category if category in allowed else "tenant_unauthorized"
         super().__init__(self.category)
 
@@ -155,6 +157,7 @@ class _RequestState:
     last_wall: float
     active: bool = True
     provider: Any = None
+    durable_snapshot: DurableTenantSnapshot | None = None
 
 
 _SERVICE_METHODS = frozenset({
@@ -208,14 +211,19 @@ class TenantServicesRouter:
         provider_factory: Callable[[str, float], Any],
         *,
         deadline_provider: Callable[[], float] | None = None,
+        authorization_guard: DurableTenantGuard | None = None,
     ):
         if type(authority) is not InvitedTenantAuthority or not callable(provider_factory):
             raise TenantIsolationError("tenant_configuration_invalid")
         if deadline_provider is not None and not callable(deadline_provider):
             raise TenantIsolationError("tenant_configuration_invalid")
+        if authorization_guard is not None:
+            if type(authorization_guard) is not DurableTenantGuard or not authorization_guard.is_bound_to(authority):
+                raise TenantIsolationError("tenant_configuration_invalid")
         self._authority = authority
         self._factory = provider_factory
         self._deadline_provider = deadline_provider
+        self._authorization_guard = authorization_guard
         self._context: ContextVar[_RequestState | None] = ContextVar("mapit_tenant_request", default=None)
         self._providers: weakref.WeakValueDictionary[int, Any] = weakref.WeakValueDictionary()
         self._provider_lock = threading.Lock()
@@ -232,18 +240,35 @@ class TenantServicesRouter:
         self._authority.validate(grant)
         if self._context.get() is not None:
             raise TenantIsolationError("tenant_context_already_bound")
-        mono, wall = _clock_sample(time.monotonic), _clock_sample(time.time)
-        remaining = min(14.0, grant.expires_at - wall)
+        start_mono, start_wall = _clock_sample(time.monotonic), _clock_sample(time.time)
+        remaining = min(14.0, grant.expires_at - start_wall)
         if not math.isfinite(remaining) or remaining <= 0:
             raise TenantIsolationError("tenant_context_expired")
-        deadline = mono + remaining
+        deadline = start_mono + remaining
         if self._deadline_provider is not None:
             ceiling = _clock_sample(self._deadline_provider)
             deadline = min(deadline, ceiling)
-            remaining = deadline - mono
-            if not math.isfinite(remaining) or remaining <= 0:
+            if not math.isfinite(deadline - start_mono) or deadline <= start_mono:
                 raise TenantIsolationError("tenant_context_expired")
-        state = _RequestState(grant, deadline, mono, wall)
+        durable_snapshot = None
+        if self._authorization_guard is not None:
+            try:
+                durable_snapshot = self._authorization_guard.capture(grant)
+            except DurableTenantError as exc:
+                category = ("tenant_durable_store_failed" if exc.category == "durable_store_failed"
+                             else "tenant_durable_unauthorized")
+                raise TenantIsolationError(category) from None
+        if self._authorization_guard is not None:
+            mono, wall = _clock_sample(time.monotonic), _clock_sample(time.time)
+            if mono < start_mono or wall < start_wall:
+                raise TenantIsolationError("tenant_clock_rollback")
+            if mono >= deadline or wall >= grant.expires_at:
+                raise TenantIsolationError("tenant_context_expired")
+        else:
+            # Preserve the historical unguarded router seam: its bind clock
+            # sample is the initial one, and expiry is checked on first use.
+            mono, wall = start_mono, start_wall
+        state = _RequestState(grant, deadline, mono, wall, durable_snapshot=durable_snapshot)
         token = self._context.set(state)
         try:
             yield
@@ -257,6 +282,13 @@ class TenantServicesRouter:
         if state is None or not state.active:
             raise TenantIsolationError("tenant_context_missing")
         self._authority.validate(state.grant)
+        if self._authorization_guard is not None:
+            try:
+                self._authorization_guard.check(state.grant, state.durable_snapshot)
+            except DurableTenantError as exc:
+                category = ("tenant_durable_store_failed" if exc.category == "durable_store_failed"
+                             else "tenant_durable_unauthorized")
+                raise TenantIsolationError(category) from None
         mono, wall = _clock_sample(time.monotonic), _clock_sample(time.time)
         if mono < state.last_mono or wall < state.last_wall:
             raise TenantIsolationError("tenant_clock_rollback")
