@@ -18,6 +18,13 @@ allowance is consumed. Do not replay it, repeat resets, delete the now-owned
 authorizer or infer hosted E2E acceptance from the successful deployment.
 Production/MFA/MAPIT/quota ten remain unchanged; a separately reviewed bounded
 continuation is required before opening dev or repeating authentication.
+The exact-ARN correction passed independent review, 63 focused tests and
+compilation and is saved in PR #66. Temporary wakefulness was removed and the
+original HP power scheme verified before handoff. Passwords/tokens were not
+persisted: do not propose login without a newly authorized reset or pretend
+the earlier in-memory credentials remain available. Any accepted-runtime
+continuation requires a new offline recovery contract, not relaxed historical
+rollback guards or an automatic third recurring reset.
 
 Final offline handoff checkpoint (2026-10-07 Europe/Madrid): PR #65 merged
 normally to develop `a566d28` after eight green source checks. This fixes only
