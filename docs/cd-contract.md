@@ -1,5 +1,85 @@
 # CD readiness workflow contract
 
+## Retained dev increment — 2026-10-06
+
+Production CD is operational; see [live delivery acceptance](cd-delivery-implementation.md).
+This document's earlier preparation observations are historical. `develop` does
+not yet deploy a retained application. The user requested a separate dev
+environment followed by multiuser development, with no real invited users yet.
+
+The bounded implementation sequence is:
+
+1. A new closed five-resource `honda-mapit-mcp-dev-retained` bootstrap: HTTP API,
+   stage, logs-only execution role, seven-day log group and disabled Lambda.
+   Every physical name and log permission belongs to the new dev namespace.
+   It has no routes, invocation permission, OAuth resources, secrets or data.
+   Keeping a stack does not require `DeletionPolicy: Retain` on compute; explicit
+   retirement remains possible. This scaffold is not a usable MCP or completed CD.
+2. Separately reviewed private artifacts, dev-only OAuth client/resource/branding,
+   and independent control-plane shutdown. The definitive identity/MFA may be
+   reused only through verified existing-pool bindings; never recreate its pool,
+   domain or owner. Keep eu-west-1 and regional quota 10. Dev uses the shared pool
+   only during bounded tests, not a reservation that AWS cannot provide.
+3. A distinct protected `develop` delivery path, exact dev OIDC subject, scoped
+   dev deployment/service roles, immutable metadata journal and artifact bindings,
+   closed update/readbacks, recovery and separately authorized test activation.
+   The identity-only dev role is not a deployment role. Do not parameterize the
+   accepted prod runner into dev or overwrite prod environment bindings.
+4. Network-disabled A/B multiuser composition and endpoint/client isolation
+   checks, then synthetic cloud validation. Real invitations, account linking,
+   durable revocation and tenant-secret publication remain distinct acceptance
+   requirements; fictitious tenants do not prove real MAPIT account ownership.
+
+The default dev target is synthetic, owner-access-only and closed outside test
+windows. No MAPIT session/ledger transfer, business probe, public signup, Telegram
+activation or paid model is included. The old dev factories and expired journals
+retain their original lifetimes and must not be reused for the new stack.
+
+The owner approved retaining dev with an additional gross budget target of
+USD 1/month on 2026-10-06; this is not a billing hard cap. Pricing research must
+include retained alarms, logs, artifacts, workflow transitions and authentication,
+not just Lambda execution. A closed endpoint does not make those charges zero.
+No AWS resources have been created for this increment.
+
+The separate offline OAuth setup factory composes the unchanged closed five
+resources with exactly three retained children of the existing identity pool:
+resource server, public authorization-code client and managed-login branding.
+It uses distinct retained-dev names and exact dev API audience/callback values;
+it creates no pool/domain/user, changes no MFA and adds no routes or invocation
+permission. This draft is not part of the first five-resource bootstrap and
+does not authorize or prove an actual OAuth update/login. Real binding and
+closed update/readbacks remain required before use.
+
+Offline foundation acceptance: the closed scaffold, independent controls,
+private artifacts, OAuth draft and injected/bootstrap CLI have independent
+review. The parent environment passed 2,587 tests with eleven dependency/OS
+fixture skips, compilation, model-free evaluation 12/12 and all 33 pinned
+CloudFormation schema fixtures without findings. A real Windows-only synthetic
+file proof verified strict owner/SYSTEM directory and inherited-file ACLs.
+No AWS call, deployment or OAuth login is implied by those offline results.
+The first live gate requires a clean exact `develop` commit with all eight CI
+jobs, verified workflow identity/protections, a new private authorization and
+journal, and a fresh at-most-one-hour bootstrap window. One create intent only;
+an ambiguous outcome requires read-only reconciliation, never another create.
+
+Public eu-west-1 price lists were checked on 2026-10-06. An illustrative
+low-use subtotal is about USD 0.118/month: 1,000 HTTP/Lambda requests, 256 MiB
+ARM at one billed second/request, one standard metric alarm, 0.01 GB log
+ingestion/storage, 100 MB-month S3, one PUT/GET, 200 workflow transitions and
+20 Scheduler invocations. This is not a measured bill or an all-in estimate.
+It assumes no incremental MAU for the existing user pool; no new authentication
+identities or paid models are created. Transfer, taxes, extra requests/logs,
+additional retained packages, metrics and configuration-dependent charges are
+excluded; the exact control composition still needs acceptance before activation.
+The regional AmazonStates price list confirms USD 0.000025 per standard state
+transition (publication 2026-09-11); its global free-tier SKU is not used in this
+gross estimate. Sources: [regional Lambda prices](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSLambda/current/eu-west-1/index.json),
+[regional API Gateway prices](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonApiGateway/current/eu-west-1/index.json),
+[regional CloudWatch prices](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/eu-west-1/index.json),
+[regional S3 prices](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/eu-west-1/index.json),
+[regional Step Functions prices](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonStates/current/eu-west-1/index.json), and
+[Scheduler pricing](https://aws.amazon.com/eventbridge/pricing/).
+
 ## Current visibility — 2026-10-05
 
 The user selected public portfolio publication and explicitly allowed the
