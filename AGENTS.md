@@ -16,7 +16,18 @@ same technical A, then B and DEV E2E. This is a new reset intent, not replay of
 the first-password write. Require separate reset provenance, exact historical
 journal/sub/account/pool binding, fresh source checks and independent recovery
 review; stop on an ambiguous write or failed login. No production approval is
-included. The new live allowance remains unconsumed at this checkpoint.
+included. That new allowance was subsequently consumed on develop 064e231
+after eight green checks and fresh protections/readbacks. A's reset was
+acknowledged and confirmed, then login failed at login_post with cookie_invalid.
+B remains pending; no artifact/runtime/table/opening step followed. Four bounded
+read-only account/app/API/Lambda checks confirmed the original eleven-resource
+setup, API disabled and reservation zero. Never replay this reset journal.
+Further work may diagnose/repair standards-based cookie handling offline; a
+subsequent same-user reset/login allowance was explicitly granted: one new
+attempt only after standards-based cookie repair, independent review and fresh
+CI. Use the latest consumed attempt's confirmed-user journal as provenance,
+preserve every historical reset journal, and stop on any unknown write/login.
+That subsequent allowance is still unconsumed at this checkpoint.
 
 On 2026-10-06 the owner authorized retained isolated DEV multi-user acceptance:
 two technical users, an exclusive test Cognito pool with MFA off only there,

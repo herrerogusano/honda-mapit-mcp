@@ -152,7 +152,7 @@ def test_full_login_redirect_accepts_explicit_known_cookie_clear():
     assert len(transport.calls) == 5
 
 
-def test_empty_cookie_without_explicit_deletion_fails_at_login_post_stage():
+def test_empty_cookie_value_is_valid_at_login_post_stage():
     class UnsafeClearingFlow(FlowTransport):
         def __call__(self, method, url, headers, body, timeout):
             response = super().__call__(method, url, headers, body, timeout)
@@ -161,9 +161,39 @@ def test_empty_cookie_without_explicit_deletion_fails_at_login_post_stage():
                                  set_cookies=("session=; Path=/",), **response.headers)
             return response
 
+    tokens = _client(UnsafeClearingFlow()).login(username=USERNAME, password=PASSWORD)
+    assert tokens.access_token == "opaque-access"
+
+
+def test_foreign_cookie_domain_is_ignored_and_never_sent():
+    class ForeignCookieFlow(FlowTransport):
+        def __call__(self, method, url, headers, body, timeout):
+            response = super().__call__(method, url, headers, body, timeout)
+            if method == "POST" and urlsplit(url).path == "/login":
+                return _response(response.status, response.url, response.body,
+                                 set_cookies=("session=opaque; Domain=evil.example; Path=/",), **response.headers)
+            return response
+
+    transport = ForeignCookieFlow()
+    tokens = _client(transport).login(username=USERNAME, password=PASSWORD)
+    assert tokens.access_token == "opaque-access"
+    assert all("evil.example" not in repr(call) for call in transport.calls)
+
+
+def test_control_character_cookie_is_allowlisted_cookie_invalid_without_raw_header():
+    class InvalidCookieFlow(FlowTransport):
+        def __call__(self, method, url, headers, body, timeout):
+            response = super().__call__(method, url, headers, body, timeout)
+            if method == "POST" and urlsplit(url).path == "/login":
+                return _response(response.status, response.url, response.body,
+                                 set_cookies=("session=opaque\x7f; Path=/",), **response.headers)
+            return response
+
+    transport = InvalidCookieFlow()
     with pytest.raises(ManagedLoginError, match="cookie_invalid") as caught:
-        _client(UnsafeClearingFlow()).login(username=USERNAME, password=PASSWORD)
+        _client(transport).login(username=USERNAME, password=PASSWORD)
     assert caught.value.stage == "login_post"
+    assert len(transport.calls) == 3
 
 
 def test_wrong_callback_state_and_unbounded_body_fail_closed():
