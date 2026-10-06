@@ -18,6 +18,7 @@ REGION = "eu-west-1"
 APP = "honda-mapit-mcp-dev-retained"
 ROLES = "honda-mapit-mcp-dev-retained-cd-delivery"
 CONTROLS = "honda-mapit-mcp-dev-retained-controls"
+_STABLE_PRIOR_STATUSES = {"CREATE_COMPLETE", "UPDATE_COMPLETE", "UPDATE_ROLLBACK_COMPLETE"}
 
 
 class ClosedUpdateError(ValueError):
@@ -143,7 +144,7 @@ class ClosedDevUpdate:
             if step == "preflight":
                 if state is not None:
                     raise ClosedUpdateError("journal_already_initialized")
-                if stack.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"} or _digest(self._template()) != self.binding["prior"]:
+                if stack.get("StackStatus") not in _STABLE_PRIOR_STATUSES or _digest(self._template()) != self.binding["prior"]:
                     raise ClosedUpdateError("prior_mismatch")
                 if stack.get("RoleARN") not in {None, self.role}:
                     raise ClosedUpdateError("service_role_invalid")
@@ -154,7 +155,7 @@ class ClosedDevUpdate:
             if step == "update":
                 if state["phase"] != "ready":
                     raise ClosedUpdateError("write_fenced")
-                if stack.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"} or _digest(self._template()) != self.binding["prior"]:
+                if stack.get("StackStatus") not in _STABLE_PRIOR_STATUSES or _digest(self._template()) != self.binding["prior"]:
                     raise ClosedUpdateError("prior_mismatch")
                 self._window()
                 state["phase"] = "intent"

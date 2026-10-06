@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pytest
 
@@ -171,22 +172,28 @@ def test_boundary_contains_new_cfn_actions_but_executor_does_not():
     assert _actions(executor).isdisjoint({"cognito-idp:CreateUserPool", "dynamodb:CreateTable", "lambda:AddPermission", "iam:PutRolePolicy"})
 
 
-def test_optional_lambda_environment_key_is_preserved_in_v2_boundary():
+def test_v2_boundary_is_compact_and_preserves_authorization_context():
+    template = _build()
+    boundary = template["Resources"]["RetainedDevCdCloudFormationBoundary"]["Properties"]["PolicyDocument"]
+    assert len(json.dumps(boundary, separators=(",", ":")).encode("utf-8")) <= 6144
+    contexts = {}
+    for statement in boundary["Statement"]:
+        context = {key: value for key, value in statement.items() if key != "Action"}
+        key = json.dumps(context, sort_keys=True, separators=(",", ":"))
+        actions = statement.get("Action", [])
+        if not isinstance(actions, list):
+            actions = [actions]
+        assert key not in contexts
+        contexts[key] = set(actions)
+    assert _actions(boundary["Statement"]).issuperset(_actions(_cfn_statements(template)))
+    assert any(statement.get("NotAction") for statement in boundary["Statement"])
+
+
+@pytest.mark.parametrize("pool", [None, "eu-west-1_ABCDEFGHI"])
+def test_optional_lambda_environment_key_fails_closed_in_every_phase(pool):
     key = f"arn:aws:kms:eu-west-1:{ACCOUNT}:key/11111111-2222-4333-8444-555555555555"
-    template = _build(lambda_environment_key_arn=key)
-    statements = template["Resources"]["RetainedDevCdCloudFormationBoundary"]["Properties"]["PolicyDocument"]["Statement"]
-    assert any(
-        statement.get("Effect") == "Allow"
-        and statement.get("Resource") == key
-        and "kms:Decrypt" in (statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]])
-        for statement in statements
-    )
-    assert any(
-        statement.get("Effect") == "Deny"
-        and statement.get("Action")
-        and "kms:Decrypt" in (statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]])
-        for statement in statements
-    )
+    with pytest.raises(RetainedDevMultiuserRoleError, match="multiuser_environment_key_unsupported"):
+        _build(lambda_environment_key_arn=key, observed_user_pool_id=pool)
 
 
 @pytest.mark.parametrize("pool_id", ["", "us-east-1_bad", "eu-west-1_bad!", True])
