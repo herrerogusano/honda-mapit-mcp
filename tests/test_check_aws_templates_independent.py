@@ -20,6 +20,9 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
     assert set(docs) == {
         "application_draft", "shutdown_lambda_draft", "shutdown_control_draft",
         "cleanup_schedule_draft", "combined_control_draft", "closed_bootstrap_draft",
+        "retained_dev_closed_bootstrap_draft",
+        "retained_dev_controls_draft", "retained_dev_artifacts_draft",
+        "retained_dev_oauth_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
         "permanent_identity_draft",
         "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",

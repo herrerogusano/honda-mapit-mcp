@@ -56,6 +56,9 @@ def fixed_documents() -> dict[str, str]:
     from mapit.aws_dev_shutdown_control import build_dev_shutdown_control
     from mapit.aws_dev_runtime import cognito_dev_policy
     from scripts.build_aws_dev_bootstrap import fixed_bootstrap_template
+    from scripts.build_aws_retained_dev import build_retained_dev_template
+    from scripts.build_aws_retained_dev_support import build_retained_dev_artifacts, build_retained_dev_controls
+    from scripts.build_aws_retained_dev_oauth import build_retained_dev_oauth_setup
     from scripts.build_aws_identity_template import fixed_identity_template
     from scripts.build_aws_shared_identity_dev import build_shared_identity_dev_template
     from scripts.build_aws_dev_oauth_template import build_dev_oauth_setup_template, build_dev_oauth_template
@@ -96,6 +99,12 @@ def fixed_documents() -> dict[str, str]:
         activation_start_epoch=1893456240,
     ))
     documents["closed_bootstrap_draft"] = json.dumps(fixed_bootstrap_template())
+    documents["retained_dev_closed_bootstrap_draft"] = json.dumps(build_retained_dev_template())
+    documents["retained_dev_controls_draft"] = json.dumps(build_retained_dev_controls("a1b2c3d4e5"))
+    documents["retained_dev_artifacts_draft"] = json.dumps(build_retained_dev_artifacts())
+    documents["retained_dev_oauth_draft"] = json.dumps(build_retained_dev_oauth_setup(
+        "a1b2c3d4e5", "eu-west-1_AbCdEfGhI", callback_url="http://127.0.0.1:8787/callback",
+    ))
     documents["permanent_identity_draft"] = json.dumps(fixed_identity_template())
     documents["bootstrap_cleanup_draft"] = json.dumps(build_dev_bootstrap_cleanup(
         AwsDevShutdownPolicy("a1b2c3d4e5"),
