@@ -34,6 +34,7 @@ SYNTHETIC_CLIENT_ID = "SyntheticRetainedDevClient"
 SYNTHETIC_OWNER_SUBJECT = "00000000-0000-4000-8000-000000000001"
 SYNTHETIC_EXECUTION_START = 1_893_456_000
 SYNTHETIC_EXECUTION_END = 1_893_456_300
+RETAINED_DEV_MANIFEST_FILENAME = "retained-dev.manifest.json"
 _ACCOUNT = re.compile(r"^[0-9]{12}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _API_ID = re.compile(r"^[a-z0-9]{10}$")
@@ -92,6 +93,35 @@ def _validate_inputs(
         raise RetainedDevRuntimeTemplateError("synthetic_fixture_invalid") from None
 
 
+def build_retained_dev_manifest(
+    source_sha: str,
+    api_id: str,
+    jwks_sha256: str,
+    execution_start_epoch: int = SYNTHETIC_EXECUTION_START,
+    execution_end_epoch: int = SYNTHETIC_EXECUTION_END,
+) -> dict[str, Any]:
+    """Build the exact non-secret manifest expected in a retained-dev ZIP."""
+    if (
+        type(source_sha) is not str or not re.fullmatch(r"[0-9a-f]{40}", source_sha) or source_sha == "0" * 40
+        or type(api_id) is not str or not _API_ID.fullmatch(api_id)
+        or type(jwks_sha256) is not str or not _SHA256.fullmatch(jwks_sha256)
+        or type(execution_start_epoch) is not int or isinstance(execution_start_epoch, bool)
+        or type(execution_end_epoch) is not int or isinstance(execution_end_epoch, bool)
+        or execution_start_epoch <= 0 or execution_end_epoch <= execution_start_epoch
+        or execution_end_epoch - execution_start_epoch > 300
+    ):
+        raise RetainedDevRuntimeTemplateError("manifest_invalid")
+    return {
+        "schema": 1,
+        "builder": "build_retained_dev_runtime",
+        "environment": "dev",
+        "synthetic": True,
+        "source_sha": source_sha,
+        "api_id": api_id,
+        "jwks_sha256": jwks_sha256,
+        "execution_start_epoch": execution_start_epoch,
+        "execution_end_epoch": execution_end_epoch,
+    }
 def _validate_base(template: dict[str, Any]) -> None:
     resources = template.get("Resources")
     if not isinstance(resources, dict) or set(resources) != set(EXPECTED_RESOURCES):
@@ -246,5 +276,7 @@ __all__ = [
     "SYNTHETIC_OWNER_SUBJECT",
     "SYNTHETIC_USER_POOL_ID",
     "build_retained_dev_runtime_template",
+    "build_retained_dev_manifest",
+    "RETAINED_DEV_MANIFEST_FILENAME",
     "retained_dev_artifact_bucket",
 ]

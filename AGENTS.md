@@ -67,6 +67,12 @@ Before any controls write, offline SDK inspection identified lowercase
 Step Functions tags. A separate narrow repair is independently accepted with
 40 focused tests; it also binds the entire initial app template. No controls
 write has occurred; fresh repaired-source CI is required before creation.
+The separate actual retained-dev ZIP builder, sealed build receipt, conditional
+CAS publisher and initial byte-exact prior-code capture are independently
+accepted offline (34 focused tests). Historical builders/publishers and prod
+are unchanged. No object was published, prior ZIP downloaded, CFN service-role
+associated, runtime updated or workflow activated. The delivery preflight,
+proof-role factory and update prototypes remain separate pending acceptance.
 
 On 2026-10-05 the user explicitly authorized PR promotion to develop then main
 and preparation/creation of the narrowly scoped AWS OIDC connection for CD in
