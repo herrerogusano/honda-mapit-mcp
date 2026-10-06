@@ -44,6 +44,7 @@ from scripts.dev_multiuser_managed_login import (
     provision_and_login_pair,
 )
 from scripts.dev_multiuser_readback import verify_closed_setup, verify_role_pair
+from scripts.dev_multiuser_api_children import verify_empty_api_children
 from scripts.dev_multiuser_window import DevTestWindow
 from scripts.dev_multiuser_test_users import DevMultiuserTestUserOperator, MAX_AUTHORITY_SECONDS
 from scripts.dev_multiuser_user_recovery import recover_partial_users
@@ -102,7 +103,7 @@ SAFE_CATEGORIES = frozenset({
     "source_verification_failed", "private_acl_invalid", "authorization_invalid",
     "bindings_invalid", "clients_invalid", "identity_mismatch", "roles_readback_failed",
     "setup_readback_failed", "closed_runtime_mismatch", "login_page_failed",
-    "delivery_preflight_failed",
+    "delivery_preflight_failed", "api_children_readback_failed",
     "user_preflight_failed", "user_provision_failed", "user_readback_failed",
     "jwks_fetch_failed", "token_verify_failed", "archive_failed", "publish_failed",
     "iam_update_failed", "runtime_update_failed", "window_failed", "tenant_write_failed",
@@ -808,6 +809,11 @@ def run_hosted_acceptance(
             artifact_bucket=role_values["artifact_bucket_arn"].split(":::", 1)[-1],
             api_id=api_id, callback_url=CALLBACK_URL,
         )
+        # Retained resources can survive a failed CloudFormation create without
+        # appearing in the rolled-back stack template. Reject them before login
+        # or password changes; cleanup is a separately authorized operation.
+        if verify_empty_api_children(clients["apigatewayv2"], api_id=api_id).get("success") is not True:
+            _fail("api_children_readback_failed")
         resource = f"https://{api_id}.execute-api.{REGION}.amazonaws.com/mcp"
         scope = resource + "/use"
         domain = f"honda-mapit-mcp-dev-multiuser-{auth['account']}.auth.eu-west-1.amazoncognito.com"
