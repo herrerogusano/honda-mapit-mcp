@@ -26,11 +26,13 @@ def verify_consumed_rollback(
     client, journal, latest_reset, *, auth, app_stack, expected_setup,
     original_user_journal, latest_pair_journal, user_pool_id,
     recurring_pair: bool = False, first_confirmed_pair_journal=None,
+    earlier_reset_journal=None,
 ):
     """Three bounded reads; no mutation, journal changes, or prior-write replay."""
     try:
         if (type(recurring_pair) is not bool
-            or recurring_pair != (first_confirmed_pair_journal is not None)):
+            or recurring_pair != (first_confirmed_pair_journal is not None)
+            or not recurring_pair and earlier_reset_journal is not None):
             return False
         state, reset = journal.load(), latest_reset.load()
         if type(state) is not dict or set(state) != {"binding", "phase"} or state["phase"] != "acknowledged":
@@ -57,6 +59,7 @@ def verify_consumed_rollback(
                 first_confirmed_pair_journal=first_confirmed_pair_journal,
                 latest_pair_journal=latest_pair_journal, previous_reset_journal=latest_reset,
                 account=auth["account"], user_pool_id=user_pool_id,
+                earlier_reset_journal=earlier_reset_journal,
             )
             reset = history["previous_reset"]
             latest = history["latest_pair"]

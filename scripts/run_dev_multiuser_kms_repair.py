@@ -125,19 +125,21 @@ class _MeteredClient:
         return invoke
 
 
-def _role_templates(bindings: Mapping[str, Any], *, pool_id: str, key_arn: str | None):
+def _role_templates(bindings: Mapping[str, Any], *, pool_id: str, key_arn: str | None,
+                    describe_key: bool = False):
     if type(bindings) is not dict or set(bindings) != _ROLE_BINDINGS:
         raise KmsRepairError("role_bindings_invalid")
     try:
         return build_cd_retained_dev_multiuser_roles(
             **bindings, lambda_environment_key_arn=key_arn, observed_user_pool_id=pool_id,
+            **({"lambda_environment_key_describe": True} if describe_key else {}),
         )
     except Exception:
         raise KmsRepairError("role_template_invalid") from None
 
 
 def _extract_event_key(events: Any, *, old_token: str, app_stack_arn: str,
-                       account: str) -> str:
+                       account: str, describe_key: bool = False) -> str:
     if type(events) is not list or not 1 <= len(events) <= 1000 or any(not isinstance(row, Mapping) for row in events):
         raise KmsRepairError("prior_event_invalid")
     failed = [row for row in events if isinstance(row, Mapping)
@@ -156,6 +158,12 @@ def _extract_event_key(events: Any, *, old_token: str, app_stack_arn: str,
     reason = failed[0].get("ResourceStatusReason")
     if type(reason) is not str or not reason or len(reason) > 8192:
         raise KmsRepairError("prior_event_invalid")
+    if describe_key:
+        actor = rf"arn:aws:sts::{account}:assumed-role/honda-mapit-mcp-dev-retained-cfn-update/[A-Za-z0-9+=,.@_-]+"
+        if (re.search(actor, reason) is None
+            or re.search(r"(?<![A-Za-z])kms:DescribeKey(?![A-Za-z])", reason) is None
+            or "AccessDeniedException" not in reason):
+            raise KmsRepairError("prior_event_invalid")
     matches = _KEY_REASON.findall(reason)
     if len(matches) != 1:
         raise KmsRepairError("prior_event_invalid")
@@ -297,7 +305,7 @@ def _kms_alias(clients: Mapping[str, Any], *, account: str) -> str:
     return arn
 
 
-def _verify_templates(prior: Mapping[str, Any], target: Mapping[str, Any]) -> None:
+def _verify_templates(prior: Mapping[str, Any], target: Mapping[str, Any], *, describe_key: bool = False) -> None:
     prior_resources, target_resources = prior.get("Resources"), target.get("Resources")
     expected = {"RetainedDevCdExecutorRole", "RetainedDevCdExecutorBoundary",
                 "RetainedDevCdCloudFormationRole", "RetainedDevCdCloudFormationBoundary"}
@@ -317,6 +325,11 @@ def _verify_templates(prior: Mapping[str, Any], target: Mapping[str, Any]) -> No
     for key in set(prior_metadata) | set(target_metadata):
         if key == "CanonicalTemplateSha256":
             continue
+        if key == "KmsMetadataBinding" and describe_key:
+            from scripts.build_cd_retained_dev_multiuser_roles import KMS_METADATA_BINDING_MARKER
+            if key in prior_metadata or target_metadata.get(key) != KMS_METADATA_BINDING_MARKER:
+                raise KmsRepairError("role_template_scope_invalid")
+            continue
         if prior_metadata.get(key) != target_metadata.get(key):
             raise KmsRepairError("role_template_scope_invalid")
 
@@ -328,6 +341,7 @@ def run_kms_repair_step(
     source_sha: str, run_token: str, authorized_from_epoch: int,
     authorized_until_epoch: int, clock: Callable[[], float] = time.time,
     accepted_key_sink: Callable[[str], None] | None = None,
+    describe_key_repair: bool = False,
 ) -> dict[str, Any]:
     """Run fresh preflight/update/readback for only the four recurrent roles."""
     budget = None
@@ -335,6 +349,11 @@ def run_kms_repair_step(
     try:
         if step not in {"preflight", "request-update", "check-update"}:
             raise KmsRepairError("step_invalid")
+        if type(describe_key_repair) is not bool:
+            raise KmsRepairError("binding_invalid")
+        expected_fields = _ROLE_BINDINGS | ({"lambda_environment_key_arn"} if describe_key_repair else set())
+        if type(role_bindings) is not dict or set(role_bindings) != expected_fields:
+            raise KmsRepairError("role_bindings_invalid")
         if (not isinstance(clients, Mapping) or set(clients) != set(_METHODS)
             or any(clients[name] is None for name in _METHODS)
             or type(account_id) is not str or _ACCOUNT.fullmatch(account_id) is None or account_id == "0" * 12
@@ -402,13 +421,20 @@ def run_kms_repair_step(
             or events_response.get("Marker") not in (None, "")):
             raise KmsRepairError("prior_event_invalid")
         event_key = _extract_event_key(events_response.get("StackEvents"), old_token=old_token,
-                                       app_stack_arn=app_stack_arn, account=account_id)
+                                       app_stack_arn=app_stack_arn, account=account_id,
+                                       describe_key=describe_key_repair)
         key_arn = _kms_alias(metered, account=account_id)
         if key_arn != event_key:
             raise KmsRepairError("kms_key_mismatch")
-        prior_roles = _role_templates(role_bindings, pool_id=pool_id, key_arn=None)
-        target_roles = _role_templates(role_bindings, pool_id=pool_id, key_arn=key_arn)
-        _verify_templates(prior_roles, target_roles)
+        if describe_key_repair and role_bindings["lambda_environment_key_arn"] != key_arn:
+            raise KmsRepairError("kms_key_mismatch")
+        base_bindings = {key: role_bindings[key] for key in _ROLE_BINDINGS}
+        prior_roles = _role_templates(base_bindings, pool_id=pool_id,
+                                      key_arn=key_arn if describe_key_repair else None)
+        target_roles = _role_templates(base_bindings, pool_id=pool_id, key_arn=key_arn,
+                                       **({"describe_key": True} if describe_key_repair else {}))
+        _verify_templates(prior_roles, target_roles,
+                          **({"describe_key": True} if describe_key_repair else {}))
         if step != "check-update":
             role_check = verify_role_pair(
                 {"iam": metered["iam"]}, prior_roles, account=account_id,
@@ -490,7 +516,7 @@ def _load_app_binding(path: Path, *, acl_checker=None) -> dict[str, Any]:
 
 
 def _write_accepted_role_bindings(path: Path, bindings: Mapping[str, Any], key_arn: str,
-                                  *, acl_checker=None) -> None:
+                                  *, acl_checker=None, describe_key_repair: bool = False) -> None:
     """Create, never replace, the private fourteen-field accepted binding."""
     try:
         from scripts.run_aws_retained_dev_bootstrap import validate_private_location
@@ -499,13 +525,18 @@ def _write_accepted_role_bindings(path: Path, bindings: Mapping[str, Any], key_a
         target = parent / target.name
         if (not target.name or target.name in {".", ".."} or target.exists()
             or target.is_symlink() or type(bindings) is not dict
-            or set(bindings) != _ROLE_BINDINGS):
+            or type(describe_key_repair) is not bool
+            or set(bindings) != _ROLE_BINDINGS | ({"lambda_environment_key_arn"} if describe_key_repair else set())):
             raise ValueError
         match = _KMS_ARN.fullmatch(key_arn) if type(key_arn) is str else None
         if match is None or match.group(1) != bindings.get("account_id"):
             raise ValueError
+        if describe_key_repair and bindings["lambda_environment_key_arn"] != key_arn:
+            raise ValueError
         value = dict(bindings)
         value["lambda_environment_key_arn"] = key_arn
+        if describe_key_repair:
+            value["lambda_environment_key_describe"] = True
         payload = _canon(value)
         if len(payload) > 8192:
             raise ValueError
@@ -531,6 +562,7 @@ def run_authorized_step(
     authorization_path: Path, role_bindings_path: Path, app_binding_path: Path,
     roles_binding_path: Path, old_runtime_state_dir: Path, state_dir: Path,
     step: str, *, accepted_bindings_path: Path | None = None,
+    describe_key_repair: bool = False,
     acl_checker=None, source_ci_validator=None,
     client_factory=None, journal_factory=None,
 ) -> dict[str, Any]:
@@ -538,6 +570,8 @@ def run_authorized_step(
     try:
         if step not in {"preflight", "request-update", "check-update"}:
             raise KmsRepairError("step_invalid")
+        if type(describe_key_repair) is not bool:
+            raise KmsRepairError("binding_invalid")
         from scripts.run_aws_retained_dev_bootstrap import (
             load_authorization, validate_private_location, validate_source_and_ci,
         )
@@ -564,7 +598,15 @@ def run_authorized_step(
             raise KmsRepairError("accepted_bindings_step_invalid")
         auth = load_authorization(auth_path)
         (source_ci_validator or validate_source_and_ci)(auth)
-        role_bindings = _load_bindings(role_path)
+        if describe_key_repair:
+            from scripts.run_dev_multiuser_hosted_acceptance import _read_private_json, _validate_full_role_bindings
+            role_bindings = _validate_full_role_bindings(
+                _read_private_json(role_path, acl_checker=acl_checker, max_bytes=8192),
+                account=auth["account"])
+            if set(role_bindings) != _ROLE_BINDINGS | {"lambda_environment_key_arn"}:
+                raise KmsRepairError("role_bindings_invalid")
+        else:
+            role_bindings = _load_bindings(role_path)
         roles_binding = _load_roles_binding(roles_path, account_id=auth["account"])
         app_binding = _load_app_binding(app_path, acl_checker=acl_checker)
         if (role_bindings.get("account_id") != auth.get("account")
@@ -579,7 +621,7 @@ def run_authorized_step(
         journal = (journal_factory or CasFileJournal)(new_dir)
         clients = (client_factory or _build_clients)()
         token = "dev-multiuser-" + hashlib.sha256(
-            f"kms-repair:{auth['run_id']}:{auth['source_sha']}".encode("ascii")
+            f"{'kms-metadata-repair' if describe_key_repair else 'kms-repair'}:{auth['run_id']}:{auth['source_sha']}".encode("ascii")
         ).hexdigest()[:32]
         return run_kms_repair_step(
             clients, step=step, journal=journal, old_runtime_journal=old_state,
@@ -591,8 +633,10 @@ def run_authorized_step(
             role_bindings=role_bindings, source_sha=auth["source_sha"], run_token=token,
             authorized_from_epoch=auth["start"], authorized_until_epoch=auth["end"],
             accepted_key_sink=(lambda key: _write_accepted_role_bindings(
-                accepted_path, role_bindings, key, acl_checker=acl_checker))
+                accepted_path, role_bindings, key, acl_checker=acl_checker,
+                describe_key_repair=describe_key_repair))
             if step == "check-update" else None,
+            describe_key_repair=describe_key_repair,
         )
     except KmsRepairError as exc:
         return {"success": False, "category": exc.category, "calls": 0}
@@ -610,11 +654,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--step", choices=("preflight", "request-update", "check-update"), required=True)
     parser.add_argument("--accepted-role-bindings", type=Path)
+    parser.add_argument("--describe-key-repair", action="store_true")
     args = parser.parse_args(argv)
     result = run_authorized_step(
         args.authorization, args.role_bindings, args.app_binding, args.roles_binding,
         args.old_runtime_state_dir, args.state_dir, args.step,
         accepted_bindings_path=args.accepted_role_bindings,
+        describe_key_repair=args.describe_key_repair,
     )
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0 if result.get("success") is True else 1

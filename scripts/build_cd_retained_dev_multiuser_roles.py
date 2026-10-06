@@ -32,6 +32,10 @@ _POOL_ID = re.compile(r"^eu-west-1_[A-Za-z0-9]{9,64}$")
 _KMS_KEY_ARN = re.compile(
     r"^arn:aws:kms:eu-west-1:[0-9]{12}:key/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
+# This is deliberately a closed string rather than a truthy flag in the
+# rendered template.  A repair/readback coordinator can accept this marker
+# only together with the separately bound exact key ARN.
+KMS_METADATA_BINDING_MARKER = "exact-existing-key-caller-account-only"
 
 
 class RetainedDevMultiuserRoleError(RetainedDevRoleError):
@@ -92,6 +96,26 @@ def _environment_key_allow(*, account_id: str, key_arn: str, handler_arn: str) -
                 "kms:EncryptionContext:aws:lambda:FunctionArn": handler_arn,
             }
         },
+    }
+
+
+def _environment_key_metadata_allow(*, account_id: str, key_arn: str) -> dict[str, Any]:
+    """Read metadata for one already-bound key, without crypto context.
+
+    This metadata read is intentionally bound only by caller account and
+    exact key.  The repair contract has no independently verified
+    ``kms:ViaService`` evidence for this CloudFormation path, and a
+    ``DescribeKey`` request does not carry the Lambda encryption context.
+    Keeping this separate also prevents the context-specific KMS denies used
+    for Encrypt/Decrypt from accidentally denying this metadata read in the
+    permissions boundary.
+    """
+    return {
+        "Sid": "ReadExactRetainedDevLambdaEnvironmentKeyMetadata",
+        "Effect": "Allow",
+        "Action": "kms:DescribeKey",
+        "Resource": key_arn,
+        "Condition": {"StringEquals": {"kms:CallerAccount": account_id}},
     }
 
 
@@ -317,6 +341,7 @@ def build_cd_retained_dev_multiuser_roles(
     artifact_bucket_arn: str,
     execution_role_arn: str,
     lambda_environment_key_arn: str | None = None,
+    lambda_environment_key_describe: bool = False,
     observed_user_pool_id: str | None = None,
 ) -> dict[str, Any]:
     """Extend the exact retained-dev role pair for the multi-user V2 stack.
@@ -326,6 +351,10 @@ def build_cd_retained_dev_multiuser_roles(
     resources and uses the tag-scoped bootstrap wildcard.  Passing an observed
     pool ID produces the recurrent, pool-ARN-scoped policy.
     """
+    if type(lambda_environment_key_describe) is not bool:
+        _fail("multiuser_environment_key_invalid")
+    if lambda_environment_key_describe and lambda_environment_key_arn is None:
+        _fail("multiuser_environment_key_invalid")
     if lambda_environment_key_arn is not None and (
         type(lambda_environment_key_arn) is not str
         or _KMS_KEY_ARN.fullmatch(lambda_environment_key_arn) is None
@@ -357,6 +386,14 @@ def build_cd_retained_dev_multiuser_roles(
         account_id=account_id, api_arn=api_arn, handler_arn=handler_arn,
         execution_role_arn=execution_role_arn, pool_id=observed_user_pool_id,
     ))
+    if lambda_environment_key_describe:
+        # This statement is opt-in and is bound to the same exact key as the
+        # existing crypto-context grant.  It is added to the role policy now;
+        # the boundary receives a copy below after its context-specific KMS
+        # denies are constructed, so those denies do not apply to DescribeKey.
+        cfn_policy["Statement"].append(_environment_key_metadata_allow(
+            account_id=account_id, key_arn=lambda_environment_key_arn,
+        ))
     if lambda_environment_key_arn is None:
         template["Resources"][cfn_boundary_id]["Properties"]["PolicyDocument"] = _compact_boundary(
             _permissions_boundary(cfn_policy, environment_key=None, handler_arn=handler_arn)
@@ -378,7 +415,10 @@ def build_cd_retained_dev_multiuser_roles(
         boundary_source = copy.deepcopy(cfn_policy)
         boundary_source["Statement"] = [
             statement for statement in boundary_source["Statement"]
-            if statement.get("Sid") != "DenyEveryUnlistedAction"
+            if statement.get("Sid") not in {
+                "DenyEveryUnlistedAction",
+                "ReadExactRetainedDevLambdaEnvironmentKeyMetadata",
+            }
         ]
         boundary = _permissions_boundary(
             boundary_source, environment_key=lambda_environment_key_arn, handler_arn=handler_arn,
@@ -387,6 +427,10 @@ def build_cd_retained_dev_multiuser_roles(
             statement for statement in boundary["Statement"]
             if statement.get("Sid") != "DenyEveryUnlistedAction"
         ]
+        if lambda_environment_key_describe:
+            boundary["Statement"].append(_environment_key_metadata_allow(
+                account_id=account_id, key_arn=lambda_environment_key_arn,
+            ))
         template["Resources"][cfn_boundary_id]["Properties"]["PolicyDocument"] = _compact_boundary(boundary)
     metadata = template.setdefault("Metadata", {})
     metadata.update({
@@ -404,6 +448,8 @@ def build_cd_retained_dev_multiuser_roles(
         "NoApiPatch": False,
         "CanonicalTemplateSha256": hashlib.sha256(_canonical(template["Resources"])).hexdigest(),
     })
+    if lambda_environment_key_describe:
+        metadata["KmsMetadataBinding"] = KMS_METADATA_BINDING_MARKER
     # The executor role, its trust, and its boundary must remain byte-identical
     # to the reviewed retained-dev factory.  The assertion is intentionally
     # performed here so future edits cannot silently broaden it.
