@@ -27,6 +27,16 @@ envelope, accepting only one AES256 rule with an absent or false bucket-key flag
 The previous fixture had incorrectly copied the CloudFormation property shape.
 No encryption setting is changed by this correction; see
 [GetBucketEncryption response](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/get_bucket_encryption.html).
+A separate seven-read, read-only verification on source `88eb2b7` (eight green
+develop checks, CI `37471949535`) passed the corrected resource envelope but
+stopped at encryption's optional `BlockedEncryptionTypes` field. A one-read
+diagnostic confirmed exact AES256, false bucket-key and only `SSE-C` blocking;
+seven remaining bounded diagnostic reads matched ownership, no versioning,
+region, public-policy status, all seven exact tags, terminal lifecycle and
+TLS-only policy. These diagnostics are not a complete acceptance receipt.
+The strict compatibility increment admits that optional field only as
+`{"EncryptionType":["SSE-C"]}`. No bucket configuration or creation intent
+is changed, and a fresh full readback remains required.
 
 The bounded operator prepares exactly one CloudFormation stack named
 `honda-mapit-mcp-dev-retained-runtime-artifacts` from the reviewed two-resource

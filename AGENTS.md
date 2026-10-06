@@ -25,6 +25,27 @@ roles, S3/control resources, runtime update, activation or multiuser hosting
 were created by this increment; full dev CD remains IN PROGRESS. Production
 main remains unchanged. Subsequent artifact bootstrap work is preparation only
 until fresh source/CI/authorization/intents/readbacks are independently accepted.
+PR #37 and its eight develop checks then accepted the one-shot artifact
+bootstrap at b8e5a23 (CI 37469969070). A fresh private authorization fenced its
+two-read preflight and one acknowledged CreateStack. That write is consumed;
+never replay it. The stack reached CREATE_COMPLETE, but exact acceptance is
+pending SDK readback compatibility. PR #38 passed eight checks and merged at
+88eb2b7 (develop CI 37471949535): optional exact NOT_CHECKED resource metadata
+and the actual S3 encryption Rules/ApplyServerSideEncryptionByDefault shape.
+A separate read-only verification preserved the creation binding and stopped
+at S3's optional SSE-C blocking field. Bounded diagnostics confirmed every
+remaining bucket control without raw/private output. The narrow optional
+BlockedEncryptionTypes acceptance still requires fresh full readback;
+diagnostics are not an acceptance receipt. See the artifact status document.
+The injected four-resource IAM bootstrap is independently accepted offline
+with 29 focused tests, exact separate IAM/application stack bindings, strict
+provider host/audience, policy parsing, tags, pagination, boundary metadata,
+token-event ownership and immutable journal state. Parent checkpoint excluding
+the separate unaccepted controls draft: 2,725 passed, eleven environment skips;
+compilation/model-free evaluation 12/12 and actual network-denied SDK client
+construction passed. No IAM role or service-role association, runtime ZIP,
+controls stack, dev delivery workflow or hosted multiuser activation follows
+from this acceptance; full dev CD remains in progress. Main/prod is unchanged.
 
 On 2026-10-05 the user explicitly authorized PR promotion to develop then main
 and preparation/creation of the narrowly scoped AWS OIDC connection for CD in
