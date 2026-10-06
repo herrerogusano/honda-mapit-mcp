@@ -18,6 +18,9 @@ recovery also passed; see [CD acceptance and operating instructions](docs/cd-del
 `develop` has protected CI/promotion, not a retained dev application deployment.
 Updates still require owner approvals; public source does not imply unattended
 deployment or access to private resources.
+The separate retained-dev OIDC proof runner is offline-tested only and has not
+requested a token or contacted AWS; see
+[its bounded contract](docs/cd-retained-dev-oidc-proof.md).
 
 The phase descriptions below retain their original local implementation scope;
 later acceptance and remaining gates are recorded in the linked status files.

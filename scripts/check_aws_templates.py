@@ -76,6 +76,7 @@ def fixed_documents() -> dict[str, str]:
     from scripts.build_cd_identity_bootstrap import build_cd_identity_bootstrap
     from scripts.build_cd_delivery_roles import build_cd_delivery_roles
     from scripts.build_cd_retained_dev_roles import build_cd_retained_dev_roles
+    from scripts.build_cd_retained_dev_proof_role import build_cd_retained_dev_proof_role
 
     documents = {}
     for label, filename in (
@@ -298,6 +299,23 @@ def fixed_documents() -> dict[str, str]:
                 lambda_environment_key_arn=(f"arn:aws:kms:eu-west-1:{identity_account_id}:key/"
                                             "11111111-2222-4333-8444-555555555555"),
             ))
+    documents["cd_retained_dev_readonly_proof_draft"] = json.dumps(build_cd_retained_dev_proof_role(
+        account_id=identity_account_id, provider_arn=identity_provider_arn,
+        owner_id=identity_owner_id, repository_id=identity_repository_id,
+        observed_dev_subject_sha256=hashlib.sha256(dev_subject.encode("ascii")).hexdigest(),
+        app_stack_arn=retained_stack, artifact_stack_arn=retained_artifact_stack,
+        controls_stack_arn=(f"arn:aws:cloudformation:eu-west-1:{identity_account_id}:stack/"
+                            "honda-mapit-mcp-dev-retained-controls/33333333-4444-4555-8666-777777777777"),
+        artifact_bucket_arn=retained_base["artifact_bucket_arn"],
+        api_arn=retained_base["api_arn"], handler_arn=retained_base["handler_arn"],
+        cfn_role_arn=f"arn:aws:iam::{identity_account_id}:role/honda-mapit-mcp-dev-retained-cfn-update",
+        execution_role_arn=retained_base["execution_role_arn"],
+        cfn_boundary_arn=f"arn:aws:iam::{identity_account_id}:policy/honda-mapit-mcp-dev-retained-cfn-update-boundary",
+        executor_boundary_arn=f"arn:aws:iam::{identity_account_id}:policy/honda-mapit-mcp-dev-retained-cd-executor-boundary",
+        shutdown_state_machine_arn=retained_base["shutdown_state_machine_arn"],
+        tripwire_alarm_arn=f"arn:aws:cloudwatch:eu-west-1:{identity_account_id}:alarm:honda-mapit-mcp-dev-retained-request-tripwire",
+        tripwire_rule_arn=f"arn:aws:events:eu-west-1:{identity_account_id}:rule/honda-mapit-mcp-dev-retained-request-tripwire-alarm-rule",
+    ))
     return documents
 
 

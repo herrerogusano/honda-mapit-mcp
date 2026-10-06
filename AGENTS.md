@@ -1,5 +1,13 @@
 # Project Agent Workflow
 
+The separate retained-dev readonly-proof factory, private bootstrap/CAS runner,
+identity-only OIDC runner and initial-code direct-TLS downloader are accepted
+offline after independent review (102 focused tests). The factory is included
+in the network-denied official schema checker (38 templates). This is not live
+role creation, STS acceptance, code download/publication or complete dev CD.
+The preflight/update/S3-journal integration remains unaccepted preparation.
+Keep production/main and historical consumed intents unchanged.
+
 ## Scope
 
 On 2026-10-06 the owner approved permanent retained dev, with an additional
@@ -73,6 +81,14 @@ accepted offline (34 focused tests). Historical builders/publishers and prod
 are unchanged. No object was published, prior ZIP downloaded, CFN service-role
 associated, runtime updated or workflow activated. The delivery preflight,
 proof-role factory and update prototypes remain separate pending acceptance.
+The repaired controls source 201c07d subsequently passed eight develop checks
+(37479419359) and fresh repository/dev protections. One fresh immutable private
+authorization fenced nine preflight calls, one acknowledged controls creation,
+two pending readbacks and a complete 27-read acceptance. Its five resources
+are accepted; never replay the consumed create token or alter its window/source.
+Dev remains endpoint-disabled/reserve-zero; prod, owner/MFA and quota 10 are
+unchanged. No runtime update, invocation, artifact publication or workflow
+activation followed. Full retained-dev CD remains IN PROGRESS.
 
 On 2026-10-05 the user explicitly authorized PR promotion to develop then main
 and preparation/creation of the narrowly scoped AWS OIDC connection for CD in

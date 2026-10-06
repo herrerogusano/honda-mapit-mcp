@@ -36,6 +36,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "cd_delivery_lambda_key_draft",
         "cd_retained_dev_legacy_draft", "cd_retained_dev_immutable_draft",
         "cd_retained_dev_lambda_key_draft",
+        "cd_retained_dev_readonly_proof_draft",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
