@@ -61,6 +61,33 @@ removed before this gated handoff; no persistent power settings changed, and
 the original HP Recommended active scheme was reverified. A future continuation
 must explicitly renew temporary wakefulness rather than assume this helper runs.
 
+The owner then approved the exact existing AWS-managed-key DEV repair and one
+fresh reset/login per same confirmed technical A/B, followed only on success
+by bounded hosted E2E. This does not authorize user creation, customer keys,
+unlisted IAM permissions, production/main, owner MFA, quota or MAPIT changes.
+Read-only key/event projections match the alias key to the failed handler event
+and the prior request token to the completed rollback root. Audit parameters
+were absent and do not prove encryption context. The KMS factory and separate
+two-confirmed-user recovery passed initial independent offline review; integration,
+fresh source CI and live proof are pending. The optional KMS CFN role retains
+its boundary/key/service/context denies; the unlisted-action explicit deny is
+in its sole inline policy to respect distinct IAM size limits. Executor unchanged.
+No historical write/window is replayable. New temporary wake helper PID 27508,
+start 2026-10-06T21:25:22Z, has a two-hour automatic cutoff and must be removed
+before handoff; persistent display/power settings remain unchanged.
+
+The integrated recovery is now accepted offline: 3,424 tests passed with twelve
+environment skips, compilation and deterministic evaluation 12/12. Independent
+review accepted strict completed-reset/original/latest-pair provenance and the
+one-intent KMS repair CLI, including pending IAM update readbacks and exclusive
+private accepted-binding publication. HTTP checks now pace at least 1.1 seconds
+and fail immediately on invalid initialization/discovery. A fresh read verified
+the exact current app CFN role and termination protection. The bounded original
+setup-window Encrypt lookup returned zero events; environment-encryption context
+is still unconfirmed, not established by ZIP/filter documentation. Keep the
+approved exact FunctionArn condition fail-closed. Source CI/promotion and the
+new live allowances remain pending and unconsumed at this offline checkpoint.
+
 On 2026-10-06 the owner authorized retained isolated DEV multi-user acceptance:
 two technical users, an exclusive test Cognito pool with MFA off only there,
 and a durable authorization table. Shared Lambda quota remains 10, no real

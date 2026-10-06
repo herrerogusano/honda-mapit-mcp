@@ -108,10 +108,14 @@ that acknowledged intent is consumed, not a retry candidate. Equivalent
 compaction removes non-authorizing `Sid` labels and unions actions only when
 every other authorization field matches. The materialized boundary must fit
 IAM's [6,144-character managed-policy limit](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html)
-before any update intent. The optional customer-managed environment KMS-key
-variant exceeds that limit and remains fail-closed; it is not used in the
-approved standard DEV scope. This does not change historical role factories,
-executor permissions, or production policies.
+before any update intent. Customer-managed key creation is outside this scope.
+The separately approved existing AWS-managed Lambda-key recovery retains the
+attached boundary and its exact wrong-key/service/context denies, and places
+the equivalent explicit deny for all unlisted actions in the CFN role's sole
+inline policy. That inline policy must fit its separate 10,240-byte aggregate
+limit; the managed boundary must fit 6,144. Independent review must verify the
+combined effective authorization, including resource/session grants, not just
+document sizes. The executor and historical/prod role factories are unchanged.
 
 ## Hosted DEV checkpoint
 
@@ -264,3 +268,34 @@ fresh two-confirmed-user login recovery is also required; the previous
 A-confirmed/B-absent recovery is no longer applicable. The existing private
 artifact has an expired immutable execution window and is evidence only, not
 a package to reopen implicitly.
+
+The owner approved the exact-key recovery and one fresh reset/login of each
+same confirmed technical user, followed by bounded DEV E2E only on success.
+Read-only alias metadata verified the existing AWS-managed enabled regional key;
+one exact failed handler event names that same key. The matching rollback root
+event uses the consumed runtime intent's exact request token. Audit event
+request parameters were absent, so they do not independently prove encryption
+context. The proposed grant nevertheless fails closed on any context other than
+the exact DEV Lambda function ARN, and on a different key/account/service.
+No key creation, quota change, production update, owner MFA or MAPIT access is
+authorized. Fresh closed IAM intents/source CI and two-confirmed-user recovery
+replace, rather than replay, the prior operation. Live acceptance remains pending.
+
+The recovery CLI is `scripts/run_dev_multiuser_kms_repair.py`: fresh source/CI,
+private authorization, exact closed app and recurrent role readbacks precede
+one new role-stack update intent. Accepted IAM readback creates a new private
+fourteen-field binding; it never replaces the original thirteen-field input.
+The executor role/boundary remain byte-identical. The new confirmed-pair path
+resets each existing technical user at most once, with A login required before B.
+HTTP acceptance uses monotonic pacing, ten planned RPCs, a twelve-attempt ceiling
+and a 120-second budget, within the independently closed five-minute endpoint.
+
+The exact environment-encryption context remains unconfirmed: the bounded
+historical setup-window lookup returned no Encrypt events, and the failed
+event has no request parameters. AWS's FunctionArn examples for
+[ZIP packages](https://docs.aws.amazon.com/lambda/latest/dg/encrypt-zip-package.html)
+and [filter criteria](https://docs.aws.amazon.com/lambda/latest/dg/security-encryption-at-rest.html)
+are not proof of the environment-variable context. The approved FunctionArn
+condition stays fail-closed; a mismatch must stop the one live attempt, not
+silently remove the condition or broaden permissions. No new key or KMS
+encryption/decryption probe was executed.

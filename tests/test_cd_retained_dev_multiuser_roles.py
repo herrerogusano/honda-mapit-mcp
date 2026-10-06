@@ -190,10 +190,70 @@ def test_v2_boundary_is_compact_and_preserves_authorization_context():
 
 
 @pytest.mark.parametrize("pool", [None, "eu-west-1_ABCDEFGHI"])
-def test_optional_lambda_environment_key_fails_closed_in_every_phase(pool):
+def test_optional_lambda_environment_key_is_cf_only_and_bounded(pool):
     key = f"arn:aws:kms:eu-west-1:{ACCOUNT}:key/11111111-2222-4333-8444-555555555555"
-    with pytest.raises(RetainedDevMultiuserRoleError, match="multiuser_environment_key_unsupported"):
-        _build(lambda_environment_key_arn=key, observed_user_pool_id=pool)
+    template = _build(lambda_environment_key_arn=key, observed_user_pool_id=pool)
+    cfn = _cfn_statements(template)
+    boundary = template["Resources"]["RetainedDevCdCloudFormationBoundary"]["Properties"]["PolicyDocument"]
+    boundary_bytes = len(json.dumps(boundary, separators=(",", ":")).encode("utf-8"))
+    assert boundary_bytes <= 6144
+    cfn_policy = template["Resources"]["RetainedDevCdCloudFormationRole"]["Properties"]["Policies"][0]["PolicyDocument"]
+    assert len(json.dumps(cfn_policy, separators=(",", ":")).encode("utf-8")) <= 10240
+    kms_allow = next(item for item in cfn if item.get("Sid") == "UseExactRetainedDevLambdaEnvironmentKey")
+    assert kms_allow["Action"] == ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"]
+    assert kms_allow["Resource"] == key
+    assert kms_allow["Condition"] == {"StringEquals": {
+        "kms:CallerAccount": ACCOUNT,
+        "kms:ViaService": "lambda.eu-west-1.amazonaws.com",
+        "kms:EncryptionContext:aws:lambda:FunctionArn": HANDLER,
+    }}
+    # The allow is CFN-only: neither executor policy nor boundary may acquire
+    # a KMS action from this opt-in.
+    base_executor = _build()["Resources"]["RetainedDevCdExecutorRole"]
+    assert template["Resources"]["RetainedDevCdExecutorRole"] == base_executor
+    assert not any(action.startswith("kms:") for action in _actions(
+        template["Resources"]["RetainedDevCdExecutorBoundary"]["Properties"]["PolicyDocument"]["Statement"]
+    ))
+    assert any(action.startswith("kms:") for action in _actions(boundary["Statement"]))
+    assert any(item.get("Sid") == "DenyEveryUnlistedAction" for item in cfn)
+    assert not any(item.get("Sid") == "DenyEveryUnlistedAction" for item in boundary["Statement"])
+
+
+def test_kms_wrong_key_service_context_and_action_remain_denied():
+    key = f"arn:aws:kms:eu-west-1:{ACCOUNT}:key/11111111-2222-4333-8444-555555555555"
+    template = _build(lambda_environment_key_arn=key, observed_user_pool_id=POOL_ID)
+    cfn = _cfn_statements(template)
+    boundary = template["Resources"]["RetainedDevCdCloudFormationBoundary"]["Properties"]["PolicyDocument"]["Statement"]
+    kms_denies = [item for item in boundary if item.get("Effect") == "Deny" and "kms:Encrypt" in item.get("Action", [])]
+    wrong_key = next(item for item in kms_denies if "NotResource" in item)
+    wrong_service = next(item for item in kms_denies if item.get("Condition", {}).get("StringNotEquals", {}).get("kms:ViaService"))
+    wrong_context = next(item for item in kms_denies if item.get("Condition", {}).get("StringNotEquals", {}).get("kms:EncryptionContext:aws:lambda:FunctionArn"))
+    assert wrong_key["NotResource"] == key
+    assert wrong_service["Resource"] == key
+    assert wrong_service["Condition"] == {"StringNotEquals": {"kms:ViaService": "lambda.eu-west-1.amazonaws.com"}}
+    assert wrong_context["Resource"] == key
+    assert wrong_context["Condition"] == {"StringNotEquals": {
+        "kms:EncryptionContext:aws:lambda:FunctionArn": HANDLER,
+    }}
+    catchall = next(item for item in cfn if item.get("Sid") == "DenyEveryUnlistedAction")
+    not_actions = set(catchall["NotAction"])
+    assert {"kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"}.issubset(not_actions)
+    assert "kms:ScheduleKeyDeletion" not in not_actions
+    assert not any(
+        isinstance(action, str) and action == "kms:*"
+        for statement in [*cfn, *boundary]
+        for action in (statement.get("Action", []) if isinstance(statement.get("Action", []), list) else [statement.get("Action")])
+    )
+
+
+@pytest.mark.parametrize("key", [
+    "arn:aws:kms:us-east-1:123456789012:key/11111111-2222-4333-8444-555555555555",
+    "arn:aws:kms:eu-west-1:123456789012:key/not-a-uuid",
+    "arn:aws:kms:eu-west-1:000000000000:key/11111111-2222-4333-8444-555555555555",
+])
+def test_environment_key_binding_is_exact_and_fail_closed(key):
+    with pytest.raises(RetainedDevMultiuserRoleError, match="multiuser_environment_key_invalid"):
+        _build(lambda_environment_key_arn=key)
 
 
 @pytest.mark.parametrize("pool_id", ["", "us-east-1_bad", "eu-west-1_bad!", True])

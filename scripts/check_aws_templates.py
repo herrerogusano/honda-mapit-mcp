@@ -323,6 +323,10 @@ def fixed_documents() -> dict[str, str]:
     ))
     documents["retained_dev_multiuser_timed_controls"] = json.dumps(build_dev_multiuser_timed_controls("a1b2c3d4e5"))
     documents["retained_dev_multiuser_roles_bootstrap"] = json.dumps(build_cd_retained_dev_multiuser_roles(**retained_args))
+    documents["retained_dev_multiuser_roles_recurrent_existing_key"] = json.dumps(build_cd_retained_dev_multiuser_roles(
+        **retained_args, observed_user_pool_id="eu-west-1_A1b2C3d4E",
+        lambda_environment_key_arn=f"arn:aws:kms:eu-west-1:{retained_args['account_id']}:key/11111111-2222-4333-8444-555555555555",
+    ))
     documents["retained_dev_multiuser_roles_recurrent"] = json.dumps(build_cd_retained_dev_multiuser_roles(
         **retained_args, observed_user_pool_id="eu-west-1_A1b2C3d4E"))
     documents["retained_dev_multiuser_setup"] = json.dumps(build_retained_dev_multiuser_setup(

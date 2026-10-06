@@ -100,6 +100,14 @@ tests reject writes, invocation, PassRole, shutdown-start, object reads and
 unbounded resource grants. Its two-resource shape remains separate from the
 existing four-resource executor/service-role factory.
 
+This two-resource read-only proof requirement is unchanged. The separately
+approved four-resource multiuser CFN KMS recovery uses a different size contract:
+its attached managed boundary is limited to 6,144 bytes, and its sole inline
+policy to 10,240 bytes. The explicit deny for unlisted actions moves to that
+inline policy while the boundary retains exact KMS key/service/context denies.
+That reviewed combined-role contract does not authorize changing this proof
+role or the executor; see `dev-multiuser-hosted-contract.md`.
+
 If the candidate cannot fit without wildcard resources or omitted readbacks,
 keep the scoped owner-proof session and stop. Do not trade away controls,
 artifact, IAM, API-route or S3-security evidence to reuse the existing

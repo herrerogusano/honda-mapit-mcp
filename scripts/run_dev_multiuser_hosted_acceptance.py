@@ -50,6 +50,10 @@ from scripts.dev_multiuser_user_recovery import recover_partial_users
 from scripts.dev_multiuser_confirmed_reset_recovery import (
     prepare_confirmed_a_reset, reset_a_then_provision_b,
 )
+from scripts.dev_multiuser_confirmed_pair_recovery import (
+    prepare_confirmed_pair_reset, reset_confirmed_pair_once,
+)
+from scripts.dev_multiuser_rollback_recovery import verify_consumed_rollback
 from scripts.run_dev_multiuser_runtime_update import (
     CasFileJournal,
     MultiuserBuildReceipt,
@@ -612,7 +616,7 @@ def _run_arm_candidate_probe(
         _fail("archive_failed")
 
 
-def _build_aws_clients() -> dict[str, Any]:
+def _build_aws_clients(*, include_kms: bool = False) -> dict[str, Any]:
     """Construct fixed direct-TLS clients only after local gates pass."""
     blocked = {"http_proxy", "https_proxy", "all_proxy", "no_proxy", "aws_ca_bundle", "aws_endpoint_url"}
     if any(name.casefold() in blocked for name in os.environ):
@@ -639,6 +643,8 @@ def _build_aws_clients() -> dict[str, Any]:
             "cloudwatch": session.client("cloudwatch", region_name=REGION, endpoint_url="https://monitoring.eu-west-1.amazonaws.com", config=config, verify=True),
             "s3": session.client("s3", region_name=REGION, endpoint_url="https://s3.eu-west-1.amazonaws.com", config=config, verify=True),
         }
+        if include_kms:
+            clients["kms"] = session.client("kms", region_name=REGION, endpoint_url="https://kms.eu-west-1.amazonaws.com", config=config, verify=True)
         return clients
     except HostedAcceptanceError:
         raise
@@ -659,6 +665,8 @@ class HostedAcceptanceInputs:
     existing_user_journal_path: Path | None = None
     confirmed_user_journal_path: Path | None = None
     allow_single_a_password_reset: bool = False
+    allow_confirmed_pair_password_resets: bool = False
+    failed_runtime_journal_path: Path | None = None
 
 
 def run_hosted_acceptance(
@@ -684,12 +692,16 @@ def run_hosted_acceptance(
     tenant_a_key: str | None = None
     revocation_journal: FileJournal | None = None
     token_map: dict[str, str] = {}
+    http_failure_receipt: dict[str, Any] = {}
     try:
         auth = load_authorization(validate_private_location(inputs.authorization_path, acl_checker=acl_checker))
         source_verifier(auth)
-        if type(inputs.allow_single_a_password_reset) is not bool:
+        if type(inputs.allow_single_a_password_reset) is not bool or type(inputs.allow_confirmed_pair_password_resets) is not bool:
             _fail("bindings_invalid")
-        if inputs.allow_single_a_password_reset:
+        pair_recovery = inputs.allow_confirmed_pair_password_resets
+        if inputs.allow_single_a_password_reset and pair_recovery:
+            _fail("bindings_invalid")
+        if inputs.allow_single_a_password_reset or pair_recovery:
             if inputs.existing_user_journal_path is None or inputs.confirmed_user_journal_path is None:
                 _fail("bindings_invalid")
         elif inputs.confirmed_user_journal_path is not None:
@@ -701,6 +713,19 @@ def run_hosted_acceptance(
         confirmed_user_journal = None
         if inputs.confirmed_user_journal_path is not None:
             confirmed_user_journal = FileJournal(validate_private_location(inputs.confirmed_user_journal_path, acl_checker=acl_checker))
+        failed_runtime_journal = None
+        latest_reset_journal = None
+        if pair_recovery:
+            if inputs.failed_runtime_journal_path is None:
+                _fail("bindings_invalid")
+            failed_path = validate_private_location(inputs.failed_runtime_journal_path, acl_checker=acl_checker)
+            latest_path = validate_private_location(inputs.confirmed_user_journal_path, acl_checker=acl_checker)
+            if failed_path.name != "runtime" or latest_path.name != "users" or failed_path.parent != latest_path.parent:
+                _fail("bindings_invalid")
+            failed_runtime_journal = FileJournal(failed_path)
+            latest_reset_journal = FileJournal(validate_private_location(latest_path.parent / "reset", acl_checker=acl_checker))
+        elif inputs.failed_runtime_journal_path is not None:
+            _fail("bindings_invalid")
         app_binding = _read_private_json(inputs.app_binding_path, acl_checker=acl_checker)
         roles_binding = _read_private_json(inputs.roles_binding_path, acl_checker=acl_checker)
         controls_binding = _read_private_json(inputs.controls_binding_path, acl_checker=acl_checker)
@@ -720,18 +745,18 @@ def run_hosted_acceptance(
         artifact_stack, artifact_run = _binding(artifact_binding, account=auth["account"], stack_name="honda-mapit-mcp-dev-retained-runtime-artifacts")
         if role_values.get("artifact_stack_arn") != artifact_stack:
             _fail("bindings_invalid")
-        role_template = build_cd_retained_dev_multiuser_roles(**role_values, observed_user_pool_id=None)
+        if pair_recovery and not role_values.get("lambda_environment_key_arn"):
+            _fail("bindings_invalid")
         if clients is None:
             if not callable(clients_factory):
                 _fail("clients_invalid")
             clients = clients_factory()
         required = {"sts", "iam", "cloudformation", "cognito", "apigateway", "apigatewayv2", "dynamodb", "lambda", "stepfunctions", "events", "cloudwatch", "s3"}
+        if pair_recovery:
+            required.add("kms")
         if set(clients) != required or any(clients[name] is None for name in required):
             _fail("clients_invalid")
         _verify_sts(clients["sts"], account=auth["account"], caller_arn=auth["expected_caller_arn"])
-        roles_result = verify_role_pair({"iam": clients["iam"]}, role_template, account=auth["account"], roles_stack_arn=roles_stack, original_creation_run_id=roles_run)
-        if roles_result.get("success") is not True:
-            _fail("roles_readback_failed")
         # The setup verifier is intentionally before all user writes.  It
         # checks the actual API, pool, client, domain, branding, table, route
         # closure, stack ownership and exact 11-resource shape.
@@ -744,10 +769,29 @@ def run_hosted_acceptance(
         client_id = by_logical.get("McpUserPoolClient", {}).get("PhysicalResourceId")
         if type(api_id) is not str or _API.fullmatch(api_id) is None or type(pool_id) is not str or _POOL.fullmatch(pool_id) is None or type(client_id) is not str or _CLIENT.fullmatch(client_id) is None:
             _fail("setup_readback_failed")
+        role_template = build_cd_retained_dev_multiuser_roles(**role_values, observed_user_pool_id=pool_id if pair_recovery else None)
+        if verify_role_pair({"iam": clients["iam"]}, role_template, account=auth["account"], roles_stack_arn=roles_stack, original_creation_run_id=roles_run).get("success") is not True:
+            _fail("roles_readback_failed")
+        if pair_recovery:
+            key_result = clients["kms"].describe_key(KeyId="alias/aws/lambda")
+            metadata = key_result.get("KeyMetadata", {})
+            if (not _ok_response(key_result) or metadata.get("Arn") != role_values["lambda_environment_key_arn"]
+                or metadata.get("AWSAccountId") != auth["account"] or metadata.get("KeyManager") != "AWS"
+                or metadata.get("KeyState") != "Enabled" or metadata.get("KeySpec") != "SYMMETRIC_DEFAULT"
+                or metadata.get("KeyUsage") != "ENCRYPT_DECRYPT" or metadata.get("MultiRegion") is not False):
+                _fail("roles_readback_failed")
+            if not verify_consumed_rollback(clients["cloudformation"], failed_runtime_journal, latest_reset_journal,
+                                           auth=auth, app_stack=app_stack,
+                                           expected_setup=build_retained_dev_multiuser_setup(api_id=api_id, callback_url=CALLBACK_URL),
+                                           original_user_journal=existing_user_journal,
+                                           latest_pair_journal=confirmed_user_journal,
+                                           user_pool_id=pool_id):
+                _fail("setup_readback_failed")
         setup_result = verify_closed_setup(
             {"cloudformation": clients["cloudformation"], "cognito": clients["cognito"], "apigateway": clients["apigateway"], "dynamodb": clients["dynamodb"]},
             account=auth["account"], stack_arn=app_stack, api_id=api_id, user_pool_id=pool_id,
             client_id=client_id, callback_url=CALLBACK_URL, original_creation_run_id=app_run,
+            verified_rollback=pair_recovery,
         )
         if setup_result.get("success") is not True:
             _fail("setup_readback_failed")
@@ -782,7 +826,16 @@ def run_hosted_acceptance(
         operator_run_id = str(auth["run_id"])
         recovered = existing_user_journal is not None
         if recovered:
-            if inputs.allow_single_a_password_reset:
+            if pair_recovery:
+                recovery_result = prepare_confirmed_pair_reset(
+                    clients={"cognito": clients["cognito"]}, original_creation_journal=existing_user_journal,
+                    latest_pair_journal=confirmed_user_journal, fresh_user_journal=user_journal,
+                    reset_journal=FileJournal(run_dir / "reset"), provenance_journal=FileJournal(run_dir / "recovery"),
+                    account=auth["account"], user_pool_id=pool_id, source_sha256=auth["source_sha"],
+                    authorized_from_epoch=user_start, authorized_until_epoch=user_end,
+                    allow_two_confirmed_user_resets=True, wall_clock=clock,
+                )
+            elif inputs.allow_single_a_password_reset:
                 recovery_result = prepare_confirmed_a_reset(
                     clients={"cognito": clients["cognito"]},
                     original_creation_journal=existing_user_journal,
@@ -814,7 +867,19 @@ def run_hosted_acceptance(
             if type(username) is not str or not hasattr(token, "access_token"):
                 _fail("user_provision_failed")
             token_map[username] = token.access_token
-        if inputs.allow_single_a_password_reset:
+        if pair_recovery:
+            class PairResetOperator:
+                def provision(self, *, on_confirmed_user: Callable[[str, str], Any]) -> dict[str, Any]:
+                    return reset_confirmed_pair_once(
+                        clients={"cognito": clients["cognito"]}, fresh_user_journal=user_journal,
+                        reset_journal=FileJournal(run_dir / "reset"), account=auth["account"],
+                        user_pool_id=pool_id, run_id=operator_run_id, source_sha256=auth["source_sha"],
+                        authorized_from_epoch=user_start, authorized_until_epoch=user_end,
+                        allow_two_confirmed_user_resets=True, on_confirmed_user=on_confirmed_user,
+                        wall_clock=clock,
+                    )
+            login_operator = PairResetOperator()
+        elif inputs.allow_single_a_password_reset:
             class ResetPairOperator:
                 def provision(self, *, on_confirmed_user: Callable[[str, str], Any]) -> dict[str, Any]:
                     return reset_a_then_provision_b(
@@ -883,7 +948,7 @@ def run_hosted_acceptance(
         )
         role_journal = CasFileJournal(run_dir / "iam")
         recurrent_args = dict(clients={key: clients[key] for key in ("sts", "cloudformation", "lambda", "apigatewayv2")}, journal=role_journal, account_id=auth["account"], stack_arn=roles_stack, caller_arn=auth["expected_caller_arn"], source_sha=auth["source_sha"], run_token="dev-multiuser-" + secrets.token_hex(16), role_bindings=role_values, observed_user_pool_id=pool_id, authorized_from_epoch=auth["start"], authorized_until_epoch=auth["end"])
-        if run_recurrent_iam_step(step="preflight", **recurrent_args).get("success") is not True or not _poll_update(lambda step: run_recurrent_iam_step(step=step, **recurrent_args), sleep=sleep, clock=clock, deadline=auth["end"]):
+        if not pair_recovery and (run_recurrent_iam_step(step="preflight", **recurrent_args).get("success") is not True or not _poll_update(lambda step: run_recurrent_iam_step(step=step, **recurrent_args), sleep=sleep, clock=clock, deadline=auth["end"])):
             _fail("iam_update_failed")
         recurrent_roles = build_cd_retained_dev_multiuser_roles(**role_values, observed_user_pool_id=pool_id)
         recurrent_readback = verify_role_pair(
@@ -975,6 +1040,22 @@ def run_hosted_acceptance(
             _fail("tenant_write_failed")
         accept = (http_acceptance or run_http_acceptance)(api_id=api_id, token_a=token_map[usernames[0]], token_b=token_map[usernames[1]], revoke_a=lambda: _tenant_write(store, revocation_journal, keys[0], revoked=True))
         if accept.get("success") is not True:
+            # Only an explicit safe projection may escape the HTTP checker.
+            # Injected checkers and provider payloads are not trusted receipts.
+            stage = accept.get("failure_stage")
+            if type(stage) is str and stage in {"before_start", "before_rpc", "initial_settling", "after_settling", "after_pacing",
+                         "transport", "after_transport", "response_endpoint", "response_status",
+                         "response_body", "response_jsonrpc", "after_revocation", "assertion",
+                         "initialize", "tools_list", "tenant_a_status", "tenant_a_distance",
+                         "tenant_b_status", "tenant_b_distance", "foreign_route", "anonymous_access",
+                         "revocation", "revoked_a_access", "tenant_b_after_revocation"}:
+                http_failure_receipt["http_stage"] = stage
+            status = accept.get("http_status")
+            if type(status) is int and 100 <= status <= 599:
+                http_failure_receipt["http_status"] = status
+            calls = accept.get("calls")
+            if type(calls) is int and 0 <= calls <= 12:
+                http_failure_receipt["http_calls"] = calls
             _fail("http_acceptance_failed")
         closed = window.close()
         if closed.get("success") is not True:
@@ -984,6 +1065,8 @@ def run_hosted_acceptance(
         return {"success": True, "category": "hosted_multiuser_acceptance_verified", "checks": {"source_ci": True, "identity": True, "roles": True, "setup": True, "login_page": True, "users": True, "tokens": True, "archive": True, "artifact": True, "iam": True, "runtime": True, "timer": True, "http": True, "tenants": True}}
     except HostedAcceptanceError as exc:
         result: dict[str, Any] = {"success": False, "category": exc.category}
+        if exc.category == "http_acceptance_failed":
+            result.update(http_failure_receipt)
         if exc.stage is not None:
             result["stage"] = exc.stage
         if exc.login_category is not None:
@@ -1018,6 +1101,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--existing-user-journal", type=Path, required=False)
     parser.add_argument("--confirmed-user-journal", type=Path, required=False)
     parser.add_argument("--allow-single-a-password-reset", action="store_true")
+    parser.add_argument("--allow-confirmed-pair-password-resets", action="store_true")
+    parser.add_argument("--failed-runtime-journal", type=Path)
     args = parser.parse_args(argv)
     values = vars(args)
     inputs = HostedAcceptanceInputs(
@@ -1028,8 +1113,10 @@ def main(argv: list[str] | None = None) -> int:
         existing_user_journal_path=values["existing_user_journal"],
         confirmed_user_journal_path=values["confirmed_user_journal"],
         allow_single_a_password_reset=values["allow_single_a_password_reset"],
+        allow_confirmed_pair_password_resets=values["allow_confirmed_pair_password_resets"],
+        failed_runtime_journal_path=values["failed_runtime_journal"],
     )
-    result = run_hosted_acceptance(inputs, clients_factory=_build_aws_clients)
+    result = run_hosted_acceptance(inputs, clients_factory=lambda: _build_aws_clients(include_kms=inputs.allow_confirmed_pair_password_resets))
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0 if result.get("success") is True else 1
 

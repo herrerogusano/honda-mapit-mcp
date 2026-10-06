@@ -61,6 +61,22 @@ def test_closed_setup_readback_is_exact_and_safe():
     assert result == {"success": True, "category": "setup_readback_verified", "calls": 13, "resources_verified": True, "api_closed": True, "cognito_verified": True, "dynamodb_verified": True}
 
 
+def test_rollback_readback_is_explicit_opt_in_and_preserves_other_checks():
+    clients = _clients()
+    original = clients["cloudformation"].describe_stacks
+    def rollback(**kwargs):
+        value = original(**kwargs)
+        value["Stacks"][0]["StackStatus"] = "UPDATE_ROLLBACK_COMPLETE"
+        return value
+    clients["cloudformation"].describe_stacks = rollback
+    args = dict(account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)
+    assert verify_closed_setup(clients, **args)["success"] is False
+    assert verify_closed_setup(clients, **args, verified_rollback=True)["success"] is True
+    assert verify_closed_setup(clients, **args, verified_rollback=1)["success"] is False
+    clients["apigateway"].get_api = lambda **kw: _ok(ApiId=API, DisableExecuteApiEndpoint=False)
+    assert verify_closed_setup(clients, **args, verified_rollback=True)["success"] is False
+
+
 def test_setup_rejects_wrong_cfn_resource_status_and_table_tags():
     clients = _clients(); original = clients["cloudformation"].describe_stack_resources
     def bad(**kwargs):
