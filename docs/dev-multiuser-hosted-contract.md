@@ -1,5 +1,20 @@
 # Retained-dev multi-user hosted candidate
 
+Latest live checkpoint (2026-10-07 Europe/Madrid): one newly authorized attempt
+on develop `a566d28`, after eight green CI jobs and fresh protections, completed
+both same-account technical logins, private ARM publication and the accepted
+closed nineteen-resource CloudFormation update. It stopped with `runner_failed`
+before creating the opening/tenant journals. API disabled and Lambda concurrency
+zero were verified; production, owner MFA and MAPIT were untouched. A bounded
+exact-ARN tag read also passed. Independent offline review found the runner's
+post-update `ListTags` request used a function name, although that API requires
+the full ARN. The minimal correction must use the already validated handler
+binding and assert exact request arguments. No new IAM permission is needed.
+The one-attempt allowance is consumed. Deployment acceptance is not functional
+multiuser E2E acceptance; no reset, write or opening may be replayed implicitly.
+Do not delete the authorizer now owned by the successful stack. The historical
+rollback-recovery runner is not a continuation contract for this accepted state.
+
 Status: hosted DEV scope authorized on 2026-10-06; implementation and
 independent offline validation in progress. Not yet deployed or activated.
 

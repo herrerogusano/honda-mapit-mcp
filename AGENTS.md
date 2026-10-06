@@ -1,5 +1,24 @@
 # Project Agent Workflow
 
+Superseding consumed attempt (2026-10-07 Europe/Madrid): the owner authorized
+one fresh same-A/B attempt after the selector correction. Exact develop
+`a566d28` had eight green checks and fresh branch/environment readbacks. A new
+immutable private authorization was prepared; neither the metadata repair nor
+orphan deletion was replayed. Both technical reset/logins completed, the ARM
+artifact was published and the closed nineteen-resource runtime update reached
+accepted/UPDATE_COMPLETE. The runner then stopped with runner_failed before
+creating a window or tenant journals. Six bounded read-only checks confirmed
+exact identity, API disabled, Lambda reservation zero, nineteen app resources
+and the accepted role stack; three further metadata reads confirmed the active
+expected handler and exact ARN tag read. Independent offline review identified
+the post-update ListTags request incorrectly using a function name instead of
+the already validated handler ARN. Correct this offline with a strict request
+regression; no IAM/template expansion is required. This reset/deployment
+allowance is consumed. Do not replay it, repeat resets, delete the now-owned
+authorizer or infer hosted E2E acceptance from the successful deployment.
+Production/MFA/MAPIT/quota ten remain unchanged; a separately reviewed bounded
+continuation is required before opening dev or repeating authentication.
+
 Final offline handoff checkpoint (2026-10-07 Europe/Madrid): PR #65 merged
 normally to develop `a566d28` after eight green source checks. This fixes only
 the second-recurring reset preparer's selection of immutable B-creation
