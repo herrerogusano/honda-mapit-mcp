@@ -55,11 +55,21 @@ included in the result projection.
 
 ## Offline verification
 
+On 2026-10-06 the repaired source
+`201c07d68f8d0c8eb7b122383e402e9fb59c6933` passed all eight develop CI
+checks in run `37479419359` and fresh repository/environment controls.
+One new private authorization fenced nine preflight reads, one acknowledged
+creation (nine calls including fresh closure proof), two pending readbacks,
+then a complete 27-read acceptance. The five-resource stack is accepted.
+Original source/window/run/token/journal remain immutable: creation is
+consumed and must never replay. API closure, reserve zero, prod, owner/MFA
+and quota 10 are unchanged. No runtime update, invocation or CD activation
+occurred. The disabled alarm continues monitoring; this is not a billing cap.
+
 The coordinator and runner are independently accepted offline: 40 focused
 synthetic tests pass, including named-IAM capability, resolved CloudFormation
 intrinsics, SDK service names, typed HTTP status, uncertainty and closure
-negatives. This is not live controls acceptance. No controls stack has yet
-been created, and delivery remains in progress.
+negatives. The live acceptance above is separate; delivery remains in progress.
 
 The subsequent SDK-shape repair recognizes lowercase Step Functions tag
 pairs only at its dedicated readback call, retaining duplicate/unknown-field

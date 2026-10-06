@@ -39,6 +39,7 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "cd_delivery_lambda_key_draft",
         "cd_retained_dev_legacy_draft", "cd_retained_dev_immutable_draft",
         "cd_retained_dev_lambda_key_draft",
+        "cd_retained_dev_readonly_proof_draft",
         "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",
         "cd_delivery_lambda_key_draft",
     }
