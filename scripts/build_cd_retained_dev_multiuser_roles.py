@@ -29,6 +29,9 @@ REGION = "eu-west-1"
 TABLE_NAME = "honda-mapit-mcp-dev-tenants"
 _ACCOUNT = re.compile(r"^[0-9]{12}$")
 _POOL_ID = re.compile(r"^eu-west-1_[A-Za-z0-9]{9,64}$")
+_KMS_KEY_ARN = re.compile(
+    r"^arn:aws:kms:eu-west-1:[0-9]{12}:key/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+)
 
 
 class RetainedDevMultiuserRoleError(RetainedDevRoleError):
@@ -39,7 +42,7 @@ class RetainedDevMultiuserRoleError(RetainedDevRoleError):
             "invalid_configuration", "subject_digest_mismatch", "artifact_binding_invalid",
             "multiuser_user_pool_binding_invalid", "multiuser_executor_changed",
             "multiuser_boundary_too_large",
-            "multiuser_environment_key_unsupported",
+            "multiuser_environment_key_invalid",
         }
         self.category = category if category in allowed else "invalid_configuration"
         super(RetainedDevRoleError, self).__init__(self.category)
@@ -47,6 +50,49 @@ class RetainedDevMultiuserRoleError(RetainedDevRoleError):
 
 def _fail(category: str = "invalid_configuration") -> None:
     raise RetainedDevMultiuserRoleError(category)
+
+
+def _allowed_actions(statements: list[dict[str, Any]]) -> list[str]:
+    """Return the exact allow-list used by the closed-role catch-all deny."""
+    values: set[str] = set()
+    for statement in statements:
+        if statement.get("Effect") != "Allow":
+            continue
+        action = statement.get("Action")
+        actions = action if isinstance(action, list) else [action]
+        values.update(value for value in actions if type(value) is str)
+    return sorted(values)
+
+
+def _deny_unlisted(actions: list[str]) -> dict[str, Any]:
+    return {
+        "Sid": "DenyEveryUnlistedAction",
+        "Effect": "Deny",
+        "NotAction": actions,
+        "Resource": "*",
+    }
+
+
+def _environment_key_allow(*, account_id: str, key_arn: str, handler_arn: str) -> dict[str, Any]:
+    """The only KMS grant in the optional CFN-role key variant.
+
+    The Lambda execution role is deliberately not changed here.  The key is
+    an existing, caller-validated binding; this pure factory only emits the
+    exact service-mediated grant required by CloudFormation/Lambda.
+    """
+    return {
+        "Sid": "UseExactRetainedDevLambdaEnvironmentKey",
+        "Effect": "Allow",
+        "Action": ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+        "Resource": key_arn,
+        "Condition": {
+            "StringEquals": {
+                "kms:CallerAccount": account_id,
+                "kms:ViaService": f"lambda.{REGION}.amazonaws.com",
+                "kms:EncryptionContext:aws:lambda:FunctionArn": handler_arn,
+            }
+        },
+    }
 
 
 def _policy(statements: list[dict[str, Any]]) -> dict[str, Any]:
@@ -280,10 +326,13 @@ def build_cd_retained_dev_multiuser_roles(
     resources and uses the tag-scoped bootstrap wildcard.  Passing an observed
     pool ID produces the recurrent, pool-ARN-scoped policy.
     """
-    if lambda_environment_key_arn is not None:
-        # This opt-in DEV contract excludes the optional customer-managed
-        # environment-key variant in both bootstrap and recurrent phases.
-        _fail("multiuser_environment_key_unsupported")
+    if lambda_environment_key_arn is not None and (
+        type(lambda_environment_key_arn) is not str
+        or _KMS_KEY_ARN.fullmatch(lambda_environment_key_arn) is None
+        or not _ACCOUNT.fullmatch(account_id)
+        or lambda_environment_key_arn.split(":")[4] != account_id
+    ):
+        _fail("multiuser_environment_key_invalid")
     if observed_user_pool_id is not None and (
         type(observed_user_pool_id) is not str or _POOL_ID.fullmatch(observed_user_pool_id) is None
     ):
@@ -294,7 +343,11 @@ def build_cd_retained_dev_multiuser_roles(
         observed_dev_subject_sha256=observed_dev_subject_sha256, stack_arn=stack_arn,
         artifact_stack_arn=artifact_stack_arn, handler_arn=handler_arn, api_arn=api_arn,
         shutdown_state_machine_arn=shutdown_state_machine_arn, artifact_bucket_arn=artifact_bucket_arn,
-        execution_role_arn=execution_role_arn, lambda_environment_key_arn=lambda_environment_key_arn,
+        execution_role_arn=execution_role_arn,
+        # The optional KMS grant is intentionally CFN-only.  Keeping the
+        # reviewed executor inputs byte-identical avoids widening the runtime
+        # role while fixing the service-role failure.
+        lambda_environment_key_arn=None,
     )
     template = copy.deepcopy(base)
     cfn_role_id = "RetainedDevCdCloudFormationRole"
@@ -304,13 +357,37 @@ def build_cd_retained_dev_multiuser_roles(
         account_id=account_id, api_arn=api_arn, handler_arn=handler_arn,
         execution_role_arn=execution_role_arn, pool_id=observed_user_pool_id,
     ))
-    template["Resources"][cfn_boundary_id]["Properties"]["PolicyDocument"] = _compact_boundary(
-        _permissions_boundary(
-            cfn_policy,
-            environment_key=lambda_environment_key_arn,
-            handler_arn=handler_arn,
+    if lambda_environment_key_arn is None:
+        template["Resources"][cfn_boundary_id]["Properties"]["PolicyDocument"] = _compact_boundary(
+            _permissions_boundary(cfn_policy, environment_key=None, handler_arn=handler_arn)
         )
-    )
+    else:
+        # Add the exact three-action KMS grant to the CFN role only.  The
+        # boundary's existing catch-all deny would exceed IAM's 6144-byte
+        # limit once the three exact KMS deny scopes are added.  For this
+        # opt-in variant the same deny is retained in the role's single
+        # inline policy; the boundary still contains every allow and all
+        # three KMS wrong-key/service/context denies.  The role cannot edit
+        # its own policy, and the factory/readback bind this policy exactly.
+        cfn_policy["Statement"].append(_environment_key_allow(
+            account_id=account_id, key_arn=lambda_environment_key_arn, handler_arn=handler_arn,
+        ))
+        cfn_policy["Statement"].append(_deny_unlisted(_allowed_actions(cfn_policy["Statement"])))
+        if len(_canonical(cfn_policy)) > 10240:
+            _fail("multiuser_boundary_too_large")
+        boundary_source = copy.deepcopy(cfn_policy)
+        boundary_source["Statement"] = [
+            statement for statement in boundary_source["Statement"]
+            if statement.get("Sid") != "DenyEveryUnlistedAction"
+        ]
+        boundary = _permissions_boundary(
+            boundary_source, environment_key=lambda_environment_key_arn, handler_arn=handler_arn,
+        )
+        boundary["Statement"] = [
+            statement for statement in boundary["Statement"]
+            if statement.get("Sid") != "DenyEveryUnlistedAction"
+        ]
+        template["Resources"][cfn_boundary_id]["Properties"]["PolicyDocument"] = _compact_boundary(boundary)
     metadata = template.setdefault("Metadata", {})
     metadata.update({
         "Readiness": "RETAINED_DEV_MULTIUSER_ROLES_NOT_DEPLOY_READY",

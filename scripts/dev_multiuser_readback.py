@@ -286,6 +286,7 @@ def verify_closed_setup(
     user_pool_id: str, client_id: str, callback_url: str,
     original_creation_run_id: int, table_arn: str | None = None,
     max_calls: int = 24,
+    verified_rollback: bool = False,
 ) -> dict[str, Any]:
     """Verify the closed eleven-resource multi-user setup using injected reads.
 
@@ -294,6 +295,8 @@ def verify_closed_setup(
     """
     calls = 0
     try:
+        if type(verified_rollback) is not bool:
+            return _setup_result("binding_invalid", 0)
         if not isinstance(clients, Mapping) or set(clients) != {"cloudformation", "cognito", "apigateway", "dynamodb"} or any(clients[key] is None for key in clients):
             return _setup_result("clients_invalid", 0)
         if type(max_calls) is not int or isinstance(max_calls, bool) or max_calls <= 0 or max_calls > 24:
@@ -336,7 +339,10 @@ def verify_closed_setup(
         if not isinstance(stacks, list) or len(stacks) != 1 or not isinstance(stacks[0], Mapping):
             return _setup_result("setup_stack_mismatch", calls)
         stack = stacks[0]
-        if stack.get("StackId") != stack_arn or stack.get("StackName") != "honda-mapit-mcp-dev-retained" or stack.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}:
+        allowed_statuses = {"CREATE_COMPLETE", "UPDATE_COMPLETE"}
+        if verified_rollback:
+            allowed_statuses.add("UPDATE_ROLLBACK_COMPLETE")
+        if stack.get("StackId") != stack_arn or stack.get("StackName") != "honda-mapit-mcp-dev-retained" or stack.get("StackStatus") not in allowed_statuses:
             return _setup_result("setup_stack_mismatch", calls)
         stack_tags = stack.get("Tags")
         required_stack_tags = {"Project": "honda-mapit-mcp", "Environment": "dev", "Purpose": "retained-dev", "OperatorRunId": str(original_creation_run_id)}

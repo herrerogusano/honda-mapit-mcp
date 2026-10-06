@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 
 import pytest
 import base64
@@ -63,6 +64,20 @@ def test_source_gate_runs_before_client_factory_or_private_bindings(tmp_path):
     )
     assert result == {"success": False, "category": "source_verification_failed"}
     assert called == []
+
+
+@pytest.mark.parametrize("flags", [
+    {"allow_confirmed_pair_password_resets": True},
+    {"allow_confirmed_pair_password_resets": "yes"},
+    {"allow_confirmed_pair_password_resets": True, "allow_single_a_password_reset": True},
+    {"confirmed_user_journal_path": Path("absent")},
+])
+def test_pair_recovery_requires_exact_explicit_inputs_before_clients(tmp_path, flags):
+    called = []
+    result = run_hosted_acceptance(replace(_private_inputs(tmp_path), **flags), source_verifier=lambda _: None,
+                                   clients_factory=lambda: called.append(True) or {}, acl_checker=lambda _: True)
+    assert result == {"success": False, "category": "bindings_invalid"}
+    assert not called
 
 
 def test_login_failure_diagnostics_are_allowlisted_and_redacted():
