@@ -48,6 +48,7 @@ _CALLBACK = re.compile(r"http://localhost:[1-9][0-9]{2,5}/[A-Za-z0-9._~/-]+\Z")
 _USERNAME = re.compile(r"[A-Za-z0-9._+@-]{1,128}\Z")
 _COOKIE_NAME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}\Z")
 _CSRF_NAMES = frozenset({"csrf", "csrf_token", "_csrf", "_csrf_token"})
+MAX_COGNITO_ASF_BYTES = 16 * 1024
 
 
 class ManagedLoginError(ValueError):
@@ -206,13 +207,22 @@ class _LoginFormParser(HTMLParser):
                     candidate_invalid = True
                     continue
                 if kind == "hidden":
-                    if not _bounded_text(value, 16 * 1024):
-                        candidate_invalid = True
-                    hidden[name] = value
                     if name in _CSRF_NAMES:
+                        if not _bounded_text(value, 16 * 1024):
+                            candidate_invalid = True
                         if csrf_name is not None:
                             candidate_invalid = True
                         csrf_name = name
+                    elif name == "cognitoAsfData":
+                        # Cognito's observed antifraud field is a hidden input.
+                        # It may be empty or a bounded opaque value, but it is
+                        # never accepted under another name or input type.
+                        if type(value) is not str or len(value.encode("utf-8")) > MAX_COGNITO_ASF_BYTES or "\r" in value or "\n" in value:
+                            candidate_invalid = True
+                    else:
+                        # Do not forward arbitrary hidden fields to Cognito.
+                        candidate_invalid = True
+                    hidden[name] = value
                 elif kind in {"text", "email"} and username_name is None and name == "username":
                     username_name = name
                 elif kind == "password" and password_name is None and name == "password":

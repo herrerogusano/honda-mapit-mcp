@@ -39,7 +39,7 @@ class Api:
 
 
 class Cognito:
-    def describe_user_pool(self, **kwargs): return _ok(UserPool={"Id": POOL, "Name": "honda-mapit-mcp-dev-multiuser", "MfaConfiguration": "OFF", "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": True, "UnusedAccountValidityDays": 7}, "EmailConfiguration": {"EmailSendingAccount": "COGNITO_DEFAULT"}, "UserPoolTags": {"Project": "honda-mapit-mcp", "Environment": "dev", "Purpose": "retained-dev", "OperatorRunId": str(RUN_ID), "aws:cloudformation:stack-id": STACK, "aws:cloudformation:stack-name": "honda-mapit-mcp-dev-retained", "aws:cloudformation:logical-id": "McpUserPool"}})
+    def describe_user_pool(self, **kwargs): return _ok(UserPool={"Id": POOL, "Name": "honda-mapit-mcp-dev-multiuser", "UserPoolTier": "ESSENTIALS", "MfaConfiguration": "OFF", "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": True, "UnusedAccountValidityDays": 7}, "EmailConfiguration": {"EmailSendingAccount": "COGNITO_DEFAULT"}, "UserPoolTags": {"Project": "honda-mapit-mcp", "Environment": "dev", "Purpose": "retained-dev", "OperatorRunId": str(RUN_ID), "aws:cloudformation:stack-id": STACK, "aws:cloudformation:stack-name": "honda-mapit-mcp-dev-retained", "aws:cloudformation:logical-id": "McpUserPool"}})
     def describe_user_pool_client(self, **kwargs): return _ok(UserPoolClient={"UserPoolId": POOL, "ClientId": CLIENT, "AllowedOAuthFlowsUserPoolClient": True, "AllowedOAuthFlows": ["code"], "AllowedOAuthScopes": [f"https://{API}.execute-api.eu-west-1.amazonaws.com/mcp/use"], "CallbackURLs": [CALLBACK], "DefaultRedirectURI": CALLBACK, "SupportedIdentityProviders": ["COGNITO"], "EnableTokenRevocation": True, "PreventUserExistenceErrors": "ENABLED", "AccessTokenValidity": 60, "IdTokenValidity": 60, "RefreshTokenValidity": 30, "TokenValidityUnits": {"AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "days"}})
     def describe_resource_server(self, **kwargs): return _ok(ResourceServer={"UserPoolId": POOL, "Identifier": f"https://{API}.execute-api.eu-west-1.amazonaws.com/mcp", "Scopes": [{"ScopeName": "use", "ScopeDescription": "Read-only MCP access."}]})
     def describe_user_pool_domain(self, **kwargs): return _ok(DomainDescription={"Domain": f"honda-mapit-mcp-dev-multiuser-{ACCOUNT}", "UserPoolId": POOL, "AWSAccountId": ACCOUNT, "Status": "ACTIVE", "ManagedLoginVersion": 2, "CustomDomainConfig": None})
@@ -72,6 +72,33 @@ def test_setup_rejects_wrong_cfn_resource_status_and_table_tags():
         result = original(**kwargs); result["Tags"] = result["Tags"][:-1]; return result
     clients["dynamodb"].list_tags_of_resource = missing
     assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["category"] == "dynamodb_tags_mismatch"
+
+
+def test_pool_flags_require_essentials_and_no_addons_or_advanced_mode():
+    for mutation in (
+        lambda pool: pool.update(UserPoolTier="PLUS"),
+        lambda pool: pool.update(UserPoolAddOns={}),
+        lambda pool: pool.update(UserPoolAddOns=None),
+        lambda pool: pool.update(UserPoolAddOns={"AdvancedSecurityMode": "ENFORCED"}),
+        lambda pool: pool.update(UserPoolAddOns={"AdvancedSecurityMode": "OFF", "Unexpected": True}),
+    ):
+        clients = _clients()
+        original = clients["cognito"].describe_user_pool
+        def changed(*args, _original=original, _mutation=mutation, **kwargs):
+            reply = _original(*args, **kwargs)
+            _mutation(reply["UserPool"])
+            return reply
+        clients["cognito"].describe_user_pool = changed
+        assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["category"] == "cognito_pool_mismatch"
+
+    clients = _clients()
+    original = clients["cognito"].describe_user_pool
+    def explicit_off(*args, _original=original, **kwargs):
+        reply = _original(*args, **kwargs)
+        reply["UserPool"]["UserPoolAddOns"] = {"AdvancedSecurityMode": "OFF"}
+        return reply
+    clients["cognito"].describe_user_pool = explicit_off
+    assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["success"] is True
 
 
 def test_botocore_models_and_stubber_cover_actual_read_methods_without_network():
