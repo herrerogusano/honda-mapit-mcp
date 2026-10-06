@@ -119,6 +119,49 @@ def _ok_response(value: Any) -> bool:
     return isinstance(metadata, Mapping) and type(metadata.get("HTTPStatusCode")) is int and metadata["HTTPStatusCode"] == 200
 
 
+def _validate_bucket_encryption(value: Any) -> bool:
+    """Validate the accepted S3 SDK encryption projection, without writes.
+
+    AWS may expose the two newer controls only when configured.  The retained
+    DEV proof accepts their exact safe values, while rejecting every other
+    optional or KMS-shaped variant.
+    """
+    if not isinstance(value, Mapping) or set(value) != {"Rules"}:
+        return False
+    rules = value.get("Rules")
+    if not isinstance(rules, list) or len(rules) != 1 or not isinstance(rules[0], Mapping):
+        return False
+    rule = rules[0]
+    allowed = {"ApplyServerSideEncryptionByDefault", "BucketKeyEnabled", "BlockedEncryptionTypes"}
+    if set(rule) - allowed:
+        return False
+    if rule.get("ApplyServerSideEncryptionByDefault") != {"SSEAlgorithm": "AES256"}:
+        return False
+    if "BucketKeyEnabled" in rule and rule["BucketKeyEnabled"] is not False:
+        return False
+    if "BlockedEncryptionTypes" in rule and rule["BlockedEncryptionTypes"] != {"EncryptionType": ["SSE-C"]}:
+        return False
+    return True
+
+
+def _exact_tag_set(value: Any, expected: list[Mapping[str, str]]) -> bool:
+    """Compare a complete SDK TagSet without depending on row order."""
+    if not isinstance(value, list) or not isinstance(expected, list) or len(value) != len(expected):
+        return False
+    def normalize(rows: list[Any]) -> dict[str, str] | None:
+        result: dict[str, str] = {}
+        for row in rows:
+            if not isinstance(row, Mapping) or set(row) != {"Key", "Value"}:
+                return None
+            if type(row["Key"]) is not str or type(row["Value"]) is not str or row["Key"] in result:
+                return None
+            result[row["Key"]] = row["Value"]
+        return result
+    actual = normalize(value)
+    wanted = normalize(expected)
+    return actual is not None and wanted is not None and actual == wanted
+
+
 def _read_private_json(path: Path, *, acl_checker: Callable[[Path], bool] | None = None, max_bytes: int = 32 * 1024) -> dict[str, Any]:
     try:
         resolved = validate_private_location(Path(path), acl_checker=acl_checker)
@@ -496,7 +539,7 @@ def _run_v2_infrastructure_preflight(
             value = _document(reply.get(response_key)) if method == "get_bucket_policy" else reply.get(response_key)
             if method == "get_bucket_location" and value != "eu-west-1":
                 raise ValueError("bucket location")
-            if method == "get_bucket_encryption" and value != {"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]}:
+            if method == "get_bucket_encryption" and not _validate_bucket_encryption(value):
                 raise ValueError("bucket encryption")
             if method == "get_bucket_ownership_controls" and value != bucket_props.get("OwnershipControls"):
                 raise ValueError("bucket ownership")
@@ -508,7 +551,7 @@ def _run_v2_infrastructure_preflight(
                 raise ValueError("bucket policy status")
             if method == "get_public_access_block" and value != bucket_props.get("PublicAccessBlockConfiguration"):
                 raise ValueError("bucket public access")
-            if method == "get_bucket_tagging" and not _same(value, expected_tags):
+            if method == "get_bucket_tagging" and not _exact_tag_set(value, expected_tags):
                 raise ValueError("bucket tags")
             if method == "get_bucket_policy" and not _same(value, expected_policy):
                 raise ValueError("bucket policy")
