@@ -39,14 +39,27 @@ scope, absent in official Cognito examples; this is a documented incompatibility
 not confirmation of the exact failed live field. The owner granted one new
 same-A reset/login allowance after this correction, independent review and
 fresh CI; JWT-signed scope verification must remain mandatory and unchanged.
-That new allowance remains unconsumed. The correction passed independent review,
+That new allowance was subsequently consumed on develop a7bbd0a, after eight
+green source checks and fresh protections. Both technical users authenticated;
+signed JWTs, pinned ARM package and private artifact publication passed. The
+recurrent IAM narrowing was accepted, but the runtime update was acknowledged
+then rolled back: McpHandler failed with kms:Encrypt denied explicitly by its
+permissions boundary. B is now confirmed; neither user's write allowance may
+be replayed. No endpoint opening, tenant publication or HTTP E2E occurred.
+Read-only checks confirmed UPDATE_ROLLBACK_COMPLETE, original eleven resources,
+API disabled and reservation zero. Preserve all consumed journals and the
+verified private artifact. Further KMS permission repair/update and renewed
+authentication require a separately reviewed bounded recovery; do not silently
+reset either user or replay the acknowledged runtime update.
+The correction passed independent review,
 3,374 offline tests with twelve skips, compilation and model-free evaluation
 12/12. Body scope omission preserves unknown metadata; real RSA/JWKS tests
 confirm that signed JWT scope and signature remain mandatory. Fresh source CI
 is still required before the single new live attempt.
-Temporary wake helper was renewed:
-owned PowerShell PID 49340, start 2026-10-06T21:03:09Z, automatic expiry two hours
-later; no persistent power settings changed. Remove this helper before handoff.
+Temporary wake helper PID 49340 (start 2026-10-06T21:03:09Z) was verified and
+removed before this gated handoff; no persistent power settings changed, and
+the original HP Recommended active scheme was reverified. A future continuation
+must explicitly renew temporary wakefulness rather than assume this helper runs.
 
 On 2026-10-06 the owner authorized retained isolated DEV multi-user acceptance:
 two technical users, an exclusive test Cognito pool with MFA off only there,

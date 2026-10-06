@@ -238,3 +238,29 @@ fails closed. Only fixed validation reasons may leave the operator. This is
 preparation for the newly authorized attempt, not hosted acceptance. Independent
 review accepted the increment, including real RSA/JWKS tests for absent/wrong
 JWT scope, valid scope and a foreign signature, plus diagnostic redaction.
+
+The newly authorized attempt was consumed on develop `a7bbd0a`, after eight
+green checks and fresh protections. A and B authenticated and their signed
+JWTs were verified. The pinned ARM package, private artifact publication and
+recurrent IAM narrowing passed. Runtime update was acknowledged but rolled
+back; bounded existing stack-event projections identify `kms:Encrypt` denied
+explicitly by the permissions boundary for `McpHandler`. They do not establish
+the exact KMS key binding. Read-only checks confirmed `UPDATE_ROLLBACK_COMPLETE`,
+eleven resources, API disabled and Lambda reservation zero. No endpoint opening,
+tenant authorization publication or HTTP E2E occurred. The same-A reset is
+terminal `complete`; both users are confirmed. Do not replay those writes or
+the acknowledged runtime update. Any exact-key permission repair, subsequent
+deployment and fresh authentication must use a separately reviewed recovery
+and new authorization, not the earlier partial-A/B-pending reset path.
+
+Offline diagnosis confirms the V2 role factory currently rejects an environment
+key binding and its boundary denies unlisted KMS actions. The existing exact-key
+variant must not simply be activated: its V2 boundary is approximately 7,034
+bytes, exceeding IAM's 6,144-byte limit (the no-key variant is approximately
+5,073). Recovery must independently accept semantically equivalent compaction
+and exact key/account/Lambda-service/function-context fencing before any role
+update. Never remove the boundary or substitute wildcard KMS permissions. A
+fresh two-confirmed-user login recovery is also required; the previous
+A-confirmed/B-absent recovery is no longer applicable. The existing private
+artifact has an expired immutable execution window and is evidence only, not
+a package to reopen implicitly.
