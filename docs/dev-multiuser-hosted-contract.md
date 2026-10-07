@@ -2,6 +2,26 @@
 
 ## Accepted-runtime continuation scope
 
+### Functional acceptance — 2026-10-07
+
+PR #69 / develop `f529fd0` passed eight source and eight integrated checks
+(CI 37606627964). Independent review, 3,542 offline tests/twelve Windows skips,
+and actual immutable predecessor proof passed before a fresh private attempt.
+The same technical A/B authenticated once each, the ARM candidate passed, and
+the real hosted HTTP acceptance verified all eleven predicates in exactly ten
+calls. A/B status and distance stayed isolated; foreign-route and anonymous
+access were rejected; A revocation committed and blocked A while B still worked.
+Mandatory closure and final runtime/inventory verification passed. Six separate
+bounded AWS reads confirmed exact identity, API disabled, Lambda reservation
+zero, UPDATE_COMPLETE, nineteen resources and accepted roles.
+
+This is functional hosted DEV acceptance with synthetic business data, not
+production promotion or real-user MAPIT onboarding. Every intent is consumed;
+do not replay this attempt or reactivate A's terminal tombstone. B's synthetic
+authorization remains behind the closed endpoint. Production/MFA/MAPIT/IAM and
+quota ten are unchanged. Future work must preserve this accepted lineage and
+use independently reviewed fresh authority, never mutate historical journals.
+
 Local readiness recovered on 2026-10-07 after the explicitly approved restart
 of only OneDrive, without deleting data/settings. Docker responded and the
 pinned synthetic ARM probe passed all nine checks with 28 wheels. A separate
