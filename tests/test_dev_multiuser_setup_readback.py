@@ -90,6 +90,68 @@ def test_setup_rejects_wrong_cfn_resource_status_and_table_tags():
     assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["category"] == "dynamodb_tags_mismatch"
 
 
+def test_accepted_runtime_mode_is_exactly_nineteen_resources_and_three_routes():
+    clients = _clients()
+    expected_types = {
+        **{row["LogicalResourceId"]: row["ResourceType"] for row in _records()},
+        "McpJwtAuthorizer": "AWS::ApiGatewayV2::Authorizer",
+        "McpLambdaIntegration": "AWS::ApiGatewayV2::Integration",
+        "McpPostRoute": "AWS::ApiGatewayV2::Route",
+        "McpProtectedResourceMetadataRoute": "AWS::ApiGatewayV2::Route",
+        "McpAuthorizationServerMetadataRoute": "AWS::ApiGatewayV2::Route",
+        "McpLambdaInvokePermission": "AWS::Lambda::Permission",
+        "McpProtectedResourceMetadataInvokePermission": "AWS::Lambda::Permission",
+        "McpAuthorizationServerMetadataInvokePermission": "AWS::Lambda::Permission",
+    }
+    template = {"Resources": {name: {"Type": value} for name, value in expected_types.items()}}
+    extra_ids = {
+        "McpJwtAuthorizer": "auth-123", "McpLambdaIntegration": "int-123",
+        "McpPostRoute": "post-123", "McpProtectedResourceMetadataRoute": "metadata-123",
+        "McpAuthorizationServerMetadataRoute": "server-metadata-123",
+        "McpLambdaInvokePermission": "permission-post",
+        "McpProtectedResourceMetadataInvokePermission": "permission-metadata",
+        "McpAuthorizationServerMetadataInvokePermission": "permission-server-metadata",
+    }
+    original_records = clients["cloudformation"].describe_stack_resources
+    clients["cloudformation"].describe_stack_resources = lambda **kwargs: _ok(
+        StackResources=original_records(**kwargs)["StackResources"] + [
+            {"LogicalResourceId": name, "ResourceType": expected_types[name],
+             "ResourceStatus": "UPDATE_COMPLETE", "PhysicalResourceId": value}
+            for name, value in extra_ids.items()
+        ]
+    )
+    clients["apigateway"].get_api = lambda **kwargs: _ok(ApiId=API, Name="honda-mapit-mcp-dev-retained-api", DisableExecuteApiEndpoint=True)
+    route_keys = (
+        "POST /mcp", "GET /.well-known/oauth-protected-resource/mcp",
+        "GET /.well-known/oauth-authorization-server",
+    )
+    clients["apigateway"].get_routes = lambda **kwargs: _ok(
+        Items=[{"RouteKey": key} for key in route_keys], NextToken=None,
+    )
+    args = dict(account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL,
+                client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)
+    result = verify_closed_setup(
+        clients, **args, expected_runtime_template=template,
+        expected_route_keys=route_keys,
+    )
+    assert result["success"] is True and result["resources_verified"] is True
+
+    bad = deepcopy(template)
+    bad["Resources"].pop("McpAuthorizationServerMetadataRoute")
+    rejected = verify_closed_setup(
+        _clients(), **args, expected_runtime_template=bad,
+        expected_route_keys=route_keys,
+    )
+    assert rejected["category"] == "binding_invalid"
+    bad_type = deepcopy(template)
+    bad_type["Resources"]["McpJwtAuthorizer"]["Type"] = "AWS::Lambda::Function"
+    rejected = verify_closed_setup(
+        _clients(), **args, expected_runtime_template=bad_type,
+        expected_route_keys=route_keys,
+    )
+    assert rejected["category"] == "binding_invalid"
+
+
 def test_pool_flags_require_essentials_and_no_addons_or_advanced_mode():
     for mutation in (
         lambda pool: pool.update(UserPoolTier="PLUS"),

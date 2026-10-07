@@ -160,6 +160,7 @@ class ClosedDevUpdate:
                 self._window()
                 state["phase"] = "intent"
                 self.journal.save(state)
+                self._window()
                 request = {"StackName": self.stack, "TemplateBody": json.dumps(self.target, separators=(",", ":")),
                            "Capabilities": ["CAPABILITY_NAMED_IAM"], "ClientRequestToken": self.binding["token"]}
                 if self.role is not None:

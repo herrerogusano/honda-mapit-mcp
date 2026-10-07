@@ -1,5 +1,55 @@
 # Retained-dev multi-user hosted candidate
 
+## Accepted-runtime continuation scope
+
+The owner subsequently authorized the necessary DEV gates until functional
+multiuser acceptance. This does not promote production or relax prior consumed
+allowances. A separate opt-in continuation must bind the accepted nineteen-
+resource runtime journal, its immutable artifact/manifest/JWKS and terminal A/B
+reset provenance. It must not call the eleven-resource setup/rollback path.
+
+Before any new write, verify exact account/caller, original stack ownership,
+accepted completion event/token, original template digest, deployed code and
+environment, original A/B subject digests, existing role/boundary/KMS bindings,
+closed API/reserve zero and fixed controls/artifact storage. Only a fresh private
+content-addressed artifact and the existing runtime's exact artifact/source/
+execution-window fields may change. Cognito configuration, resource inventory,
+tenant key/subject bindings, JWT authorizer, IAM and quota remain exact.
+
+One newly journaled reset/login of each same technical account is permitted
+within each independently reviewed bounded attempt, with original creation
+windows verified and terminal predecessor digests linked. Historical reset
+intents never replay; no passwords or tokens persist. Use new private journals,
+request token and immutable authorization/window. After the closed update,
+verify the actual runtime before opening the bounded window, populate only the
+exact synthetic A/B authorization rows, execute isolation/anonymous-access/
+revocation negatives and verify B still works after revoking A. Cleanup must
+remain possible after expiry; recheck time immediately after durable opening
+intents before dispatching each non-cleanup write.
+
+Functional acceptance requires actual HTTP E2E and verified final API disabled,
+Lambda reserve zero and nineteen-resource/code readbacks. A successfully
+deployed but untested candidate remains partial. A prior accepted runtime is
+not an orphan, and an expired window is not renewed in place. No guest signup,
+real MAPIT session, owner MFA, production promotion or paid model is included.
+
+Readbacks reuse the existing Cognito/DynamoDB setup assertions and add the
+runtime's exact authorizer, integration and three routes. AWS documents both a
+Lambda ARN in its [GetIntegration example](https://docs.aws.amazon.com/cli/latest/reference/apigatewayv2/get-integration.html)
+and the full API Gateway Lambda invocation URI in its
+[CLI integration examples](https://docs.aws.amazon.com/cli/v1/userguide/cli_apigatewayv2_code_examples.html).
+Any compatibility acceptance must bind only those exact representations of the
+already owned regional/account handler; it is not permission for arbitrary
+normalization, aliases, suffixes or other functions.
+
+CloudFormation completion provenance uses one bounded first page (at most 100
+events), without following or persisting pagination tokens. A continuation
+token does not invalidate an exact owned completion event on that page. Require
+the exact request token, stack identity/type/status and aware timestamp inside
+its original authorization envelope; stop if that evidence is absent. A fresh
+read-only shape check confirmed that the accepted completion remains on the
+first page although AWS supplies a continuation token. It performed no writes.
+
 Latest live checkpoint (2026-10-07 Europe/Madrid): one newly authorized attempt
 on develop `a566d28`, after eight green CI jobs and fresh protections, completed
 both same-account technical logins, private ARM publication and the accepted
@@ -15,8 +65,14 @@ multiuser E2E acceptance; no reset, write or opening may be replayed implicitly.
 Do not delete the authorizer now owned by the successful stack. The historical
 rollback-recovery runner is not a continuation contract for this accepted state.
 
-Status: hosted DEV scope authorized on 2026-10-06; implementation and
-independent offline validation in progress. Not yet deployed or activated.
+Status: the closed hosted DEV runtime is deployed. Functional multiuser
+acceptance remains pending. The separate continuation operator is independently
+accepted offline, including its complete synthetic publish/update/reset/login/
+HTTP/closure flow and replay fencing. The API remains disabled until fresh
+source CI/protection gates and a new immutable private authorization pass.
+The final local checkpoint is 3,510 tests passed, twelve environment skips,
+compilation and model-free evaluator 12/12. This is offline acceptance, not a
+claim that the hosted A/B test has already run.
 
 `scripts/build_aws_retained_dev_multiuser.py` deep-copies the closed
 five-resource retained-dev scaffold and adds a separate, opt-in development

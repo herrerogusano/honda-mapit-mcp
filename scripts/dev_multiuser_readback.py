@@ -260,6 +260,17 @@ _SETUP_RESOURCE_TYPES = {
     "McpManagedLoginBranding": "AWS::Cognito::ManagedLoginBranding",
     "McpTenantsTable": "AWS::DynamoDB::Table",
 }
+_ACCEPTED_MULTIUSER_RUNTIME_TYPES = {
+    **_SETUP_RESOURCE_TYPES,
+    "McpJwtAuthorizer": "AWS::ApiGatewayV2::Authorizer",
+    "McpLambdaIntegration": "AWS::ApiGatewayV2::Integration",
+    "McpPostRoute": "AWS::ApiGatewayV2::Route",
+    "McpProtectedResourceMetadataRoute": "AWS::ApiGatewayV2::Route",
+    "McpAuthorizationServerMetadataRoute": "AWS::ApiGatewayV2::Route",
+    "McpLambdaInvokePermission": "AWS::Lambda::Permission",
+    "McpProtectedResourceMetadataInvokePermission": "AWS::Lambda::Permission",
+    "McpAuthorizationServerMetadataInvokePermission": "AWS::Lambda::Permission",
+}
 _TABLE_NAME = "honda-mapit-mcp-dev-tenants"
 _API_NAME = "honda-mapit-mcp-dev-retained-api"
 _FUNCTION_NAME = "honda-mapit-mcp-dev-retained-handler"
@@ -287,11 +298,18 @@ def verify_closed_setup(
     original_creation_run_id: int, table_arn: str | None = None,
     max_calls: int = 24,
     verified_rollback: bool = False,
+    expected_runtime_template: Mapping[str, Any] | None = None,
+    expected_route_keys: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    """Verify the closed eleven-resource multi-user setup using injected reads.
+    """Verify the closed multi-user setup using injected reads.
 
     This is intentionally separate from the IAM role verifier.  It never lists
     users/clients, reads secrets, discovers resources, or invokes a write API.
+    The legacy default remains the exact eleven-resource no-route setup.  An
+    accepted multi-user runtime caller may instead supply its factory-built
+    19-resource template and exact fixed route-key tuple; the extra resources
+    are still checked for an exact logical-ID/type/status set, while the
+    runtime child/readback helper validates their API bindings.
     """
     calls = 0
     try:
@@ -349,12 +367,35 @@ def verify_closed_setup(
         if not isinstance(stack_tags, list) or not all(any(isinstance(row, Mapping) and row.get("Key") == key and row.get("Value") == value for row in stack_tags) for key, value in required_stack_tags.items()):
             return _setup_result("setup_ownership_mismatch", calls)
 
+        if expected_runtime_template is None:
+            expected_types = _SETUP_RESOURCE_TYPES
+            expected_count = 11
+            if expected_route_keys is not None:
+                return _setup_result("binding_invalid", calls)
+        else:
+            template_resources = expected_runtime_template.get("Resources") if isinstance(expected_runtime_template, Mapping) else None
+            if (not isinstance(template_resources, Mapping) or len(template_resources) != 19
+                or set(template_resources) != set(_ACCEPTED_MULTIUSER_RUNTIME_TYPES)
+                or type(expected_route_keys) is not tuple
+                or set(expected_route_keys) != {
+                    "POST /mcp", "GET /.well-known/oauth-protected-resource/mcp",
+                    "GET /.well-known/oauth-authorization-server",
+                }
+                or len(expected_route_keys) != 3):
+                return _setup_result("binding_invalid", calls)
+            expected_types = {
+                name: resource.get("Type") if isinstance(resource, Mapping) else None
+                for name, resource in template_resources.items()
+            }
+            if expected_types != _ACCEPTED_MULTIUSER_RUNTIME_TYPES:
+                return _setup_result("binding_invalid", calls)
+            expected_count = 19
         records = call(clients["cloudformation"], "describe_stack_resources", StackName=stack_arn).get("StackResources")
-        if not isinstance(records, list) or len(records) != 11:
+        if not isinstance(records, list) or len(records) != expected_count:
             return _setup_result("setup_resources_mismatch", calls)
         resource_map: dict[str, Mapping[str, Any]] = {}
         for row in records:
-            if not isinstance(row, Mapping) or type(row.get("LogicalResourceId")) is not str or row["LogicalResourceId"] in resource_map or row["LogicalResourceId"] not in _SETUP_RESOURCE_TYPES or row.get("ResourceType") != _SETUP_RESOURCE_TYPES[row["LogicalResourceId"]] or row.get("ResourceStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"} or type(row.get("PhysicalResourceId")) is not str or not row["PhysicalResourceId"]:
+            if not isinstance(row, Mapping) or type(row.get("LogicalResourceId")) is not str or row["LogicalResourceId"] in resource_map or row["LogicalResourceId"] not in expected_types or row.get("ResourceType") != expected_types[row["LogicalResourceId"]] or row.get("ResourceStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"} or type(row.get("PhysicalResourceId")) is not str or not row["PhysicalResourceId"]:
                 return _setup_result("setup_resources_mismatch", calls)
             resource_map[row["LogicalResourceId"]] = row
         expected_resource_ids = {
@@ -375,7 +416,7 @@ def verify_closed_setup(
             "McpUserPoolClient": client_id,
             "McpTenantsTable": _TABLE_NAME,
         }
-        if (set(resource_map) != set(_SETUP_RESOURCE_TYPES)
+        if (set(resource_map) != set(expected_types)
             or any(
                 resource_map[key].get("PhysicalResourceId") not in value
                 if isinstance(value, set)
@@ -383,13 +424,27 @@ def verify_closed_setup(
                 for key, value in expected_resource_ids.items()
             )):
             return _setup_result("setup_resource_identity_mismatch", calls)
+        if expected_runtime_template is not None and any(
+            type(resource_map[name].get("PhysicalResourceId")) is not str
+            or not resource_map[name]["PhysicalResourceId"]
+            for name in expected_types if name not in _SETUP_RESOURCE_TYPES
+        ):
+            return _setup_result("setup_resource_identity_mismatch", calls)
 
         api = call(clients["apigateway"], "get_api", ApiId=api_id)
         if api.get("ApiId") != api_id or api.get("Name") != _API_NAME or api.get("DisableExecuteApiEndpoint") is not True:
             return _setup_result("api_readback_mismatch", calls)
         routes = call(clients["apigateway"], "get_routes", ApiId=api_id, MaxResults="100")
-        if routes.get("Items") != [] or routes.get("NextToken") not in (None, ""):
-            return _setup_result("api_routes_mismatch", calls)
+        if expected_runtime_template is None:
+            if routes.get("Items") != [] or routes.get("NextToken") not in (None, ""):
+                return _setup_result("api_routes_mismatch", calls)
+        else:
+            items = routes.get("Items")
+            if (type(items) is not list or routes.get("NextToken") not in (None, "")
+                or len(items) != len(expected_route_keys)
+                or any(not isinstance(item, Mapping) for item in items)
+                or {item.get("RouteKey") for item in items} != set(expected_route_keys)):
+                return _setup_result("api_routes_mismatch", calls)
 
         pool = call(clients["cognito"], "describe_user_pool", UserPoolId=user_pool_id).get("UserPool")
         admin_config = pool.get("AdminCreateUserConfig") if isinstance(pool, Mapping) else None
