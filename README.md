@@ -1,6 +1,6 @@
 # Honda MAPIT read-only MCP
 
-## Portfolio checkpoint — 2026-10-06
+## Portfolio checkpoint — 2026-10-07
 
 The current development includes a retained private, single-owner AWS MCP,
 with twelve tools when geographic queries are enabled. Public IGN boundaries
@@ -9,13 +9,19 @@ area. See the [geographic acceptance status](docs/geographic-query-status.md).
 Publishing this source repository does not publish the service endpoint,
 credentials, motorcycle data or a public signup flow.
 
-Invitation-only multiuser HTTP/Lambda components are tested offline with
-synthetic accounts, not enabled in production. Telegram remains owner-only.
+Invitation-only multiuser DEV passed a bounded hosted HTTP/Lambda test with two
+technical identities and synthetic business data, including isolation and
+revocation; DEV is closed again outside testing. This is not two real MAPIT
+accounts or production multiuser acceptance. The opt-in assisted onboarding now
+also includes a shared DynamoDB binding backend, private loopback form and
+fresh-account-verification composition, tested offline; see the
+[onboarding contract and remaining live gates](docs/multiuser-onboarding.md).
+Telegram remains owner-only.
 Protected production CD is live and verified: green eight-check CI, exact ARM
 package tests, scoped OIDC, independent closure, CloudFormation update and
 separately approved reopening. Actual rollback and forward retained-artifact
 recovery also passed; see [CD acceptance and operating instructions](docs/cd-delivery-implementation.md).
-`develop` has protected CI/promotion, not a retained dev application deployment.
+`develop` has protected CI/promotion and a retained, closed DEV application.
 Updates still require owner approvals; public source does not imply unattended
 deployment or access to private resources.
 The separate retained-dev OIDC proof runner is offline-tested only and has not

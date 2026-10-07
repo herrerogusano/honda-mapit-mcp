@@ -42,7 +42,9 @@ class IdentityBindingError(RuntimeError):
         "identity_binding_identity_in_use", "identity_binding_not_active",
         "identity_binding_revoked", "identity_binding_auth_failed",
         "identity_binding_identity_invalid", "identity_binding_publication_unknown",
-        "identity_binding_receipt_invalid",
+        "identity_binding_receipt_invalid", "identity_binding_deadline_invalid",
+        "identity_binding_deadline_expired", "identity_binding_clock_invalid",
+        "identity_binding_clock_rollback",
     })
 
     def __init__(self, category: str):

@@ -45,6 +45,7 @@ def fixed_documents() -> dict[str, str]:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     from mapit.aws_dev_cleanup_schedule import build_dev_cleanup_schedule
+    from mapit.aws_identity_binding_infra import build_dev_identity_binding_table
     from mapit.aws_dev_bootstrap_cleanup import build_dev_bootstrap_cleanup
     from mapit.aws_dev_oauth_cleanup import build_dev_oauth_cleanup
     from mapit.aws_dev_oauth_cleanup import build_dev_oauth_setup_cleanup
@@ -107,6 +108,7 @@ def fixed_documents() -> dict[str, str]:
         activation_start_epoch=1893456240,
     ))
     documents["closed_bootstrap_draft"] = json.dumps(fixed_bootstrap_template())
+    documents["dev_identity_binding_table_draft"] = json.dumps(build_dev_identity_binding_table())
     documents["retained_dev_closed_bootstrap_draft"] = json.dumps(build_retained_dev_template())
     documents["retained_dev_closed_runtime_draft"] = json.dumps(build_retained_dev_runtime_template(
         "123456789012", "a1b2c3d4e5", "a" * 64, "b" * 64,
