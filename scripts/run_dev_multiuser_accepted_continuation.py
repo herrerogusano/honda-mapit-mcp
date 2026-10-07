@@ -1089,10 +1089,15 @@ def _verify_multiuser_runtime_children(clients, template, resource_rows, *, acco
             _fail("accepted_runtime_invalid")
         for route_key, (logical_id, auth_type, expected_authorizer, scopes) in route_expectations.items():
             route = by_route[route_key]
+            actual_scopes = route.get("AuthorizationScopes")
+            scopes_match = (
+                actual_scopes == scopes if scopes is not None
+                else actual_scopes is None or type(actual_scopes) is list and actual_scopes == []
+            )
             if (route.get("RouteId") != rows[logical_id].get("PhysicalResourceId")
                 or route.get("AuthorizationType") != auth_type
                 or route.get("AuthorizerId") != expected_authorizer
-                or route.get("AuthorizationScopes") != scopes
+                or not scopes_match
                 or route.get("Target") != f"integrations/{integration_id}"):
                 _fail("accepted_runtime_invalid")
 

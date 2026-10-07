@@ -1,5 +1,17 @@
 # Project Agent Workflow
 
+PR #67 merged normally to develop at `bf4176d` after eight green PR checks;
+all eight integrated develop checks also passed. One fresh accepted-runtime
+continuation stopped at preflight before artifact publication, resets, opening
+or tenant writes. Bounded read-only diagnostics identified the exact mismatch:
+AWS returns `AuthorizationScopes=[]` on both public NONE metadata routes, while
+the verifier expected an absent field. Route identities, authorization types,
+authorizer absence, integration targets and the protected POST scope matched.
+Accept only absent/None or an empty list on those two exact NONE routes;
+retain exact nonempty POST scopes and reject malformed/nonempty public scopes.
+Independent offline review, CI and a fresh immutable envelope precede another
+live continuation. Historical journals remain read-only; production is unchanged.
+
 On 2026-10-07 Europe/Madrid the owner authorized the necessary DEV gates until
 functional multiuser acceptance, not a production promotion. Continue from the
 accepted nineteen-resource runtime with a separately reviewed opt-in operator,

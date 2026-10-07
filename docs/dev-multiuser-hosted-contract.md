@@ -2,6 +2,15 @@
 
 ## Accepted-runtime continuation scope
 
+PR #67 and its integrated develop commit `bf4176d` passed all eight checks.
+The fresh continuation stopped before writes at the route preflight. Read-only
+predicate checks found AWS's empty `AuthorizationScopes` list on both public
+NONE metadata routes; all other route bindings and the protected POST scope
+matched. The compatibility correction admits only absent/None or an empty
+list for those two exact public routes. Nonempty/malformed scopes and any
+change to the protected POST scope remain rejected. A new reviewed source,
+green CI and immutable private envelope are required before another live run.
+
 The owner subsequently authorized the necessary DEV gates until functional
 multiuser acceptance. This does not promote production or relax prior consumed
 allowances. A separate opt-in continuation must bind the accepted nineteen-

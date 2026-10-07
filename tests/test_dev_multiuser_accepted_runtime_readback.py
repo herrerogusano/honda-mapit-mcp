@@ -135,3 +135,43 @@ def test_accepted_runtime_rejects_extra_lambda_invoke_permission():
         assert getattr(exc, "category", None) == "accepted_runtime_invalid"
     else:
         raise AssertionError("extra invoke permission accepted")
+
+
+def test_public_routes_allow_only_absent_or_empty_authorization_scopes():
+    template, rows = _fixture()
+    api = _Api()
+    assert _verify_multiuser_runtime_children(
+        {"apigatewayv2": api, "lambda": _Lambda()}, template, rows,
+        account=ACCOUNT, api_id=API,
+    ) is None
+    for route in api.routes[1:]:
+        route["AuthorizationScopes"] = []
+    assert _verify_multiuser_runtime_children(
+        {"apigatewayv2": api, "lambda": _Lambda()}, template, rows,
+        account=ACCOUNT, api_id=API,
+    ) is None
+
+    for invalid in (["unexpected/scope"], "", {}, ()):
+        api = _Api()
+        api.routes[1]["AuthorizationScopes"] = invalid
+        try:
+            _verify_multiuser_runtime_children(
+                {"apigatewayv2": api, "lambda": _Lambda()}, template, rows,
+                account=ACCOUNT, api_id=API,
+            )
+        except Exception as exc:
+            assert getattr(exc, "category", None) == "accepted_runtime_invalid"
+        else:
+            raise AssertionError("malformed/public route scopes accepted")
+
+    api = _Api()
+    api.routes[0]["AuthorizationScopes"] = []
+    try:
+        _verify_multiuser_runtime_children(
+            {"apigatewayv2": api, "lambda": _Lambda()}, template, rows,
+            account=ACCOUNT, api_id=API,
+        )
+    except Exception as exc:
+        assert getattr(exc, "category", None) == "accepted_runtime_invalid"
+    else:
+        raise AssertionError("POST without exact JWT scope accepted")
