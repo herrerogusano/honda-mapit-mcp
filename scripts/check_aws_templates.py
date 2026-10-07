@@ -46,6 +46,7 @@ def fixed_documents() -> dict[str, str]:
         sys.path.insert(0, str(root))
     from mapit.aws_dev_cleanup_schedule import build_dev_cleanup_schedule
     from mapit.aws_identity_binding_infra import build_dev_identity_binding_table
+    from scripts.build_aws_dev_identity_binding_bootstrap import build_dev_identity_binding_bootstrap
     from mapit.aws_dev_bootstrap_cleanup import build_dev_bootstrap_cleanup
     from mapit.aws_dev_oauth_cleanup import build_dev_oauth_cleanup
     from mapit.aws_dev_oauth_cleanup import build_dev_oauth_setup_cleanup
@@ -109,6 +110,10 @@ def fixed_documents() -> dict[str, str]:
     ))
     documents["closed_bootstrap_draft"] = json.dumps(fixed_bootstrap_template())
     documents["dev_identity_binding_table_draft"] = json.dumps(build_dev_identity_binding_table())
+    documents["dev_identity_binding_bootstrap"] = json.dumps(build_dev_identity_binding_bootstrap(
+        account_id="123456789012", operator_user_arn="arn:aws:iam::123456789012:user/synthetic-operator",
+        tenant_keys=("tenant-" + "c" * 64, "tenant-" + "d" * 64),
+        ssm_key_arn="arn:aws:kms:eu-west-1:123456789012:key/11111111-1111-1111-1111-111111111111"))
     documents["retained_dev_closed_bootstrap_draft"] = json.dumps(build_retained_dev_template())
     documents["retained_dev_closed_runtime_draft"] = json.dumps(build_retained_dev_runtime_template(
         "123456789012", "a1b2c3d4e5", "a" * 64, "b" * 64,

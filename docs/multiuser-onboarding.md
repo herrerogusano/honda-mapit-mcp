@@ -7,6 +7,58 @@ identities and synthetic business data; that evidence remains separate.
 
 ## Assisted user experience when a guest is available
 
+### Newly authorized isolated DEV storage block
+
+The owner approved a dedicated DEV binding table and minimum operator/runtime
+permissions. This does not authorize production promotion, historical technical
+account resets, owner MFA changes, real MAPIT sessions, or a Lambda quota change.
+The new bootstrap is separate from the accepted nineteen-resource closed app.
+Its enrollment role is trusted only to the privately pinned, independently
+verified operator IAM user; CD and read-only proof roles receive no enrollment
+powers. Runtime access is read-only. Two fresh synthetic tenant paths must not
+reuse either historical technical tenant key.
+
+The operator and runtime also require stable independent binding-MAC and
+identity-proof keys. Their explicit handoff is one additional Standard
+SecureString at `/honda-mapit-mcp/dev/identity-binding-config`, version one,
+using `alias/aws/ssm`. Keys are generated in memory and never belong in source,
+CloudFormation, ZIPs, Lambda environment values, journals or the vault. The
+canonical bounded payload binds account, table, environment and MAPIT config.
+Create-only publication and exact decrypted readback precede any enrollment;
+an uncertain write is consumed, not retried. No implicit key rotation exists.
+
+Standard SecureString also requires KMS Encrypt/Decrypt. Only the new enrollment
+role/boundary allow those two actions on the independently resolved existing
+AWS-managed SSM key ARN, with exact SSM ViaService, caller account and the three
+parameter encryption contexts. Separate explicit denies reject other or missing
+contexts and keys. The key policy and original Lambda permissions are unchanged.
+Read-only IAM simulation accepted the intended context and explicitly denied
+wrong service/path; the boundary is below the managed-policy size limit.
+
+Cost planning uses the public AWS Ireland Price List published 2026-09-11:
+Standard on-demand reads USD 0.1415/million units, writes USD 0.705/million,
+and storage USD 0.283/GB-month without assuming free allowances. At the entire
+document's maximum 96 KiB, 100 strong reads plus 100 writes consume 2,400 RRU
+and 9,600 WRU, approximately USD 0.00711. There is one document covering all
+sixteen tenants, not sixteen 96 KiB documents. Idle document storage is about
+USD 0.000026/month plus item overhead. Each repeated test multiplies request
+charges. Standard Parameter Store/default throughput has no additional storage
+or API charge; AWS-managed keys have no monthly key rental, but underlying KMS
+request charges remain part of the budget assessment. No Advanced tier, paid
+model, new Lambda or customer-managed key is planned. The existing DEV target
+of USD 1/month remains a target, not a guaranteed billing cap; throughput limits
+are not monthly spending limits.
+
+Sources: [Ireland DynamoDB Price List](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonDynamoDB/current/eu-west-1/index.json),
+[DynamoDB billing units](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-understanding-billing.html),
+[Systems Manager pricing](https://aws.amazon.com/systems-manager/pricing/),
+[KMS pricing](https://aws.amazon.com/kms/pricing/).
+
+These are implementation and cost contracts, not a live deployment receipt.
+SDK storage composition is not hosted MCP HTTP acceptance. Fresh source CI,
+independent review, immutable private authorization, exact existing closure and
+new-stack readbacks remain mandatory before declaring a live phase accepted.
+
 1. The owner explicitly invites the guest's MCP identity. No public signup or
    freely chosen tenant identifier is accepted. Existing policies support up to
    sixteen identities, not just the two technical test accounts.
