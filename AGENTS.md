@@ -1,5 +1,25 @@
 # Project Agent Workflow
 
+On 2026-10-07 the owner explicitly approved the separate DEV identity-binding
+table and minimum enrollment/runtime permissions for synthetic onboarding,
+within the existing gross USD 1/month DEV target (not a hard cap). The reviewed
+additive factory owns four resources: retained dedicated table, exact-operator
+enrollment role/boundary, and a read-only handler policy attachment. It does not
+update the accepted nineteen-resource app or give enrollment powers to CD/proof
+roles. Use two fresh synthetic keys, excluding both historical A/B keys. The
+third exact Standard SecureString config path holds stable independent MAC/proof
+keys; no key bytes or key hashes belong in Git, archives, environments, journals
+or the vault. No historical account reset/revival, production/MFA/MAPIT/Telegram,
+paid model or quota-ten change follows. Fresh reviewed source/CI/protections and
+new private authority/intents precede live writes; never replay consumed ones.
+The new readonly current-runtime verifier passed actual AWS with 28 bounded
+reads: accepted target template/code, original nineteen resources, exact role
+policies, API closed and reserve zero. Its config resolver handles only reviewed
+CFN refs, including ObservedApiId bound to the verified physical API. The pinned
+network-denied official schema checker passed all 46 templates. These are not
+new-stack or cloud-enrollment acceptance receipts. Maintain owned temporary
+wakefulness while working and remove it before final handoff.
+
 Shared onboarding preparation on 2026-10-07 is independently accepted offline:
 dedicated DynamoDB sixteen-record document CAS, strong reads, terminal records,
 exact table/account/environment-bound v2 row/document MACs, short deadlines,
