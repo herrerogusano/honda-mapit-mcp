@@ -1,5 +1,33 @@
 # Project Agent Workflow
 
+On 2026-10-07 Europe/Madrid the owner authorized the necessary DEV gates until
+functional multiuser acceptance, not a production promotion. Continue from the
+accepted nineteen-resource runtime with a separately reviewed opt-in operator,
+fresh source/CI/protection checks, exact prior artifact/template/code/identity
+bindings and new immutable journals/windows. Same two technical users only;
+one explicitly journaled fresh reset/login per account within each reviewed
+attempt, passwords/tokens only in memory. No consumed intent replay, historical
+rollback-guard relaxation, IAM expansion, new authorizer, production/MFA/MAPIT
+operation, paid model or Lambda quota increase follows. Publish only a new
+content-addressed private code artifact and update the existing closed runtime
+with exact artifact/source/window differences, then test A/B isolation and
+revocation in the bounded opening with mandatory verified closure. Reuse the
+persistent implementer/reviewer roles. Maintain temporary wakefulness while
+working and remove it before final handoff. This scope supersedes the pending
+owner-decision sentence below, not the historical consumed-operation records.
+
+The accepted-runtime continuation is now independently accepted offline,
+including the complete synthetic orchestration and same-root replay fencing.
+It preserves the exact nineteen-resource factory and original A/B subjects/keys,
+reuses retained Cognito/DynamoDB readbacks, validates API/JWT/invoke bindings,
+and checks code/closure/inventory before and after the bounded test. A completion
+event may be on a capped first page carrying NextToken; never follow or persist
+that token. The accepted timestamp end is exclusive. Opening and CFN update
+writes recheck the immutable cutoff after durable intent. Positive HTTP
+acceptance requires all eleven flags and exactly ten calls, not deployment alone.
+Fresh source CI/protection checks and a newly prepared private authorization
+remain required before the one new live attempt; no consumed journal is resumed.
+
 Superseding consumed attempt (2026-10-07 Europe/Madrid): the owner authorized
 one fresh same-A/B attempt after the selector correction. Exact develop
 `a566d28` had eight green checks and fresh branch/environment readbacks. A new

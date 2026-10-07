@@ -106,6 +106,7 @@ class DevTestWindow:
             if state is None or state["phase"] != "ready" or not self._closed():
                 raise ValueError("opening_fenced")
             self._save("arm_intent")
+            self._guard()
             reply = self.clients["stepfunctions"].start_execution(
                 stateMachineArn=self.machine, name=self.name, input='{"bounded_dev_probe":true}')
             self._guard()
@@ -118,6 +119,7 @@ class DevTestWindow:
             self._guard()
             self._save("armed")
             self._save("lambda_intent")
+            self._guard()
             self.clients["lambda"].delete_function_concurrency(FunctionName=FUNCTION)
             self._guard()
             if "ReservedConcurrentExecutions" in self.clients["lambda"].get_function_concurrency(FunctionName=FUNCTION):
@@ -125,6 +127,7 @@ class DevTestWindow:
             self._save("lambda_open")
             self._guard()
             self._save("api_intent")
+            self._guard()
             self.clients["apigatewayv2"].update_api(ApiId=self.api, DisableExecuteApiEndpoint=False)
             self._guard()
             api = self.clients["apigatewayv2"].get_api(ApiId=self.api)
