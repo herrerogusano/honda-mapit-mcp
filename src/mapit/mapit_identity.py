@@ -222,6 +222,134 @@ class MapitIdentityVerifier:
         if expected.issuer != actual.issuer or not hmac.compare_digest(expected.subject_digest, actual.subject_digest):
             raise MapitIdentityError("identity_continuity_mismatch")
 
+    def export_proof(
+        self,
+        proof: MapitIdentityProof,
+        *,
+        environment: str,
+        tenant_key: str,
+        secret_path: str,
+        secret_version: int,
+    ) -> bytes:
+        """Serialize an opaque proof in a verifier-key-sealed, context-bound envelope.
+
+        The envelope contains no subject, JWT, refresh token, or credentials. A
+        verifier can restore it only with the same stable HMAC key, config, and
+        exact tenant/environment/secret-version context.
+        """
+        context = self._persistent_proof_context(environment, tenant_key, secret_path, secret_version)
+        try:
+            self.validate_proof(proof)
+            payload = {
+                "version": 1,
+                "issuer": self.issuer,
+                "subject_digest": proof.subject_digest.hex(),
+                "context": context,
+            }
+            raw = json_bytes(payload)
+            mac = hmac.new(self._hmac_key, b"mapit-identity-envelope-v1\0" + raw, hashlib.sha256).hexdigest()
+            envelope = json_bytes({**payload, "mac": mac})
+            if len(envelope) > 4096:
+                raise ValueError
+            return envelope
+        except MapitIdentityError:
+            raise
+        except Exception:
+            raise MapitIdentityError("identity_proof_invalid") from None
+
+    def restore_proof(
+        self,
+        envelope: bytes,
+        *,
+        environment: str,
+        tenant_key: str,
+        secret_path: str,
+        secret_version: int,
+    ) -> MapitIdentityProof:
+        """Restore a proof only under its original verifier key/config/context."""
+        expected_context = self._persistent_proof_context(environment, tenant_key, secret_path, secret_version)
+        if type(envelope) is not bytes or not 1 <= len(envelope) <= 4096:
+            raise MapitIdentityError("identity_proof_invalid")
+        try:
+            value = json.loads(
+                envelope.decode("utf-8"),
+                object_pairs_hook=_reject_duplicate_pairs,
+                parse_constant=_reject_json_constant,
+            )
+            if type(value) is not dict or set(value) != {
+                "version", "issuer", "subject_digest", "context", "mac",
+            }:
+                raise ValueError
+            if (
+                type(value["version"]) is not int or value["version"] != 1
+                or value["issuer"] != self.issuer
+                or value["context"] != expected_context
+                or type(value["subject_digest"]) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", value["subject_digest"]) is None
+                or type(value["mac"]) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", value["mac"]) is None
+            ):
+                raise ValueError
+            payload = {key: value[key] for key in ("version", "issuer", "subject_digest", "context")}
+            expected_mac = hmac.new(
+                self._hmac_key,
+                b"mapit-identity-envelope-v1\0" + json_bytes(payload),
+                hashlib.sha256,
+            ).hexdigest()
+            if not hmac.compare_digest(value["mac"], expected_mac):
+                raise ValueError
+            digest = bytes.fromhex(value["subject_digest"])
+            proof = MapitIdentityProof(self.issuer, digest, self._seal(self.issuer, digest), self._marker)
+            self.validate_proof(proof)
+            return proof
+        except MapitIdentityError:
+            raise
+        except Exception:
+            raise MapitIdentityError("identity_proof_invalid") from None
+
+    def _persistent_proof_context(
+        self,
+        environment: str,
+        tenant_key: str,
+        secret_path: str,
+        secret_version: int,
+    ) -> dict[str, Any]:
+        if (
+            type(environment) is not str or environment not in {"dev", "prod"}
+            or type(tenant_key) is not str or re.fullmatch(r"tenant-[0-9a-f]{64}", tenant_key) is None
+            or type(secret_path) is not str
+            or type(secret_version) is not int or secret_version != 1
+            or self.config.email is not None or self.config.password is not None
+        ):
+            raise MapitIdentityError("identity_configuration_invalid")
+        expected_path = f"/honda-mapit-mcp/{environment}/tenants/{tenant_key}/mapit-refresh-token"
+        if secret_path != expected_path:
+            raise MapitIdentityError("identity_configuration_invalid")
+        config_context = {
+            "region": self.config.region,
+            "user_pool_id": self.config.user_pool_id,
+            "user_pool_client_id": self.config.user_pool_client_id,
+            "identity_pool_id": self.config.identity_pool_id,
+            "core_api_url": self.config.core_api_url,
+            "geo_api_url": self.config.geo_api_url,
+            "frontend_url": self.config.frontend_url,
+            "discovery_enabled": self.config.discovery_enabled,
+            "http_timeout": self.config.http_timeout,
+        }
+        try:
+            raw = json_bytes(config_context)
+        except Exception:
+            raise MapitIdentityError("identity_configuration_invalid") from None
+        if len(raw) > 2048 or any(type(value) is str and not _bounded_text(value, maximum=512) for value in config_context.values()):
+            raise MapitIdentityError("identity_configuration_invalid")
+        return {
+            "environment": environment,
+            "tenant_key": tenant_key,
+            "secret_path": secret_path,
+            "secret_version": secret_version,
+            "mapit_config": config_context,
+        }
+
 
 def json_bytes(value: Any) -> bytes:
     """Bounded deterministic sizing helper; it returns no source material."""

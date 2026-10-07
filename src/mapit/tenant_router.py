@@ -127,6 +127,10 @@ class InvitedTenantAuthority:
             and policy.required_scope == selected.required_scope
         )
 
+    def matches_environment(self, environment: str) -> bool:
+        """Return whether this authority is explicitly bound to an environment."""
+        return type(environment) is str and environment == self._environment
+
     async def authenticate(self, token: str) -> AuthenticatedTenant:
         for key, verifier in self._verifiers.items():
             if key not in self._active:
