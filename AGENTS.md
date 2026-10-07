@@ -1,5 +1,31 @@
 # Project Agent Workflow
 
+Latest accepted cloud storage checkpoint, 2026-10-07: PR #78 merged normally
+to develop at 4169fa4 after eight green PR checks; all eight integrated checks
+passed (CI 37646210883). Full local suite: 3,842 passed, twelve environment skips;
+model-free evaluation 12/12, compilation and all 47 pinned network-denied
+CloudFormation schemas passed. A fresh private authorization bound the original
+bootstrap/probe/key journals, TableId/creation time, original KMS key and observed
+CFN policy physical ID. Preflight passed with 46 reads. The single SSE-only
+update was acknowledged (47 calls) and accepted by exact readback (47 calls):
+same table and four resources, AWS-owned default encryption, unchanged IAM and
+original config SecureString version one. That update intent is consumed.
+One separate fresh synthetic storage proof passed with 132 calls: A/B enrollment,
+isolated results, terminal A revocation and unaffected B. Final verification
+passed with 58 calls: durable A revoked/B active and both tenant parameters still
+version one. This proof intent is consumed; never replay, reset historical users,
+rotate or republish the accepted keys, delete/recreate resources, or relax guards.
+Independent receipt review accepted unchanged historical digests and distinct
+update/proof journals. Nine independent bounded final AWS reads confirmed exact
+identity, closed API, Lambda reserve zero, original nineteen app resources,
+UPDATE_COMPLETE binding stack, same TableId, owned encryption, config version
+one and regional Lambda quota ten. Production/MFA/MAPIT/Telegram are unchanged.
+This accepts actual cloud SDK storage with synthetic identities/business data,
+not hosted MAPIT guest onboarding or a multiuser production promotion. The prior
+hosted synthetic HTTP DEV acceptance remains separate. Future deployment/onboarding
+needs its own reviewed manifest/runtime/secret authority; no consumed envelope
+is replayable. Temporary wakefulness must be removed before final handoff.
+
 The owner subsequently approved the exact existing empty DEV binding table's
 one-property transition to AWS-owned default encryption, without IAM expansion,
 resource replacement or key republication, followed by one fresh synthetic A/B

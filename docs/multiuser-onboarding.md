@@ -1,13 +1,40 @@
 # Invitation-only MAPIT onboarding preparation
 
-This increment prepares and tests the enrollment composition offline. It does
-not register real users, publish real sessions, change deployed handlers, or
-promote production. The previously accepted hosted DEV E2E used technical
+The initial increment prepared and tested the enrollment composition offline.
+The subsequent cloud storage proof below uses real SDK calls with synthetic
+identities and business data. Neither registers real users, publishes real
+sessions, changes deployed handlers, or promotes production. The previously
+accepted hosted DEV E2E used technical
 identities and synthetic business data; that evidence remains separate.
 
 ## Assisted user experience when a guest is available
 
 ### Actual DEV storage checkpoint — 2026-10-07
+
+**Superseding accepted recovery:** PR #78 merged to develop `4169fa4` after eight
+green checks; all eight integrated checks passed (CI 37646210883). Local tests:
+3,842 passed, twelve skips; compilation, model-free evaluation 12/12 and 47
+actual pinned network-denied schema checks passed. A new immutable private
+authority and separate journals performed one table-only update: preflight 46
+calls, update acknowledged 47, exact transition readback accepted 47. The table's
+identity, four resources, IAM and original config keys were preserved; only its
+SSE flag changed to AWS-owned default encryption.
+
+The new real SDK exercise passed (132 calls): both synthetic tenants enrolled,
+results isolated, A terminally revoked and B unaffected. Final readback passed
+(58 calls), including durable statuses and latest version-one tenant parameters.
+Independent local receipt review accepted historical digests and separate update/
+proof states. Nine independent final AWS reads verified closure, nineteen app
+resources, completed binding stack, same TableId, owned encryption, config version
+one and regional Lambda quota ten. No endpoint opening, historical user reset,
+real MAPIT operation, paid model or production change occurred. Both new intents
+are consumed: do not replay them or regenerate the retained keys.
+
+This is cloud **storage/onboarding-component** acceptance with synthetic data,
+not a new hosted guest-MAPIT login or production multiuser deployment. Connecting
+that component to a reviewed hosted manifest/runtime and testing a real guest
+remain separate work. The paragraphs below preserve the earlier consumed failure
+and its approved recovery context, not a current storage blocker.
 
 The dedicated four-resource stack was created once and accepted with 47 exact
 readbacks on develop `d375e4e` (eight integrated checks, CI 37637055555). The
