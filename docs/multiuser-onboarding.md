@@ -7,6 +7,39 @@ identities and synthetic business data; that evidence remains separate.
 
 ## Assisted user experience when a guest is available
 
+### Actual DEV storage checkpoint — 2026-10-07
+
+The dedicated four-resource stack was created once and accepted with 47 exact
+readbacks on develop `d375e4e` (eight integrated checks, CI 37637055555). The
+original nineteen-resource app stays closed; its code/template and regional
+quota are unchanged. The added read-only policy belongs to the separate stack.
+
+The first real SDK proof passed preflight and create-only publication plus
+decrypted readback of config keys at version one. It then stopped with
+`storage_exercise_unverified`: this is NOT A/B storage or onboarding acceptance.
+Its durable intent is consumed. Read-only reconciliation found no binding item
+and neither synthetic tenant parameter; config keys remain accepted and private.
+
+Actual assumed-role GetItem returned a dependent KMS Decrypt denial. The table
+uses the existing AWS-managed DynamoDB key, while the enroller explicitly allows
+only the exact SSM key. A DynamoDB-only IAM simulation was allowed, but did not
+model that dependent call. The table factory's `SSEEnabled: true` selects the
+AWS-managed key, not the AWS-owned default.
+
+The proposed recovery needs a new owner decision: update only this still-empty
+table to `SSEEnabled: false`, preserving encryption with the AWS-owned key and
+avoiding any new KMS permission. Never delete/recreate the table, relax denies,
+overwrite config keys or replay consumed intents. Independently review exact
+old/new template and resource binding, closure, retained key provenance, fresh
+CI/protections, one update intent/readback and a separate new probe envelope.
+CloudFormation's table property documents possible interruptions; DEV remains
+closed during any approved change. No production, MAPIT, owner MFA, historical
+technical-user reset or quota change is included.
+
+Sources: [CloudFormation SSESpecification semantics](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-dynamodb-table-ssespecification.html),
+[DynamoDB table update behavior](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-dynamodb-table.html),
+[changing existing table encryption](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/encryption.tutorial.html).
+
 ### Newly authorized isolated DEV storage block
 
 The owner approved a dedicated DEV binding table and minimum operator/runtime
