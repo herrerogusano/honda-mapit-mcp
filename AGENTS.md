@@ -1,5 +1,23 @@
 # Project Agent Workflow
 
+Functional hosted multiuser DEV acceptance completed on 2026-10-07 on develop
+`f529fd0` (PR #69), after eight green PR checks and eight integrated CI checks
+(37606627964), independent review, 3,542 offline tests/twelve Windows skips,
+and exact immutable predecessor proof. One fresh private continuation published
+the artifact, accepted the closed nineteen-to-nineteen update and reset/logged
+in each same technical A/B once. The candidate ARM probe and real HTTP E2E
+passed all eleven predicates with exactly ten calls: A/B status and distance,
+cross-tenant and anonymous rejection, committed A revocation, rejection of A
+and continued B access. Mandatory closure and final runtime/inventory checks
+passed. Six independent bounded AWS reads confirmed exact identity, disabled
+API, reservation zero, UPDATE_COMPLETE, nineteen resources and accepted roles.
+This attempt and its publication/update/reset/tenant/window intents are consumed;
+never replay them. A remains terminally revoked and B retains its synthetic
+authorization behind the closed endpoint. Multiuser DEV is accepted, but real
+guest onboarding/per-user MAPIT session acceptance and production promotion are
+not included. Production, owner MFA, MAPIT, IAM and regional quota ten were
+unchanged. Preserve immutable evidence privately, not in public Git.
+
 On 2026-10-07 the owner authorized restarting only OneDrive to recover local
 readiness. Its approximately 41 GB process ended and OneDrive was restarted;
 no files/settings were deleted. Docker server 29.8.1 responded and the pinned
