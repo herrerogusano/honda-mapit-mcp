@@ -63,9 +63,11 @@ Failures do not publish a replacement session or disclose tokens.
 This is an offline composition seam, not real-user onboarding or deployment.
 The caller must obtain the expected proof through a trusted enrollment flow;
 deriving it from the same untrusted refresh being checked would be circular.
-Proofs are verifier-instance-bound, not serializable durable onboarding records,
-and attest a signed Cognito identity, not vehicle ownership. Key discovery,
-durable identity binding and per-user session publication remain separate work.
+Live proof objects are verifier-instance-bound and attest a signed Cognito
+identity, not vehicle ownership. The later offline onboarding increment adds
+explicit context-sealed export/restore envelopes and a local durable registry;
+see [its contract](multiuser-onboarding.md). Key discovery, shared cloud binding,
+real enrollment and per-user hosted session publication remain separate work.
 The default provider calls and deployed single-owner entrypoints are unchanged.
 
 ## Offline durable authorization increment

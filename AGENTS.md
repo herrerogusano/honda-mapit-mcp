@@ -1,5 +1,24 @@
 # Project Agent Workflow
 
+Offline onboarding preparation on 2026-10-07 is independently accepted: new
+explicit SQLite identity registry, context/key-sealed persistent MAPIT proof
+envelope, pending one-shot intent before authentication/publication, strict
+create-only SSM adapter, and enrolled provider with binding checks around
+secret/business/cached access. Two signed synthetic MCP/MAPIT identities pass
+status/distance isolation, crossed session rejection, fresh verifier/database
+reopen and in-call/cached revocation. Independent holdouts cover capacity16
+including tombstones, two-connection single publication, and malformed tokens
+before intents. Final full suite: 3,593 passed, twelve environment skips;
+compilation and deterministic evaluation 12/12. CI adds offline tests to the
+existing pinned SDK job only.
+This is not deployed enrollment: SQLite is not shared Lambda persistence;
+cloud binding backend, private enrollment channel, real account verifier using
+fresh STS with the same credentials, pinned key lifecycle and exact IAM/CD
+integration are still separate gates. No live AWS/MAPIT, IAM, owner MFA,
+Telegram, production or quota change follows. Never replay a pending binding;
+retain any possibly published secret for separately reviewed reconciliation.
+See docs/multiuser-onboarding.md for the exact limitations and recovery contract.
+
 Offline follow-up on 2026-10-07: opt-in `CloudServicesProvider` now requires an
 explicit same-config verifier and a trusted expected MAPIT identity proof
 together. It validates the proof before secret access, checks refreshed signed

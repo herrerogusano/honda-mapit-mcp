@@ -100,6 +100,7 @@ class AwsTenantSessionReader:
         version: int,
         tier: str,
         monotonic: Callable[[], float] = time.monotonic,
+        environment: str | None = None,
     ) -> None:
         if (
             type(authority) is not InvitedTenantAuthority
@@ -115,7 +116,12 @@ class AwsTenantSessionReader:
             raise AwsTenantSessionReaderError("tenant_reader_grant_invalid") from None
         if type(grant.key) is not str or not _TENANT_KEY.fullmatch(grant.key):
             raise AwsTenantSessionReaderError("tenant_reader_grant_invalid")
-        tenant_path = f"/honda-mapit-mcp/prod/tenants/{grant.key}/mapit-refresh-token"
+        # Omission retains the established prod-only namespace. New enrollment
+        # compositions opt in explicitly and must match the grant's authority.
+        selected_environment = "prod" if environment is None else environment
+        if environment is not None and not authority.matches_environment(environment):
+            raise AwsTenantSessionReaderError("tenant_reader_configuration_invalid")
+        tenant_path = f"/honda-mapit-mcp/{selected_environment}/tenants/{grant.key}/mapit-refresh-token"
         bridge = _TenantPathClient(client, authority, grant, account_id, tenant_path, version)
         try:
             reader = AwsSessionReader(
