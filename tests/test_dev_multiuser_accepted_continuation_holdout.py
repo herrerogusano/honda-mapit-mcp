@@ -361,10 +361,10 @@ class _PositiveContinuationClients:
              "AuthorizerId": self.authorizer_id, "AuthorizationScopes": [uri + "/use"], "Target": integration_target},
             {"RouteId": self.route_ids["GET /.well-known/oauth-protected-resource/mcp"],
              "RouteKey": "GET /.well-known/oauth-protected-resource/mcp", "AuthorizationType": "NONE",
-             "Target": integration_target},
+             "AuthorizationScopes": [], "Target": integration_target},
             {"RouteId": self.route_ids["GET /.well-known/oauth-authorization-server"],
              "RouteKey": "GET /.well-known/oauth-authorization-server", "AuthorizationType": "NONE",
-             "Target": integration_target},
+             "AuthorizationScopes": [], "Target": integration_target},
         ])
 
     def get_authorizers(self, **request):
