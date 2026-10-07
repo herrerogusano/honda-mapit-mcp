@@ -1,5 +1,17 @@
 # Project Agent Workflow
 
+The owner subsequently approved the exact existing empty DEV binding table's
+one-property transition to AWS-owned default encryption, without IAM expansion,
+resource replacement or key republication, followed by one fresh synthetic A/B
+storage proof. This supersedes the decision request below, not its consumed
+operation records. Require independent review, fresh source CI/protections,
+immutable historical bootstrap/probe/key digests, stable TableId/creation time,
+and separate fresh update/proof journals. The accepted SecureString config must
+remain version one; load its keys only in memory. No historical user reset,
+production/MFA/MAPIT/Telegram change, paid model or quota increase is authorized.
+Keep temporary wakefulness active while working and remove it before handoff.
+This is authorization, not evidence of a completed update or storage acceptance.
+
 Latest live binding checkpoint, 2026-10-07: PRs #74/#75/#76 merged normally;
 develop d375e4e passed all eight integrated checks (CI 37637055555). Full local
 suite passed 3,786 tests with twelve environment skips. A fresh private authority

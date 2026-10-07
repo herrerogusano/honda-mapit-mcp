@@ -26,8 +26,8 @@ only the exact SSM key. A DynamoDB-only IAM simulation was allowed, but did not
 model that dependent call. The table factory's `SSEEnabled: true` selects the
 AWS-managed key, not the AWS-owned default.
 
-The proposed recovery needs a new owner decision: update only this still-empty
-table to `SSEEnabled: false`, preserving encryption with the AWS-owned key and
+The owner subsequently approved a separate one-attempt recovery: update only
+this still-empty table to `SSEEnabled: false`, preserving encryption with the AWS-owned key and
 avoiding any new KMS permission. Never delete/recreate the table, relax denies,
 overwrite config keys or replay consumed intents. Independently review exact
 old/new template and resource binding, closure, retained key provenance, fresh
@@ -35,6 +35,14 @@ CI/protections, one update intent/readback and a separate new probe envelope.
 CloudFormation's table property documents possible interruptions; DEV remains
 closed during any approved change. No production, MAPIT, owner MFA, historical
 technical-user reset or quota change is included.
+
+The new recovery operator must bind the immutable prior bootstrap, stopped
+probe and accepted-key journals, and preserve the table's TableId and creation
+time. Its update receipt and new proof receipt are separate: testing must not
+rewrite acceptance of the encryption transition. Existing config keys remain
+version one and are loaded only into memory; no key publication is replayed.
+Source CI and independent operator review precede execution. Authorization
+alone does not establish that this transition or the new storage proof passed.
 
 Sources: [CloudFormation SSESpecification semantics](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-dynamodb-table-ssespecification.html),
 [DynamoDB table update behavior](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-dynamodb-table.html),
