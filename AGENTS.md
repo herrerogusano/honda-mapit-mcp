@@ -1,5 +1,32 @@
 # Project Agent Workflow
 
+On 2026-10-07 the owner authorized restarting only OneDrive to recover local
+readiness. Its approximately 41 GB process ended and OneDrive was restarted;
+no files/settings were deleted. Docker server 29.8.1 responded and the pinned
+synthetic ARM probe passed all nine checks with 28 wheels. This is local platform
+evidence, not hosted multiuser acceptance. The recurrent accepted-runtime
+increment passed independent offline review and actual immutable 70-to-54
+lineage/artifact/target validation with zero cloud calls or writes. Preserve
+both consumed runtimes and same A/B identities. Fresh source CI/protections and
+a new private envelope/journals remain required before another hosted attempt;
+production, MAPIT, owner MFA, IAM and quota ten stay unchanged.
+
+PR #68 merged normally to develop at `9421f8f`; all eight PR and integrated
+checks passed. A fresh continuation passed exact closed preflight, private code
+publication, the accepted nineteen-to-nineteen update, and one reset/login plus
+signed-token verification for each same technical A/B account. It stopped at
+`archive_failed`/`arm_probe`, before creating a window or tenant writes. Six
+independent bounded reads verified exact identity, disabled API, reserve zero,
+UPDATE_COMPLETE, nineteen resources and the unchanged accepted role stack.
+This publication/update/reset allowance is consumed. Docker's local daemon
+reports "Docker Desktop is unable to start"; a pure synthetic ARM probe and
+minimal container also failed. Do not repeat resets or infer HTTP acceptance.
+The new accepted runtime/reset/artifact are immutable evidence, not replayable
+authority. Any next continuation must explicitly validate this nineteen-resource
+runtime against its prior accepted runtime and reset digests, retain all A/B
+subjects/keys, and pass a local ARM readiness gate before new cloud writes.
+Production, MAPIT, owner MFA, IAM and quota ten remain unchanged.
+
 PR #67 merged normally to develop at `bf4176d` after eight green PR checks;
 all eight integrated develop checks also passed. One fresh accepted-runtime
 continuation stopped at preflight before artifact publication, resets, opening

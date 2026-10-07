@@ -2,6 +2,28 @@
 
 ## Accepted-runtime continuation scope
 
+Local readiness recovered on 2026-10-07 after the explicitly approved restart
+of only OneDrive, without deleting data/settings. Docker responded and the
+pinned synthetic ARM probe passed all nine checks with 28 wheels. A separate
+recurrent continuation preserves the original validator, validates the new
+accepted runtime/reset against its explicit predecessor, and reconstructs the
+predecessor template window using a bounded local exact-hash search. Independent
+offline review and actual immutable lineage/artifact/target proof passed with
+zero cloud calls/writes. This is not HTTP E2E acceptance. Fresh source CI,
+protections and new immutable private authority are mandatory before live use.
+
+Latest consumed live continuation: integrated develop `9421f8f` and its eight
+checks passed, as did fresh protections and exact closed preflight. Private
+publication, the nineteen-to-nineteen code-only update and both same-account
+reset/logins with signed-token verification completed. The ARM probe failed
+before endpoint opening or tenant writes. Independent closure checks passed
+(six reads). Docker itself reports that Desktop cannot start; a pure synthetic
+probe and minimal ARM container also failed locally. No HTTP E2E acceptance
+follows. Retain the new accepted runtime/artifact and terminal reset evidence;
+never replay those intents. A further continuation must bind its explicit
+predecessor runtime/reset/artifact and pass local ARM readiness before any
+new cloud write or account reset. Production and MAPIT are unchanged.
+
 PR #67 and its integrated develop commit `bf4176d` passed all eight checks.
 The fresh continuation stopped before writes at the route preflight. Read-only
 predicate checks found AWS's empty `AuthorizationScopes` list on both public

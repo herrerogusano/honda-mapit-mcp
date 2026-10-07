@@ -12,6 +12,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import secrets
@@ -88,6 +89,10 @@ class AcceptedContinuationInputs:
     accepted_reset_path: Path
     accepted_runtime_path: Path
     accepted_artifact_dir: Path
+    predecessor_users_path: Path | None = None
+    predecessor_reset_path: Path | None = None
+    predecessor_runtime_path: Path | None = None
+    predecessor_artifact_dir: Path | None = None
 
 
 class AcceptedContinuationError(ValueError):
@@ -97,7 +102,7 @@ class AcceptedContinuationError(ValueError):
         "private_acl_invalid", "window_expired", "login_page_failed", "user_preflight_failed",
         "archive_failed", "publish_failed", "runtime_update_failed", "runtime_readback_failed",
         "login_failed", "token_invalid", "window_failed", "tenant_write_failed",
-        "http_acceptance_failed", "closure_unverified", "runner_failed",
+        "http_acceptance_failed", "closure_unverified", "platform_preflight_failed", "runner_failed",
     })
 
     def __init__(self, category: str):
@@ -107,6 +112,21 @@ class AcceptedContinuationError(ValueError):
 
 def _fail(category: str) -> None:
     raise AcceptedContinuationError(category)
+
+
+def _predecessor_mode(inputs: AcceptedContinuationInputs) -> bool:
+    """Require a complete, distinct predecessor tuple for recurrence only."""
+    names = ("predecessor_users_path", "predecessor_reset_path",
+             "predecessor_runtime_path", "predecessor_artifact_dir")
+    values = tuple(getattr(inputs, name) for name in names)
+    if not any(value is not None for value in values):
+        return False
+    if any(value is None or not isinstance(value, Path) for value in values):
+        _fail("bindings_invalid")
+    paths = [value.resolve(strict=False) for value in values]
+    if len(set(paths)) != len(paths):
+        _fail("bindings_invalid")
+    return True
 
 
 def validate_accepted_pair_lineage(
@@ -192,7 +212,9 @@ def validate_accepted_pair_lineage(
         # The latest reset journal is a consumed second-recurring attempt.  It
         # is validated by exact chain hashes above, never passed to the older
         # validator which intentionally rejects its consumed-pair marker.
-        return {"first_pair_sha256": hf247["first_pair_sha256"],
+        return {"original": original, "first_pair": hf247["first_pair"],
+                "original_sha256": hf247["original_sha256"],
+                "first_pair_sha256": hf247["first_pair_sha256"],
                 "previous_reset_sha256": hf247["previous_reset_sha256"],
                 "consumed_pair_sha256": hf247["latest_pair_sha256"],
                 "accepted_pair_sha256": _pair_digest(accepted_users.load()),
@@ -200,6 +222,209 @@ def validate_accepted_pair_lineage(
                 "accepted_runtime_binding": dict(binding)}
     except Exception:
         _fail("history_invalid")
+
+
+def validate_recurrent_accepted_pair_lineage(
+    *, current_users: Any, current_reset: Any, current_runtime: Any,
+    previous_lineage: Mapping[str, Any], previous_manifest: Mapping[str, Any],
+    current_manifest: Mapping[str, Any], account: str, pool: str,
+) -> dict[str, Any]:
+    """Bind one new A/B reset to the accepted 54ad predecessor without
+    weakening the original 828c -> 8ed -> f247 -> 54ad validator.
+    """
+    try:
+        previous_binding = previous_lineage["accepted_runtime_binding"]
+        original = previous_lineage["original"] if "original" in previous_lineage else None
+        if original is None:
+            raise ValueError
+        pair = _latest_pair(current_users.load(), account=account, pool=pool, original=original)
+        reset = _reset_state(current_reset.load(), allow_complete=True)
+        runtime_value = current_runtime.load()
+        if (type(runtime_value) is not dict or set(runtime_value) != {"binding", "phase"}
+            or runtime_value.get("phase") != "accepted" or type(runtime_value.get("binding")) is not dict):
+            raise ValueError
+        binding = runtime_value["binding"]
+        expected_fields = {"schema", "operation", "account", "caller", "end", "prior", "role",
+                           "source", "stack", "start", "target", "token"}
+        if (set(binding) != expected_fields or type(binding.get("schema")) is not int or binding["schema"] != 1
+            or binding.get("operation") != "dev_multiuser_closed_update" or binding.get("account") != account
+            or binding.get("source") != current_manifest.get("source_sha")
+            or binding.get("stack") != previous_binding.get("stack")
+            or binding.get("caller") != previous_binding.get("caller")
+            or binding.get("role") != previous_binding.get("role")
+            or binding.get("prior") != previous_binding.get("target")
+            or type(binding.get("source")) is not str or re.fullmatch(r"[0-9a-f]{40}", binding["source"]) is None
+            or type(binding.get("token")) is not str or re.fullmatch(r"dev-multiuser-[0-9a-f]{32}", binding["token"]) is None
+            or type(binding.get("target")) is not str or re.fullmatch(r"[0-9a-f]{64}", binding["target"]) is None
+            or type(binding.get("start")) is not int or isinstance(binding.get("start"), bool)
+            or type(binding.get("end")) is not int or isinstance(binding.get("end"), bool)
+            or binding["start"] <= 0 or binding["end"] <= binding["start"]
+            or not 0 < binding["end"] - binding["start"] <= AUTH_SECONDS):
+            raise ValueError
+        if (reset["phase"] != "complete" or reset["revision"] != 6
+            or reset["account_id"] != account or reset["user_pool_id"] != pool
+            or reset["run_id"] != original["run_id"]
+            or reset["original_creation_sha256"] != previous_lineage["original_sha256"]
+            or reset["original_start_epoch"] != original["authorized_from_epoch"]
+            or reset["original_end_epoch"] != original["authorized_until_epoch"]
+            or reset["latest_start_epoch"] != previous_lineage["first_pair"]["authorized_from_epoch"]
+            or reset["latest_end_epoch"] != previous_lineage["first_pair"]["authorized_until_epoch"]
+            or reset.get("first_confirmed_pair_sha256") != previous_lineage["first_pair_sha256"]
+            or reset.get("previous_reset_sha256") != previous_lineage["accepted_reset_sha256"]
+            or reset.get("consumed_pair_sha256") != previous_lineage["accepted_pair_sha256"]
+            # The reset preparer intentionally re-reads the immutable first
+            # confirmed pair (B's original creation provenance); the consumed
+            # accepted predecessor is bound separately below.
+            or reset["latest_pair_sha256"] != previous_lineage["first_pair_sha256"]
+            or reset["source_sha256"] != binding["source"]
+            or not binding["start"] <= reset["authorized_from_epoch"] < reset["authorized_until_epoch"] <= binding["end"]):
+            raise ValueError
+        old_tenants = previous_manifest.get("tenants")
+        new_tenants = current_manifest.get("tenants")
+        if (type(old_tenants) is not list or len(old_tenants) != 2
+            or type(new_tenants) is not list or len(new_tenants) != 2):
+            raise ValueError
+        # The permanent identity, JWKS and tenant namespace are immutable in
+        # this continuation; only the source/archive/window may advance.
+        for field in ("api_id", "user_pool_id", "client_id", "jwks_sha256", "table_arn"):
+            if current_manifest.get(field) != previous_manifest.get(field):
+                raise ValueError
+        for index in range(2):
+            old, new, reset_slot = old_tenants[index], new_tenants[index], reset["slots"][index]
+            slot = pair["slots"][index]
+            if (old.get("label") != f"synthetic-{chr(65 + index)}"
+                or new != old
+                or type(new.get("subject")) is not str
+                or hashlib.sha256(new["subject"].encode("ascii")).hexdigest() != slot["user_sub_sha256"]
+                or slot["user_sub_sha256"] != reset_slot["subject_sha256"]
+                or reset_slot["slot"] != chr(65 + index)
+                or reset_slot["phase"] != "confirmed"):
+                raise ValueError
+        return {
+            "first_pair_sha256": previous_lineage["first_pair_sha256"],
+            "previous_reset_sha256": previous_lineage["accepted_reset_sha256"],
+            "consumed_pair_sha256": previous_lineage["accepted_pair_sha256"],
+            "accepted_pair_sha256": _pair_digest(current_users.load()),
+            "accepted_reset_sha256": _pair_digest(reset),
+            "accepted_runtime_binding": dict(binding),
+        }
+    except Exception:
+        _fail("history_invalid")
+
+
+def _run_platform_preflight(wheel_dir: Path) -> Mapping[str, Any]:
+    """Run the fixed synthetic ARM probe; no AWS client is constructed here."""
+    from scripts import probe_aws_dev_multiuser_arm as probe
+    return probe.run_probe(wheel_dir)
+
+
+def _valid_platform_preflight(value: Any) -> bool:
+    try:
+        from scripts import probe_aws_dev_multiuser_arm as probe
+        checks = value.get("checks") if isinstance(value, Mapping) else None
+        return (
+            isinstance(value, Mapping)
+            and value.get("success") is True
+            and value.get("category") == "multiuser_arm_probe_passed"
+            and type(checks) is dict and set(checks) == set(probe.CHECKS)
+            and all(type(checks[name]) is bool and checks[name] is True for name in probe.CHECKS)
+        )
+    except Exception:
+        return False
+
+
+def _load_predecessor_receipt(artifact_dir: Path, manifest: Mapping[str, Any], *,
+                              account: str, api_id: str, pool_id: str, client_id: str,
+                              prior_start: int, prior_end: int,
+                              previous_binding: Mapping[str, Any], original_prior_digest: str,
+                              bucket: str,
+                              acl_checker=None):
+    """Load an accepted predecessor artifact without trusting its directory name."""
+    raw_manifest = _read_bounded_private_file(artifact_dir / "manifest.json", MAX_MANIFEST_BYTES,
+                                               acl_checker=acl_checker)
+    jwks = _read_bounded_private_file(artifact_dir / "jwks.json", 32 * 1024, acl_checker=acl_checker)
+    archive = artifact_dir / "runtime.zip"
+    body = _read_bounded_private_file(archive, 16 * 1024 * 1024, acl_checker=acl_checker)
+    parsed = parse_manifest(raw_manifest, expected_digest=hashlib.sha256(raw_manifest).hexdigest(), account_id=account)
+    if (parsed != dict(manifest) or parsed.get("api_id") != api_id
+        or parsed.get("user_pool_id") != pool_id or parsed.get("client_id") != client_id):
+        _fail("accepted_runtime_invalid")
+    artifact_state = CasFileJournal(artifact_dir).load()
+    manifest_sha = hashlib.sha256(raw_manifest).hexdigest()
+    zip_sha = hashlib.sha256(body).hexdigest()
+    state_fields = {
+        "schema", "kind", "account_id", "bucket", "run_id", "source_sha", "manifest_sha256",
+        "zip_sha256", "artifact_key", "size_bytes", "authorized_from_epoch", "authorized_until_epoch",
+        "last_observed_epoch", "intent", "status", "revision",
+    }
+    if (type(artifact_state) is not dict or set(artifact_state) != state_fields
+        or artifact_state.get("schema") != 1
+        or artifact_state.get("kind") != "retained-dev-multiuser-artifact-publication"
+        or artifact_state.get("account_id") != account or artifact_state.get("bucket") != bucket
+        or artifact_state.get("source_sha") != parsed.get("source_sha")
+        or artifact_state.get("manifest_sha256") != manifest_sha
+        or artifact_state.get("zip_sha256") != zip_sha
+        or artifact_state.get("artifact_key") != f"runtime/{zip_sha}.zip"
+        or artifact_state.get("size_bytes") != len(body)
+        or artifact_state.get("status") != "verified" or artifact_state.get("revision") != 2
+        or artifact_state.get("authorized_from_epoch") != previous_binding.get("start")
+        or artifact_state.get("authorized_until_epoch") != previous_binding.get("end")
+        or type(artifact_state.get("run_id")) is not str
+        or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", artifact_state["run_id"]) is None
+        or type(artifact_state.get("last_observed_epoch")) not in (int, float)
+        or isinstance(artifact_state.get("last_observed_epoch"), bool)
+        or not math.isfinite(artifact_state.get("last_observed_epoch"))
+        or artifact_state.get("last_observed_epoch") <= 0
+        or artifact_state.get("intent") != {
+            "operation": "publish", "artifact_key": f"runtime/{zip_sha}.zip",
+            "zip_sha256": zip_sha, "manifest_sha256": manifest_sha,
+        }):
+        _fail("accepted_runtime_invalid")
+    auth_start, auth_end = previous_binding.get("start"), previous_binding.get("end")
+    if (type(auth_start) is not int or isinstance(auth_start, bool)
+        or type(auth_end) is not int or isinstance(auth_end, bool)
+        or not 0 < auth_end - auth_start <= AUTH_SECONDS
+        or previous_binding.get("prior") != original_prior_digest):
+        _fail("accepted_runtime_invalid")
+    receipt = MultiuserBuildReceipt(
+        source_sha=parsed["source_sha"], api_id=api_id, user_pool_id=pool_id, client_id=client_id,
+        jwks_sha256=hashlib.sha256(jwks).hexdigest(),
+        manifest_sha256=hashlib.sha256(raw_manifest).hexdigest(),
+        zip_sha256=hashlib.sha256(body).hexdigest(), archive_path=archive,
+        execution_start_epoch=prior_start, execution_end_epoch=prior_end,
+    )
+    _body, verified_manifest = _read_multiuser_archive(receipt, account_id=account, acl_checker=acl_checker)
+    subjects = tuple(row["subject"] for row in verified_manifest["tenants"])
+    keys = tuple(row["key"] for row in verified_manifest["tenants"])
+    matches = []
+    last_start = auth_end - RUNTIME_SECONDS
+    if last_start < auth_start:
+        _fail("accepted_runtime_invalid")
+    # Artifact journals bind the enclosing one-hour authorization, not the
+    # runtime's five-minute epoch pair. Recover that immutable pair by a
+    # bounded exact-template-digest search (at most 3,301 local candidates).
+    for start in range(auth_start, last_start + 1):
+        candidate = MultiuserBuildReceipt(
+            source_sha=receipt.source_sha, api_id=receipt.api_id, user_pool_id=receipt.user_pool_id,
+            client_id=receipt.client_id, jwks_sha256=receipt.jwks_sha256,
+            manifest_sha256=receipt.manifest_sha256, zip_sha256=receipt.zip_sha256,
+            archive_path=receipt.archive_path, execution_start_epoch=start,
+            execution_end_epoch=start + RUNTIME_SECONDS,
+        )
+        template = build_multiuser_candidate_template(
+            candidate, account_id=account, bucket=bucket, callback_url=hosted.CALLBACK_URL,
+            subjects=subjects, tenant_keys=keys,
+        )
+        digest = hashlib.sha256(json.dumps(
+            template, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=True, allow_nan=False).encode("ascii")).hexdigest()
+        if digest == previous_binding.get("target"):
+            matches.append((candidate, template))
+            if len(matches) > 1:
+                _fail("accepted_runtime_invalid")
+    if len(matches) != 1:
+        _fail("accepted_runtime_invalid")
+    return matches[0][0], verified_manifest, matches[0][1]
 
 
 def run_accepted_runtime_continuation(
@@ -213,6 +438,7 @@ def run_accepted_runtime_continuation(
     jwks_fetcher: Callable[..., tuple[bytes, str]] = hosted.fetch_public_jwks,
     archive_factory: Callable[..., Any] = build_dev_multiuser_archive,
     http_acceptance: Callable[..., Mapping[str, Any]] | None = None,
+    platform_preflight: Callable[[Path], Any] | None = None,
     clock: Callable[[], float] = time.time,
     monotonic: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
@@ -247,6 +473,23 @@ def run_accepted_runtime_continuation(
         except Exception:
             _fail("bindings_invalid")
         checked_paths["accepted_artifact_dir"] = validate_private_location(inputs.accepted_artifact_dir, acl_checker=acl_checker)
+        predecessor_fields = (
+            "predecessor_users_path", "predecessor_reset_path",
+            "predecessor_runtime_path", "predecessor_artifact_dir",
+        )
+        recurrent = _predecessor_mode(inputs)
+        if recurrent:
+            for name in predecessor_fields[:3]:
+                checked_paths[name] = validate_private_location(getattr(inputs, name), acl_checker=acl_checker)
+            checked_paths["predecessor_artifact_dir"] = validate_private_location(
+                inputs.predecessor_artifact_dir, acl_checker=acl_checker)
+        private_paths = [path for name, path in checked_paths.items() if name != "wheel_dir"]
+        if len(set(private_paths)) != len(private_paths):
+            _fail("bindings_invalid")
+        for index, path in enumerate(private_paths):
+            if any(_path_contains(path, other) or _path_contains(other, path)
+                   for other in private_paths[index + 1:]):
+                _fail("bindings_invalid")
         if any(_path_contains(root, candidate) or _path_contains(candidate, root)
                for name, candidate in checked_paths.items() if name not in {"wheel_dir"}):
             _fail("bindings_invalid")
@@ -257,6 +500,18 @@ def run_accepted_runtime_continuation(
             raise
         except Exception:
             _fail("private_acl_invalid")
+        # Prove local ARM/Docker readiness before constructing or calling any
+        # cloud client.  The default probe is synthetic and network-disabled;
+        # tests may inject a fixed result without weakening its production gate.
+        preflight = _run_platform_preflight if platform_preflight is None else platform_preflight
+        try:
+            probe = preflight(checked_paths["wheel_dir"])
+            if not _valid_platform_preflight(probe):
+                _fail("platform_preflight_failed")
+        except AcceptedContinuationError:
+            raise
+        except Exception:
+            _fail("platform_preflight_failed")
         if clients is None:
             if not callable(clients_factory):
                 _fail("clients_invalid")
@@ -277,6 +532,12 @@ def run_accepted_runtime_continuation(
             "accepted_reset": ("accepted_reset_path", False),
             "accepted_runtime": ("accepted_runtime_path", True),
         }
+        if recurrent:
+            state_paths.update({
+                "predecessor_users": ("predecessor_users_path", False),
+                "predecessor_reset": ("predecessor_reset_path", False),
+                "predecessor_runtime": ("predecessor_runtime_path", True),
+            })
         journals = {key: (CasFileJournal(checked_paths[path_field]) if cas else FileJournal(checked_paths[path_field]))
                     for key, (path_field, cas) in state_paths.items()}
         # Read-only basic binding/ownership gates. Detailed service checks are
@@ -384,8 +645,33 @@ def run_accepted_runtime_continuation(
         manifest_raw = _read_bounded_private_file(accepted_manifest_path, MAX_MANIFEST_BYTES, acl_checker=acl_checker)
         accepted_manifest_sha = hashlib.sha256(manifest_raw).hexdigest()
         manifest = parse_manifest(manifest_raw, expected_digest=accepted_manifest_sha, account_id=auth["account"])
-        lineage = validate_accepted_pair_lineage(
-            **journals, account=auth["account"], pool=pool_id, accepted_manifest=manifest)
+        if recurrent:
+            predecessor_manifest_raw = _read_bounded_private_file(
+                checked_paths["predecessor_artifact_dir"] / "manifest.json",
+                MAX_MANIFEST_BYTES, acl_checker=acl_checker)
+            predecessor_manifest_sha = hashlib.sha256(predecessor_manifest_raw).hexdigest()
+            predecessor_manifest = parse_manifest(
+                predecessor_manifest_raw, expected_digest=predecessor_manifest_sha, account_id=auth["account"])
+            predecessor_journals = dict(journals)
+            predecessor_journals.update({
+                "accepted_users": journals["predecessor_users"],
+                "accepted_reset": journals["predecessor_reset"],
+                "accepted_runtime": journals["predecessor_runtime"],
+            })
+            predecessor_lineage = validate_accepted_pair_lineage(
+                **{key: predecessor_journals[key] for key in (
+                    "original_creation_users", "first_pair_users", "first_reset_users", "first_reset",
+                    "prior_reset_users", "prior_reset", "accepted_users", "accepted_reset", "accepted_runtime",
+                )}, account=auth["account"], pool=pool_id, accepted_manifest=predecessor_manifest)
+            lineage = validate_recurrent_accepted_pair_lineage(
+                current_users=journals["accepted_users"], current_reset=journals["accepted_reset"],
+                current_runtime=journals["accepted_runtime"], previous_lineage=predecessor_lineage,
+                previous_manifest=predecessor_manifest, current_manifest=manifest,
+                account=auth["account"], pool=pool_id,
+            )
+        else:
+            lineage = validate_accepted_pair_lineage(
+                **journals, account=auth["account"], pool=pool_id, accepted_manifest=manifest)
         accepted_binding = lineage["accepted_runtime_binding"]
         if (accepted_binding.get("stack") != app_stack or accepted_binding.get("source") != manifest.get("source_sha")
             or not accepted_binding.get("start") <= prior_start < prior_end <= accepted_binding.get("end")
@@ -415,8 +701,23 @@ def run_accepted_runtime_continuation(
         prior_binding_digest = hashlib.sha256(json.dumps(
             original_setup_template, sort_keys=True, separators=(",", ":"),
             ensure_ascii=True, allow_nan=False).encode("ascii")).hexdigest()
-        if accepted_binding.get("prior") != prior_binding_digest:
+        expected_prior_digest = (
+            predecessor_lineage["accepted_runtime_binding"]["target"] if recurrent else prior_binding_digest
+        )
+        if accepted_binding.get("prior") != expected_prior_digest:
             _fail("accepted_runtime_invalid")
+        if recurrent:
+            previous_receipt, previous_manifest, previous_template = _load_predecessor_receipt(
+                checked_paths["predecessor_artifact_dir"], predecessor_manifest,
+                account=auth["account"], api_id=api_id, pool_id=pool_id, client_id=client_id,
+                prior_start=prior_start, prior_end=prior_end,
+                previous_binding=predecessor_lineage["accepted_runtime_binding"],
+                original_prior_digest=prior_binding_digest,
+                bucket=role_values["artifact_bucket_arn"].split(":::", 1)[-1],
+                acl_checker=acl_checker,
+            )
+            if not _only_artifact_source_window_delta(previous_template, prior_template):
+                _fail("accepted_runtime_invalid")
         expected_resource_types = {name: value.get("Type") for name, value in prior_template["Resources"].items()}
         if (set(by_name) != set(expected_resource_types)
             or any(by_name[name].get("ResourceType") != expected_resource_types[name] for name in expected_resource_types)):
