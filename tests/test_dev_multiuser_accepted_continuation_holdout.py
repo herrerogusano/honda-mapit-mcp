@@ -692,6 +692,8 @@ def test_full_continuation_is_one_closed_template_update_then_reset_login_and_cl
     import scripts.probe_aws_dev_multiuser_arm as arm_probe
     monkeypatch.setattr(arm_probe.docker_helpers, "_docker_context", lambda: "synthetic-context")
     monkeypatch.setattr(arm_probe, "probe_candidate_archive", lambda *_a, **kwargs: arm_payloads.append(kwargs["payload"]) or {"success": True, "category": "multiuser_arm_probe_passed"})
+    platform_pass = {"success": True, "category": "multiuser_arm_probe_passed",
+                     "checks": {name: True for name in arm_probe.CHECKS}}
     now = [auth["start"] + 20]
     def clock(): return now[0]
     def sleep(seconds): now[0] += max(1, int(seconds))
@@ -770,6 +772,7 @@ def test_full_continuation_is_one_closed_template_update_then_reset_login_and_cl
         source_verifier=lambda _auth: None, acl_checker=lambda _path: True,
         login_client_factory=SyntheticLogin, jwks_fetcher=lambda **_kw: (jwks, hashlib.sha256(jwks).hexdigest()),
         archive_factory=build_archive, http_acceptance=http_acceptance,
+        platform_preflight=lambda _wheel_dir: platform_pass,
         clock=clock, monotonic=lambda: 10.0, sleep=sleep)
 
     assert result["success"] is True, result
@@ -811,6 +814,7 @@ def test_full_continuation_is_one_closed_template_update_then_reset_login_and_cl
         source_verifier=lambda _auth: None, acl_checker=lambda _path: True,
         login_client_factory=SyntheticLogin, jwks_fetcher=lambda **_kw: (jwks, hashlib.sha256(jwks).hexdigest()),
         archive_factory=build_archive, http_acceptance=http_acceptance,
+        platform_preflight=lambda _wheel_dir: platform_pass,
         clock=clock, monotonic=lambda: 10.0, sleep=sleep)
     assert replay["success"] is False
     assert writes_before == (len(clients.cfn_writes), len(clients.s3_puts), len([c for c in clients.calls if c[0] == "set"]))
