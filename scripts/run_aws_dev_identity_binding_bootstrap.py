@@ -127,7 +127,8 @@ def validate_github_protections(binding: Mapping[str, Any], *, command_runner: C
                                        parse_constant=_reject_constant))
         except Exception:
             raise IdentityBindingBootstrapRunnerError("github_protection_failed") from None
-    repository, branch, environment, rules = payloads
+    repository, branch, environment, raw_rules = payloads
+    rules = _normalize_deployment_branch_policies(raw_rules)
     owner = repository.get("owner") if isinstance(repository, Mapping) else None
     if (not isinstance(repository, Mapping) or repository.get("full_name") != REPOSITORY
         or type(repository.get("id")) is not int or repository["id"] != binding["github_repository_id"]
@@ -137,6 +138,16 @@ def validate_github_protections(binding: Mapping[str, Any], *, command_runner: C
         or not validate_environment_readback("dev", binding["github_owner_id"], environment, rules)
         or not validate_admin_bypass_disabled(environment.get("can_admins_bypass") if isinstance(environment, Mapping) else None)):
         raise IdentityBindingBootstrapRunnerError("github_protection_failed")
+
+
+def _normalize_deployment_branch_policies(value: Any) -> list[Mapping[str, Any]]:
+    """Normalize the exact paginated GitHub REST envelope to one policy row."""
+    if (type(value) is not dict or set(value) != {"total_count", "branch_policies"}
+        or type(value.get("total_count")) is not int or value["total_count"] != 1
+        or type(value.get("branch_policies")) is not list or len(value["branch_policies"]) != 1
+        or not isinstance(value["branch_policies"][0], Mapping)):
+        raise IdentityBindingBootstrapRunnerError("github_protection_failed")
+    return value["branch_policies"]
 
 
 def _build_clients() -> dict[str, Any]:
