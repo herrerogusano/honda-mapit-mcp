@@ -1,5 +1,15 @@
 # Project Agent Workflow
 
+Offline follow-up on 2026-10-07: opt-in `CloudServicesProvider` now requires an
+explicit same-config verifier and a trusted expected MAPIT identity proof
+together. It validates the proof before secret access, checks refreshed signed
+ID-token continuity before Identity Pool exchange, and pins the original proof
+across refresh. Independent review accepted the default-preserving seam;
+3,549 tests passed with twelve environment skips, compilation and deterministic
+evaluation 12/12. This is not enrollment or a deployed change: proofs are
+verifier-instance-bound and need a separately reviewed durable identity-binding
+flow. No new cloud, MAPIT, MFA, Telegram, IAM or quota operation followed.
+
 Functional hosted multiuser DEV acceptance completed on 2026-10-07 on develop
 `f529fd0` (PR #69), after eight green PR checks and eight integrated CI checks
 (37606627964), independent review, 3,542 offline tests/twelve Windows skips,

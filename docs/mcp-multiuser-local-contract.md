@@ -50,6 +50,24 @@ This proves a signed Cognito pool identity only; it does not prove MAPIT
 vehicle/account ownership and remains opt-in. The legacy authenticator path is
 unchanged when no verifier is supplied.
 
+## Opt-in cloud MAPIT identity continuity
+
+The cloud provider accepts an explicitly supplied `MapitIdentityVerifier` and
+`expected_identity_proof` together, or neither. The verifier must belong to the
+same configuration object and must validate the proof before any secret read.
+The initial refreshed ID token must match that proof before Identity Pool ID or
+credential exchange. Refresh checks the original provider-bound proof before
+and after authentication; a different signed MAPIT subject cannot rebind it.
+Failures do not publish a replacement session or disclose tokens.
+
+This is an offline composition seam, not real-user onboarding or deployment.
+The caller must obtain the expected proof through a trusted enrollment flow;
+deriving it from the same untrusted refresh being checked would be circular.
+Proofs are verifier-instance-bound, not serializable durable onboarding records,
+and attest a signed Cognito identity, not vehicle ownership. Key discovery,
+durable identity binding and per-user session publication remain separate work.
+The default provider calls and deployed single-owner entrypoints are unchanged.
+
 ## Offline durable authorization increment
 
 Status (2026-10-06): implemented and tested offline only; not deployed. The
