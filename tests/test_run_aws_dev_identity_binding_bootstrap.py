@@ -73,13 +73,14 @@ def test_github_source_protection_readback_uses_four_fixed_gh_reads(monkeypatch)
     payloads = [
         {"full_name": REPOSITORY, "id": REPOSITORY_ID,
          "owner": {"login": "herrerogusano", "id": OWNER_ID}},
-        {"fixed": "branch"}, {"fixed": "environment", "can_admins_bypass": False}, [{"fixed": "policy"}],
+        {"fixed": "branch"}, {"fixed": "environment", "can_admins_bypass": False},
+        {"total_count": 1, "branch_policies": [{"fixed": "policy"}]},
     ]
     monkeypatch.setattr(runner_module, "validate_branch_protection_readback",
                         lambda name, value: name == "develop" and value == payloads[1])
     monkeypatch.setattr(runner_module, "validate_environment_readback",
                         lambda target, owner, value, rules: target == "dev" and owner == OWNER_ID
-                        and value == payloads[2] and rules == payloads[3])
+                        and value == payloads[2] and rules == payloads[3]["branch_policies"])
     monkeypatch.setattr(runner_module, "validate_admin_bypass_disabled", lambda value: value is False)
     calls = []
 
@@ -95,6 +96,60 @@ def test_github_source_protection_readback_uses_four_fixed_gh_reads(monkeypatch)
         ["gh", "api", f"repos/{REPOSITORY}/environments/dev"],
         ["gh", "api", f"repos/{REPOSITORY}/environments/dev/deployment-branch-policies?per_page=100"],
     ]
+
+
+def test_actual_github_branch_policy_rest_envelope_passes_unmocked_validators():
+    from tests.test_github_cd_protections import _branch_readback, _environment_readback
+
+    payloads = [
+        {"full_name": REPOSITORY, "id": REPOSITORY_ID,
+         "owner": {"login": "herrerogusano", "id": OWNER_ID}},
+        _branch_readback(),
+        _environment_readback("dev", owner_id=OWNER_ID),
+        {"total_count": 1, "branch_policies": [
+            {"name": "develop", "type": "branch", "id": 701, "node_id": "MDQ6R2F0ZTE="},
+        ]},
+    ]
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payloads[len(calls) - 1]).encode(), stderr=b"")
+
+    validate_github_protections(_binding(), command_runner=runner)
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize("bad_rules", [
+    [],
+    {"total_count": 0, "branch_policies": []},
+    {"total_count": True, "branch_policies": [{"fixed": "policy"}]},
+    {"total_count": 2, "branch_policies": [{"fixed": "policy"}]},
+    {"total_count": 1, "branch_policies": []},
+    {"total_count": 1, "branch_policies": [{"fixed": "policy"}, {"fixed": "extra"}]},
+    {"total_count": 1, "branch_policies": [{"fixed": "policy"}], "next": "page"},
+    {"total_count": 1, "branch_policies": "not-an-array"},
+])
+def test_actual_branch_policy_envelope_is_strict_and_malformed_pagination_fails_closed(
+    monkeypatch, bad_rules,
+):
+    payloads = [
+        {"full_name": REPOSITORY, "id": REPOSITORY_ID,
+         "owner": {"login": "herrerogusano", "id": OWNER_ID}},
+        {"fixed": "branch"}, {"fixed": "environment", "can_admins_bypass": False}, bad_rules,
+    ]
+    monkeypatch.setattr(runner_module, "validate_branch_protection_readback", lambda *_: True)
+    monkeypatch.setattr(runner_module, "validate_environment_readback", lambda *_: True)
+    monkeypatch.setattr(runner_module, "validate_admin_bypass_disabled", lambda value: value is False)
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payloads[len(calls) - 1]).encode(), stderr=b"")
+
+    with pytest.raises(IdentityBindingBootstrapRunnerError, match="github_protection_failed"):
+        validate_github_protections(_binding(), command_runner=runner)
+    assert len(calls) == 4
 
 
 def test_wrong_github_repository_identity_fails_closed():
