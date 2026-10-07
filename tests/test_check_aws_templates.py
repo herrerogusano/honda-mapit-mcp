@@ -17,6 +17,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "application_draft", "shutdown_lambda_draft",
         "shutdown_control_draft", "cleanup_schedule_draft", "combined_control_draft",
         "closed_bootstrap_draft",
+        "dev_identity_binding_table_draft",
         "retained_dev_closed_bootstrap_draft",
         "retained_dev_closed_runtime_draft",
         "retained_dev_controls_draft", "retained_dev_artifacts_draft",

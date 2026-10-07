@@ -9,6 +9,7 @@ import time
 from typing import Any, Callable
 
 from .aws_tenant_session_reader import AwsTenantSessionReader
+from .aws_identity_binding import DynamoDBIdentityBindingRegistry
 from .cloud_provider import CloudServicesProvider
 from .durable_tenants import DurableTenantGuard, DurableTenantSnapshot
 from .identity_binding import SQLiteIdentityBindingRegistry
@@ -67,17 +68,18 @@ class EnrolledCloudServicesProvider:
     Registry revocation rejects cached services and discards in-flight results.
     It does not cancel already-started wire calls or erase a published secret.
     The surrounding tenant router remains responsible for request context and
-    the original MCP authorization. SQLite is a local backend, not shared AWS
-    Lambda persistence; this factory is not wired into any deployed handler.
+    the original MCP authorization. SQLite is local; the injected DynamoDB
+    backend is shared state but still needs its dedicated table, IAM and
+    deployment review. This factory is not wired into any deployed handler.
     """
 
-    def __init__(self, registry: SQLiteIdentityBindingRegistry, *,
+    def __init__(self, registry: SQLiteIdentityBindingRegistry | DynamoDBIdentityBindingRegistry, *,
                  authority: InvitedTenantAuthority, grant: AuthenticatedTenant,
                  durable_guard: DurableTenantGuard, snapshot: DurableTenantSnapshot,
                  ssm_client: Any, account_id: str, auth_transport: Callable,
                  mapit_transport: Callable, deadline: float,
                  monotonic: Callable[[], float] = time.monotonic):
-        if (type(registry) is not SQLiteIdentityBindingRegistry
+        if (type(registry) not in {SQLiteIdentityBindingRegistry, DynamoDBIdentityBindingRegistry}
             or not registry.is_bound_to(authority, durable_guard)):
             raise EnrolledProviderError("enrolled_configuration_invalid")
         self._registry, self._grant, self._snapshot = registry, grant, snapshot

@@ -1,5 +1,26 @@
 # Project Agent Workflow
 
+Shared onboarding preparation on 2026-10-07 is independently accepted offline:
+dedicated DynamoDB sixteen-record document CAS, strong reads, terminal records,
+exact table/account/environment-bound v2 row/document MACs, short deadlines,
+fresh same-credential STS before mutations and sticky unknown-write fencing.
+The lazy DEV-only cloud composition and assisted single-use loopback form pass
+signed two-tenant enrollment, create-only SSM publication, provider isolation
+and adverse account/ambiguous-write holdouts. Pure dedicated DEV table and
+exact-resource permission drafts pass the pinned network-denied schema checker
+(45 templates). Full suite: 3,653 passed, twelve environment skips; compilation
+and deterministic evaluation 12/12. Review/source CI precede promotion.
+This is not a cloud onboarding deployment or hosted guest/password OAuth flow.
+No new AWS resources/IAM, MAPIT session/data, owner MFA, Telegram, production,
+regional quota or paid-model operation occurred. Existing hosted intents remain
+consumed; A remains terminally revoked and DEV closed. Actual dedicated-table,
+role/boundary, private key lifecycle and manifest/runtime integration require
+new exact reviewed authority and bounded readback/closure; do not treat these
+pure factories as write permission or an absent item as ambiguous-write replay
+authority. Expected account/role comes from pinned private operator authority.
+See docs/multiuser-onboarding.md. Remove owned temporary wakefulness before
+final handoff; no persistent power settings are changed.
+
 Offline onboarding preparation on 2026-10-07 is independently accepted: new
 explicit SQLite identity registry, context/key-sealed persistent MAPIT proof
 envelope, pending one-shot intent before authentication/publication, strict
