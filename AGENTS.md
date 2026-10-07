@@ -1,5 +1,30 @@
 # Project Agent Workflow
 
+Latest live binding checkpoint, 2026-10-07: PRs #74/#75/#76 merged normally;
+develop d375e4e passed all eight integrated checks (CI 37637055555). Full local
+suite passed 3,786 tests with twelve environment skips. A fresh private authority
+passed bootstrap preflight (42 calls), one acknowledged creation (43 calls),
+and exact acceptance (47 calls). The dedicated four-resource identity-binding
+stack is now retained and accepted; never replay its creation. The original
+nineteen-resource app remained closed and unchanged except for its separately
+owned read-only policy attachment. One fresh storage probe passed preflight,
+published/verifiably read the Standard SecureString config keys at version one,
+and stopped at storage_exercise_unverified. Its probe intent is consumed;
+the keys journal is accepted, not permission to regenerate or overwrite keys.
+Read-only reconciliation found no binding item and neither tenant parameter.
+The assumed enroller's real GetItem is denied by KMS Decrypt, not DynamoDB IAM:
+DescribeTable and DescribeKey bind the table to existing alias/aws/dynamodb,
+while the enroller deliberately permits only the SSM key. IAM simulation of
+GetItem alone being allowed does not cover this dependent KMS call.
+No cloud A/B storage acceptance follows. A new owner decision is requested for
+an independently reviewed, one-intent update of only this empty table to the
+AWS-owned encryption default (still encrypted), preserving IAM/config keys,
+followed by separately bound fresh proof journals. Do not replay this probe,
+delete/recreate resources, relax KMS denies, reset historical users, touch
+production/MFA/MAPIT/Telegram or increase quota ten. Empty immediate reads do
+not justify replay. Fresh source/CI/protection and exact old/new template,
+resource and consumed-key provenance are required for any recovery.
+
 On 2026-10-07 the owner explicitly approved the separate DEV identity-binding
 table and minimum enrollment/runtime permissions for synthetic onboarding,
 within the existing gross USD 1/month DEV target (not a hard cap). The reviewed
