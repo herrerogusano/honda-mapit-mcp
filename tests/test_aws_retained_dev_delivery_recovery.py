@@ -49,7 +49,13 @@ class Journal:
 
 def _snapshot():
     stream = io.BytesIO()
-    with zipfile.ZipFile(stream, "w") as archive: archive.writestr("index.py", HANDLER_CODE)
+    with zipfile.ZipFile(stream, "w") as archive:
+        # A restarted coordinator reconstructs the same accepted artifact.
+        # ZipFile's implicit current DOS timestamp otherwise changes the ZIP
+        # digest across a two-second boundary and correctly invalidates its
+        # journal binding, making this recovery test time-dependent.
+        info = zipfile.ZipInfo("index.py", date_time=(2030, 1, 1, 0, 0, 0))
+        archive.writestr(info, HANDLER_CODE)
     body = stream.getvalue(); template = json.dumps(build_retained_dev_template(), sort_keys=True, separators=(",", ":")).encode()
     return PriorCodeSnapshot(body, template, hashlib.sha256(body).hexdigest(), hashlib.sha256(template).hexdigest(), 1_893_456_100)
 
@@ -111,6 +117,15 @@ def _coordinator(journal=None, *, ambiguous=False, wrong_event=False, omit_role=
     clients = {"sts": Sts(), "cloudformation": cfn, "lambda": Lambda(cfn, snapshot), "apigatewayv2": Api(), "s3": S3(snapshot.archive_bytes)}
     coordinator = RetainedDevRecoveryCoordinator(clients, journal or Journal(), account_id=ACCOUNT, stack_arn=STACK, api_id=API, run_id=RUN, source_sha=SOURCE, current_build_receipt=receipt, recovery_template=recovery, recovery_artifact=artifact, expected_caller_arn=CALLER, authorized_from_epoch=1_893_455_000, authorized_until_epoch=1_893_458_000, wall_clock=wall, monotonic=lambda: 1.0)
     return coordinator, cfn, clients, snapshot
+
+
+def test_restart_fixture_snapshot_is_deterministic_across_reconstruction(monkeypatch):
+    monkeypatch.setattr(zipfile.time, "localtime", lambda *_: (2030, 1, 1, 0, 0, 0, 1, 1, -1))
+    first = _snapshot()
+    monkeypatch.setattr(zipfile.time, "localtime", lambda *_: (2030, 1, 1, 0, 0, 2, 1, 1, -1))
+    second = _snapshot()
+    assert first.zip_sha256 == second.zip_sha256
+    assert first.archive_bytes == second.archive_bytes
 
 
 def test_closed_recovery_updates_template_once_and_reads_exact_closed_state():
