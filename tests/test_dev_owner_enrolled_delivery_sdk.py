@@ -294,16 +294,88 @@ def test_clock_failure_permanently_invalidates_adapter_before_write():
     adapter.clock = lambda: wall[0]
     adapter.monotonic = lambda: mono[0]
     adapter._last_wall = wall[0]
-    adapter._started_mono = adapter._last_mono = mono[0]
+    adapter._session_started_mono = adapter._last_mono = mono[0]
     wall[0] -= 1
     with pytest.raises(OwnerEnrolledDeliverySdkError, match="window_closed"):
         adapter.update_once(h.auth["stack_id"], target, f"owner-enrolled-{h.auth['run_id']}",
                             h.auth["service_role_arn"])
     wall[0] += 10
-    with pytest.raises(OwnerEnrolledDeliverySdkError, match="window_closed"):
+    with pytest.raises(OwnerEnrolledDeliverySdkError, match="update_write_unknown"):
         adapter.update_once(h.auth["stack_id"], target, f"owner-enrolled-{h.auth['run_id']}",
                             h.auth["service_role_arn"])
     assert all(not client.calls for client in clients.values())
+
+
+def test_operation_budget_starts_after_long_preflight_and_is_fresh_for_update():
+    h, clients, adapter, target, _target_sha = _setup()
+    h.coordinator._publish_once = adapter.publish_once
+    h.coordinator._update_once = adapter.update_once
+    digest = hashlib.sha256(h.archive).hexdigest()
+    import base64
+    clients["s3"].head = {
+        "ResponseMetadata": {"HTTPStatusCode": 200}, "ContentLength": len(h.archive),
+        "ChecksumSHA256": base64.b64encode(bytes.fromhex(digest)).decode("ascii"),
+        "ServerSideEncryption": "AES256", "ContentType": "application/zip",
+    }
+    assert h.coordinator.preflight()["phase"] == "ready"
+
+    # The adapter has been idle for longer than its per-operation allowance;
+    # the absolute authorization window remains live.
+    h.wall += 40
+    h.mono += 40
+    assert h.coordinator.publish()["phase"] == "published"
+    assert len([c for c in clients["s3"].calls if c[0] == "put_object"]) == 1
+
+    # An additional idle interval does not consume the distinct update step.
+    h.wall += 40
+    h.mono += 40
+    assert h.coordinator.update()["phase"] == "acknowledged"
+    assert len([c for c in clients["cloudformation"].calls if c[0] == "update_stack"]) == 1
+
+
+def test_absolute_authority_expiry_still_blocks_operation_without_sdk_calls():
+    h, clients, adapter, _target, _target_sha = _setup()
+    h.wall = h.auth["authorized_until_epoch"]
+    with pytest.raises(OwnerEnrolledDeliverySdkError, match="window_closed"):
+        adapter.publish_once({"authority": h.auth}, b"archive")
+    assert adapter.calls == 0
+    assert all(not client.calls for client in clients.values())
+
+
+def test_elapsed_time_inside_one_operation_blocks_before_put_and_is_sticky():
+    h, clients, adapter, _target, _target_sha = _setup()
+    monotonic = [h.mono]
+    adapter.monotonic = lambda: monotonic[0]
+    original_identity = clients["sts"].get_caller_identity
+
+    def delayed_identity(**kwargs):
+        response = original_identity(**kwargs)
+        monotonic[0] += 30.0
+        return response
+
+    clients["sts"].get_caller_identity = delayed_identity
+    with pytest.raises(OwnerEnrolledDeliverySdkError, match="window_closed"):
+        adapter.publish_once({"authority": h.auth}, b"archive")
+    assert not [call for call in clients["s3"].calls if call[0] == "put_object"]
+    with pytest.raises(OwnerEnrolledDeliverySdkError, match="artifact_write_unknown"):
+        adapter.publish_once({"authority": h.auth}, b"archive")
+    assert not [call for call in clients["s3"].calls if call[0] == "put_object"]
+
+
+def test_session_monotonic_rollback_and_aggregate_call_budget_remain_fenced():
+    h, clients, adapter, _target, _target_sha = _setup()
+    h.mono -= 1
+    with pytest.raises(OwnerEnrolledDeliverySdkError, match="window_closed"):
+        adapter.publish_once({"authority": h.auth}, b"archive")
+    assert adapter.calls == 0
+    assert all(not client.calls for client in clients.values())
+
+    h2, clients2, adapter2, _target2, _target_sha2 = _setup()
+    adapter2.calls = 48
+    with pytest.raises(OwnerEnrolledDeliverySdkError, match="call_budget_exhausted"):
+        adapter2.publish_once({"authority": h2.auth}, b"archive")
+    assert adapter2.calls == 48
+    assert all(not client.calls for client in clients2.values())
 
 
 def test_forged_clone_and_changed_client_identity_are_unregistered():

@@ -274,13 +274,20 @@ class OwnerEnrolledDeliverySdk:
             now_wall, now_mono = self._read_clocks()
             if not self.authority["authorized_from_epoch"] <= now_wall < self.authority["authorized_until_epoch"]:
                 raise ValueError
-            self._started_mono = self._last_mono = now_mono
+            self._session_started_mono = self._last_mono = now_mono
+            self._session_window_seconds = max(
+                0.0, self.authority["authorized_until_epoch"] - now_wall)
             self._last_wall = now_wall
             self._invalidated = False
             self.calls = 0
+            self._publish_started = False
+            self._update_started = False
             self._publish_attempted = False
             self._update_attempted = False
             self._write_lock = threading.Lock()
+            self._operation_lock = threading.Lock()
+            self._active_operation = None
+            self._operation_started_mono = None
         except OwnerEnrolledDeliverySdkError:
             raise
         except Exception:
@@ -307,13 +314,49 @@ class OwnerEnrolledDeliverySdk:
             wall, mono = self._read_clocks()
             if (wall < self._last_wall or mono < self._last_mono
                     or not self.authority["authorized_from_epoch"] <= wall < self.authority["authorized_until_epoch"]
-                    or mono - self._started_mono >= _MAX_STEP_SECONDS):
+                    or mono - self._session_started_mono >= self._session_window_seconds
+                    or (self._active_operation is not None
+                        and (self._operation_started_mono is None
+                             or mono - self._operation_started_mono >= _MAX_STEP_SECONDS))):
                 self._invalidated = True
                 _fail("window_closed")
         except OwnerEnrolledDeliverySdkError:
             self._invalidated = True
             raise
         self._last_wall, self._last_mono = wall, mono
+
+    def _begin_operation(self, which: str) -> None:
+        if which not in ("publish", "update"):
+            _fail("binding_invalid")
+        if not self._operation_lock.acquire(blocking=False):
+            # A concurrent invocation consumes its own callback allowance as
+            # well: another thread must not be able to retry it after the
+            # active operation releases the lock.
+            with self._write_lock:
+                field = "_publish_started" if which == "publish" else "_update_started"
+                setattr(self, field, True)
+            _fail("artifact_write_unknown" if which == "publish" else "update_write_unknown")
+        field = "_publish_started" if which == "publish" else "_update_started"
+        try:
+            with self._write_lock:
+                if getattr(self, field) or self._active_operation is not None:
+                    _fail("artifact_write_unknown" if which == "publish" else "update_write_unknown")
+                setattr(self, field, True)
+            # Consume the callback before checking its clocks so even a failed
+            # pre-dispatch attempt cannot be replayed. The 30-second step
+            # budget starts at this operation's validated entry, not adapter construction.
+            self._guard()
+            self._active_operation = which
+            self._operation_started_mono = self._last_mono
+        except Exception:
+            self._operation_lock.release()
+            raise
+
+    def _end_operation(self, which: str) -> None:
+        if self._active_operation == which:
+            self._active_operation = None
+            self._operation_started_mono = None
+            self._operation_lock.release()
 
     def _call(self, service: str, method: str, **kwargs):
         self._guard()
@@ -405,29 +448,33 @@ class OwnerEnrolledDeliverySdk:
             bucket = self.authority["artifact_bucket"]
             key = f"runtime/{digest}.zip"
             checksum = base64.b64encode(bytes.fromhex(digest)).decode("ascii")
-            self._before_write()
-            self._claim_write("publish")
-            put = self._call("s3", "put_object", Bucket=bucket, Key=key, Body=archive,
-                IfNoneMatch="*", ExpectedBucketOwner=self.authority["account_id"],
-                ServerSideEncryption="AES256", ChecksumSHA256=checksum, ContentType="application/zip")
-            if not _status(put):
-                _fail("artifact_write_unknown")
-            head = self._call("s3", "head_object", Bucket=bucket, Key=key,
-                ChecksumMode="ENABLED", ExpectedBucketOwner=self.authority["account_id"])
-            if (type(head.get("ContentLength")) is not int or head["ContentLength"] != len(archive)
-                    or head.get("ChecksumSHA256") != checksum
-                    or head.get("ServerSideEncryption") != "AES256"
-                    or head.get("ContentType") != "application/zip"):
-                _fail("artifact_readback_unverified")
-            self._after_write()
-            return {
-                "status": "verified", "bucket": bucket, "key": key, "sha256": digest,
-                "size_bytes": len(archive), "expected_bucket_owner": self.authority["account_id"],
-                "server_side_encryption": "AES256", "if_none_match": "*",
-                "put_http_status": 200, "head_http_status": 200,
-                "head_checksum_sha256": checksum, "head_content_length": len(archive),
-                "head_server_side_encryption": "AES256",
-            }
+            self._begin_operation("publish")
+            try:
+                self._before_write()
+                self._claim_write("publish")
+                put = self._call("s3", "put_object", Bucket=bucket, Key=key, Body=archive,
+                    IfNoneMatch="*", ExpectedBucketOwner=self.authority["account_id"],
+                    ServerSideEncryption="AES256", ChecksumSHA256=checksum, ContentType="application/zip")
+                if not _status(put):
+                    _fail("artifact_write_unknown")
+                head = self._call("s3", "head_object", Bucket=bucket, Key=key,
+                    ChecksumMode="ENABLED", ExpectedBucketOwner=self.authority["account_id"])
+                if (type(head.get("ContentLength")) is not int or head["ContentLength"] != len(archive)
+                        or head.get("ChecksumSHA256") != checksum
+                        or head.get("ServerSideEncryption") != "AES256"
+                        or head.get("ContentType") != "application/zip"):
+                    _fail("artifact_readback_unverified")
+                self._after_write()
+                return {
+                    "status": "verified", "bucket": bucket, "key": key, "sha256": digest,
+                    "size_bytes": len(archive), "expected_bucket_owner": self.authority["account_id"],
+                    "server_side_encryption": "AES256", "if_none_match": "*",
+                    "put_http_status": 200, "head_http_status": 200,
+                    "head_checksum_sha256": checksum, "head_content_length": len(archive),
+                    "head_server_side_encryption": "AES256",
+                }
+            finally:
+                self._end_operation("publish")
         except OwnerEnrolledDeliverySdkError:
             raise
         except Exception:
@@ -448,16 +495,20 @@ class OwnerEnrolledDeliverySdk:
             # must pin this exact target before this method can be invoked.
             if target_sha != self.target_template_sha256:
                 _fail("binding_invalid")
-            self._before_write()
-            self._claim_write("update")
-            reply = self._call("cloudformation", "update_stack", StackName=stack_id,
-                TemplateBody=target_body.decode("ascii"), RoleARN=role_arn,
-                Capabilities=["CAPABILITY_NAMED_IAM"], ClientRequestToken=token)
-            if reply.get("StackId") != stack_id:
-                _fail("update_write_unknown")
-            self._after_write()
-            return {"status": "acknowledged", "http_status": 200, "stack_id": stack_id,
-                    "client_request_token": token, "target_template_sha256": target_sha}
+            self._begin_operation("update")
+            try:
+                self._before_write()
+                self._claim_write("update")
+                reply = self._call("cloudformation", "update_stack", StackName=stack_id,
+                    TemplateBody=target_body.decode("ascii"), RoleARN=role_arn,
+                    Capabilities=["CAPABILITY_NAMED_IAM"], ClientRequestToken=token)
+                if reply.get("StackId") != stack_id:
+                    _fail("update_write_unknown")
+                self._after_write()
+                return {"status": "acknowledged", "http_status": 200, "stack_id": stack_id,
+                        "client_request_token": token, "target_template_sha256": target_sha}
+            finally:
+                self._end_operation("update")
         except OwnerEnrolledDeliverySdkError:
             raise
         except Exception:

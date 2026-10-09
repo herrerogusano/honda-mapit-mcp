@@ -1,5 +1,32 @@
 # Project Agent Workflow
 
+Consumed owner delivery checkpoint, 2026-10-09: PR #104 merged normally at
+develop cbe749b after eight source checks (37980389712); all eight integrated
+checks passed (37981159745). Frozen suite: 4,587 passed/twelve skips, compilation
+and model-free evaluation 12/12. A new closed delivery stopped at
+artifact_write_unknown: artifact journal intent, update journal ready. Never
+resume/replay it or infer permission from an absent object. Seven independent
+readonly reconciliation calls confirmed exact identity, closed API, reserve zero,
+UPDATE_COMPLETE, nineteen resources, unchanged prior template and exact object
+HEAD 404. No accepted publication, runtime update, opening or login followed.
+Independent offline reproductions show the SDK's constructor-anchored 30-second
+deadline can expire during coordinator readbacks, yielding the same unknown
+category before any SDK dispatch. This is an established composition defect,
+not proof of the live attempt's dispatch count or provider failure. Review a
+per-operation 30-second deadline with unchanged exclusive authority cutoff,
+rollback checks, aggregate call cap and sticky one-shot/concurrent fences.
+No historical journal/schema/receipt may change. A separate fresh owner decision,
+source CI/protections and reviewed private authority precede any new live attempt.
+The offline correction starts a separate 30-second budget at each validated
+SDK write operation, retains a session monotonic cap bounded by remaining
+authority lifetime, and preserves the shared 48-call cap and registered bundle.
+Sticky callback-start flags plus a nonblocking operation lock fence repeats and
+concurrent/reentrant calls even before dispatch. Focused SDK/core/runner tests
+pass 46 cases, including a real coordinator with long preflight and inter-step
+idle. Independent review/full frozen source verification remain required.
+Production/MFA/MAPIT/Telegram/quota ten remain unchanged. Remove owned temporary
+wakefulness before handoff.
+
 Readonly follow-up after PR #103, 2026-10-09: normally merged develop c072f5d,
 source CI 37979094204 eight green; 4,568 local tests/twelve skips and evaluation
 12/12 passed. Actual current-state construction now passes, but the readonly
