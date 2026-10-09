@@ -30,6 +30,25 @@ before key publication: current bootstrap verification requires MAPIT config
 and session paths still absent. This preparation is not an invitation receipt,
 login, artifact deployment or production promotion.
 
+The first actual invitation attempt on develop `b7be46f` stopped after 28
+readonly SDK calls, before any durable intent or conditional write: its local
+guard omitted the bootstrap verifier's exact singleton binding-document read.
+The correction permits only that second table/key read pair, with strong
+consistency and the original exact request shape. The sole writer remains the
+original authorization-table owner row. A regression composes the real bootstrap
+readback through this guard instead of replacing that adapter with a mock.
+The failed private envelope is retained; another attempt requires reviewed
+source, green integrated CI, fresh protections and a new authority.
+
+`prepare_dev_mapit_key_private.py` prepares only ACL-private public MAPIT config
+and a fresh publication authority. It validates one bounded retained release
+snapshot, selects exactly the public configuration fields, parses accepted old
+bootstrap evidence without executing it, and checks source/protections before
+creating exclusive files. It generates no binding keys and reads no sessions.
+Partial output is retained on expiry or failure. The separate key publisher
+must still verify live state and consume its own one-shot intent; preparation
+is neither key publication nor permission to replay historical state.
+
 The owner requested completing preparation/integration up to a consenting second
 real MAPIT account, and authorized a **separate real-config DEV namespace** with
 its own keys/secrets and minimum read permissions, within the existing gross

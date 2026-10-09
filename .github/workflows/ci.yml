@@ -132,7 +132,9 @@ jobs:
       - name: Test assisted owner login without credentials or network
         run: python -m pytest -q tests/test_dev_owner_assisted_login.py tests/test_dev_owner_assisted_login_independent.py tests/test_dev_owner_login_context.py tests/test_run_dev_owner_assisted_login.py
       - name: Test one-shot owner invitation and frozen SDK credentials offline
-        run: python -m pytest -q tests/test_run_dev_owner_invitation.py tests/test_run_dev_owner_invitation_independent.py
+        run: python -m pytest -q tests/test_run_dev_owner_invitation.py tests/test_run_dev_owner_invitation_independent.py tests/test_dev_owner_invitation_bootstrap_reads.py tests/test_dev_owner_invitation_bootstrap_reads_independent.py
+      - name: Test private public-config key-publication preparation offline
+        run: python -m pytest -q tests/test_prepare_dev_mapit_key_private.py tests/test_prepare_dev_mapit_key_private_independent.py tests/test_run_dev_owner_assisted_login.py
       - name: Audit pinned SDK dependencies (networked advisory lookup only)
         run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/shutdown-requirements.txt --progress-spinner off --timeout 20 --desc off
   test:
