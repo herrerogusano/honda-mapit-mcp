@@ -327,7 +327,7 @@ def test_positive_invitation_is_single_owner_cas_with_exact_readback(tmp_path, m
 
 
 def test_default_client_factory_freezes_one_explicit_credential_tuple_for_all_clients(monkeypatch):
-    from botocore.config import Config
+    Config = pytest.importorskip("botocore.config").Config
 
     for name in list(os.environ):
         if name.casefold().startswith("aws_") and any(
