@@ -778,13 +778,16 @@ def _verify_authorization_table(view, authority, template, rows, *, expected_run
     table_arn = f"arn:aws:dynamodb:{_REGION}:{authority['account_id']}:table/{_AUTH_TABLE}"
     table = view["dynamodb"].describe_table(TableName=_AUTH_TABLE).get("Table")
     props = template["Resources"]["McpTenantsTable"]["Properties"]
+    expected_deletion_protection = props.get("DeletionProtectionEnabled", False)
     if (not isinstance(table, Mapping) or table.get("TableName") != _AUTH_TABLE
             or table.get("TableArn") != table_arn or table.get("TableStatus") != "ACTIVE"
             or table.get("BillingModeSummary", {}).get("BillingMode") != props.get("BillingMode")
             or table.get("OnDemandThroughput") != props.get("OnDemandThroughput")
             or table.get("KeySchema") != props.get("KeySchema")
             or table.get("AttributeDefinitions") != props.get("AttributeDefinitions")
-            or table.get("DeletionProtectionEnabled") is not True
+            or type(expected_deletion_protection) is not bool
+            or type(table.get("DeletionProtectionEnabled")) is not bool
+            or table["DeletionProtectionEnabled"] is not expected_deletion_protection
             or table.get("SSEDescription") is not None
             or table.get("GlobalSecondaryIndexes") not in (None, [])
             or table.get("LocalSecondaryIndexes") not in (None, [])):

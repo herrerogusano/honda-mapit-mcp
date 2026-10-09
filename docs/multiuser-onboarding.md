@@ -11,6 +11,16 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+PR #103 integrated the two namespace-consumer corrections at `c072f5d` after
+eight green source checks and 4,568 local tests/twelve skips. Actual readonly
+current-state construction passed, but its preflight stopped after five reads:
+the authorization-table verifier hardcoded deletion protection true while the
+accepted template omits it (effective default false). A separate predicate-only
+diagnostic isolated that mismatch; it is not full preflight acceptance. Correct
+the reader to require strict boolean equality with the template-effective value;
+do not change the table, immutable template, permissions or historical receipts.
+No new authority, AWS write, runtime update, API opening or human login occurred.
+
 PR #102 is integrated at develop `bb601f9` with all eight source checks
 (37975506967) and integrated checks (37975988155) green; the frozen local suite
 passed 4,564 tests with twelve environment skips. One actual preparation stopped

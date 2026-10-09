@@ -597,6 +597,72 @@ def test_owner_enrolled_current_state_constructor_runs_real_pre_and_accepted_pha
         fixture["delivery"].auth["owner_tenant_key"]]
 
 
+@pytest.mark.parametrize(
+    ("template_enabled", "observed", "accepted"),
+    [
+        (None, False, True),   # omitted CloudFormation property defaults off
+        (None, True, False),   # drift from the omitted/default value
+        (None, 0, False),      # bool-like values are not SDK booleans
+        (True, True, True),    # explicit template opt-in is compared exactly
+        (True, False, False),  # explicit setting drift
+        (False, False, True),  # explicit off remains off
+        (False, True, False),
+    ],
+)
+def test_authorization_table_deletion_protection_matches_template_default(
+        template_enabled, observed, accepted):
+    table_name = "honda-mapit-mcp-dev-tenants"
+    account = "123456789012"
+    props = {
+        "BillingMode": "PAY_PER_REQUEST",
+        "OnDemandThroughput": {"MaxReadRequestUnits": 10, "MaxWriteRequestUnits": 1},
+        "KeySchema": [{"AttributeName": "key", "KeyType": "HASH"}],
+        "AttributeDefinitions": [{"AttributeName": "key", "AttributeType": "S"}],
+    }
+    if template_enabled is not None:
+        props["DeletionProtectionEnabled"] = template_enabled
+    table = {
+        "TableName": table_name,
+        "TableArn": f"arn:aws:dynamodb:eu-west-1:{account}:table/{table_name}",
+        "TableStatus": "ACTIVE",
+        "BillingModeSummary": {"BillingMode": "PAY_PER_REQUEST"},
+        "OnDemandThroughput": props["OnDemandThroughput"],
+        "KeySchema": props["KeySchema"],
+        "AttributeDefinitions": props["AttributeDefinitions"],
+        "DeletionProtectionEnabled": observed,
+        "SSEDescription": None,
+        "GlobalSecondaryIndexes": [],
+        "LocalSecondaryIndexes": [],
+        "TableId": "12345678-1234-1234-1234-123456789abc",
+    }
+
+    class Dynamo:
+        def describe_table(self, **_kwargs):
+            return {"Table": table}
+
+        def list_tags_of_resource(self, **_kwargs):
+            return {"Tags": [
+                {"Key": "Project", "Value": "honda-mapit-mcp"},
+                {"Key": "Environment", "Value": "dev"},
+                {"Key": "Purpose", "Value": "multiuser-authorization"},
+                {"Key": "OperatorRunId", "Value": "7"},
+            ]}
+
+    authority = {"account_id": account, "stack_id":
+        f"arn:aws:cloudformation:eu-west-1:{account}:stack/honda-mapit-mcp-dev-retained/"
+        "12345678-1234-1234-1234-123456789abc"}
+    rows = {"McpTenantsTable": {"PhysicalResourceId": table_name}}
+    view = {"dynamodb": Dynamo()}
+    template = {"Resources": {"McpTenantsTable": {"Properties": props}}}
+    if accepted:
+        assert readback._verify_authorization_table(
+            view, authority, template, rows, expected_run_id=7) == table["TableId"]
+    else:
+        with pytest.raises(readback.OwnerEnrolledReadbackError):
+            readback._verify_authorization_table(
+                view, authority, template, rows, expected_run_id=7)
+
+
 def _bootstrap_receipt_digest(authority, state, template_sha256):
     from scripts.run_dev_mapit_binding_key_setup import _digest
     return _digest({"authority_sha256": authority._binding_sha256,
@@ -825,7 +891,8 @@ class _OwnerEnrolledSdkScenario:
                     "TableArn": f"arn:aws:dynamodb:{_REGION}:{self.account}:table/{_AUTH_TABLE}",
                     "TableStatus": "ACTIVE", "BillingModeSummary":{"BillingMode":props["BillingMode"]},
                     "OnDemandThroughput":props["OnDemandThroughput"], "KeySchema":props["KeySchema"],
-                    "AttributeDefinitions":props["AttributeDefinitions"], "DeletionProtectionEnabled":True,
+                    "AttributeDefinitions":props["AttributeDefinitions"],
+                    "DeletionProtectionEnabled":props.get("DeletionProtectionEnabled", False),
                     "SSEDescription":None, "TableId":"33333333-3333-4333-8333-333333333333",
                     "GlobalSecondaryIndexes":[], "LocalSecondaryIndexes":[]})
             if method == "list_tags_of_resource" and table_name == "":
