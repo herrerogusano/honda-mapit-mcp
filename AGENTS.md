@@ -1,5 +1,24 @@
 # Project Agent Workflow
 
+PR #90 merged normally to develop bc90430 with eight green source checks
+(37947840560) and eight integrated checks (37948299259). The owner profile
+passed 4,202 local tests, twelve environment skips, compilation, model-free
+evaluation 12/12 and all 50 pinned network-denied schemas. A fresh separate
+MAPIT bootstrap preflight then stopped at runtime_unverified after 35 SDK
+reads, before any create intent or AWS write. A bounded readonly diagnostic
+identified TypeError at the full resource-summary JSON digest: native SDK
+datetime timestamps are not JSON serializable. Preserve this unused/failed
+private envelope; do not extend its window or infer runtime acceptance.
+Correct only the native structured comparison, preserving every row field,
+then require independent SDK-shaped holdouts, fresh source CI/protections and
+new private authority before another preflight/create. Production and prior
+synthetic journals remain unchanged; no new keys or invitation were published.
+The narrow comparison repair passed independent review and five SDK-shaped
+positive/drift holdouts, 33 focused tests and the complete frozen repair suite:
+4,207 passed, twelve environment skips; compilation and evaluation 12/12.
+The separate unfinished invitation runner/tests were excluded from this repair
+checkpoint and are not part of its acceptance. Fresh source CI is still pending.
+
 PR #89 merged normally to develop c005772 after eight green source checks
 (37945444220). At this preparation checkpoint GitHub has not emitted the
 integrated push CI run; do not substitute the PR run or weaken source gates.
