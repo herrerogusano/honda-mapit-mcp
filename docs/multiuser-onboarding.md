@@ -11,6 +11,25 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The separate MAPIT namespace bootstrap is now accepted on develop `0f11fee`,
+after eight source and eight integrated checks. The one creation intent is
+consumed; exact readback accepted four new resources and a separate nine-call
+readonly check confirmed the same TableId, closed API, reserve zero, nineteen
+original app resources and absent MAPIT config metadata. No keys, owner
+authorization row, real MAPIT session or business E2E follows from this receipt.
+Keep the bootstrap-authorized owner key fixed for the following operations.
+
+The independently reviewed one-shot owner invitation operator is prepared
+offline. It binds original trusted owner metadata, accepted OAuth/bootstrap
+receipts, fresh source/CI/protections and one frozen SDK credential snapshot.
+Its sole conditional write targets the original authorization table, never the
+new MACed identity-binding table. A durable intent precedes fresh closure,
+absence and STS checks; an unknown write stays consumed. Private preparation
+rejects historical-tree overlap and retains partial files. Execute invitation
+before key publication: current bootstrap verification requires MAPIT config
+and session paths still absent. This preparation is not an invitation receipt,
+login, artifact deployment or production promotion.
+
 The owner requested completing preparation/integration up to a consenting second
 real MAPIT account, and authorized a **separate real-config DEV namespace** with
 its own keys/secrets and minimum read permissions, within the existing gross
