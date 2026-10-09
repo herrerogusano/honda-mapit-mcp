@@ -1,5 +1,20 @@
 # Project Agent Workflow
 
+Readonly follow-up after PR #103, 2026-10-09: normally merged develop c072f5d,
+source CI 37979094204 eight green; 4,568 local tests/twelve skips and evaluation
+12/12 passed. Actual current-state construction now passes, but the readonly
+preflight stopped after five reads at the authorization-table comparison. A
+separate three-read predicate diagnostic isolated only the hardcoded expectation
+DeletionProtectionEnabled=True: the accepted original table template omits that
+property (documented effective default false). The fixture had invented true.
+Require strict bool actual and template-effective expected values with exact
+equality, not a table update or accepting missing/malformed SDK values. The
+predicate-only diagnostic's generic trailing label is not full preflight evidence.
+Thirty-three explicit SDK reads are known across this diagnostic block; no AWS
+write, fresh authority, publication, update or opening followed. Preserve all
+historical inputs and the unused local archive. Fresh review/CI and successful
+real readonly preflight still precede a new closed delivery.
+
 Real owner delivery preparation checkpoint, 2026-10-09: PR #102 merged normally
 to develop bb601f9 after eight source checks (37975506967); all eight integrated
 checks passed (37975988155). Frozen suite: 4,564 passed/twelve skips, compilation
