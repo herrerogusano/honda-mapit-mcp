@@ -1,5 +1,24 @@
 # Project Agent Workflow
 
+PR #89 merged normally to develop c005772 after eight green source checks
+(37945444220). At this preparation checkpoint GitHub has not emitted the
+integrated push CI run; do not substitute the PR run or weaken source gates.
+The clean cloud checkout is pinned to that merge, and no live bootstrap or key
+publication has followed. The next owner-enrolled runtime profile is accepted
+offline: exact prior/namespace reconstruction, same bootstrap-authorized owner
+key, nineteen resources, API disabled and reservation zero; no alternate
+authorizer, synthetic-account reset, row mutation or cloud call. Its manifest
+owner pool/client/subject still needs binding to accepted OAuth/original owner
+receipts by the live operator. Single-issuer owner mode preserves historical
+A/B resources but not their authentication through that mode. Fresh CI, actual
+invitation, artifact/update/readbacks and bounded E2E remain separate work.
+Frozen owner-profile follow-up: 4,202 tests passed with twelve environment
+skips; compilation, model-free evaluation 12/12 and all 50 pinned official
+network-denied schemas passed. W2001 was corrected by retaining the existing
+ObservedApiId Ref, not by suppressing the rule or removing its parameter.
+Both static inventory tests include the new component and retain their guards.
+Independent review accepted the Ref correction and public-only schema fixture.
+
 Fresh MAPIT key-publication operator preparation, 2026-10-09: the separate
 runner binds a new source/CI/protection authorization and journal to exact
 current four-resource bootstrap and nineteen-resource closed runtime readbacks.

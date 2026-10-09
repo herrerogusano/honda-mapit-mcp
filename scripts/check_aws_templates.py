@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import base64
 import os
 import re
 import socket
@@ -365,7 +366,53 @@ def fixed_documents() -> dict[str, str]:
         callback_url="http://localhost:39031/callback",
         subjects=("12345678-1234-4234-8234-123456789abc", "22345678-1234-4234-8234-123456789abc"),
         tenant_keys=("tenant-" + "a" * 64, "tenant-" + "b" * 64)))
+    documents["retained_dev_owner_enrolled_runtime"] = json.dumps(
+        _fixed_owner_enrolled_document(json.loads(documents["retained_dev_multiuser_runtime"]))
+    )
     return documents
+
+
+def _fixed_owner_enrolled_document(prior: dict) -> dict:
+    """Public-only synthetic schema inputs; no private keys or signing operation."""
+    from scripts.dev_owner_enrolled_runtime import build_owner_enrolled_dev_runtime_target
+    from scripts.build_aws_dev_mapit_binding_bootstrap import build_dev_mapit_binding_bootstrap
+
+    def public_jwks(label: str, offset: int) -> bytes:
+        # Deliberately synthetic public moduli, not generated private key pairs.
+        modulus = ((1 << 2048) - offset).to_bytes(256, "big")
+        return json.dumps({"keys": [{"kid": label, "kty": "RSA", "alg": "RS256", "use": "sig",
+            "n": base64.urlsafe_b64encode(modulus).rstrip(b"=").decode("ascii"),
+            "e": "AQAB"}]}, separators=(",", ":")).encode("ascii")
+
+    invitation, mapit = public_jwks("synthetic-invitation", 159), public_jwks("synthetic-mapit", 189)
+    owner_key = "tenant-" + "c" * 64
+    bootstrap = build_dev_mapit_binding_bootstrap(
+        account_id="123456789012", operator_user_arn="arn:aws:iam::123456789012:user/synthetic-operator",
+        tenant_keys=(owner_key,), excluded_tenant_keys=("tenant-" + "a" * 64, "tenant-" + "b" * 64),
+        ssm_key_arn="arn:aws:kms:eu-west-1:123456789012:key/11111111-1111-1111-1111-111111111111")
+    manifest = {
+        "schema": 1, "builder": "build_dev_enrolled_archive", "environment": "dev", "mode": "mapit-enrolled",
+        "source_sha": "4" * 40, "api_id": "a1b2c3d4e5", "user_pool_id": "eu-west-1_Owner12345",
+        "client_id": "SyntheticOwnerClient123",
+        "invitation_jwks_sha256": hashlib.sha256(invitation).hexdigest(),
+        "mapit_jwks_sha256": hashlib.sha256(mapit).hexdigest(),
+        "authorization_table_arn": "arn:aws:dynamodb:eu-west-1:123456789012:table/honda-mapit-mcp-dev-tenants",
+        "binding_table_arn": "arn:aws:dynamodb:eu-west-1:123456789012:table/honda-mapit-mcp-dev-mapit-identity-bindings",
+        "key_parameter_path": "/honda-mapit-mcp/dev/mapit-identity-binding-config",
+        "key_publication_start_epoch": 1893455900, "key_publication_end_epoch": 1893456500,
+        "mapit_config": {"region": "eu-west-1", "user_pool_id": "eu-west-1_Mapit12345",
+            "user_pool_client_id": "SyntheticMapitClient123",
+            "identity_pool_id": "eu-west-1:11111111-2222-4333-8444-555555555555",
+            "core_api_url": "https://core.prod.mapit.me", "geo_api_url": "https://geo.prod.mapit.me",
+            "frontend_url": "https://app.mapit.me/", "discovery_enabled": False, "http_timeout": 2},
+        "tenants": [{"key": owner_key, "subject": "32345678-1234-4234-8234-123456789abc"}],
+    }
+    raw = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("ascii")
+    return build_owner_enrolled_dev_runtime_target(
+        prior_template=prior, mapit_bootstrap_template=bootstrap, manifest_raw=raw,
+        invitation_jwks=invitation, mapit_jwks=mapit, manifest_sha256=hashlib.sha256(raw).hexdigest(),
+        account_id="123456789012", source_sha="4" * 40, zip_sha256="5" * 64,
+        execution_start_epoch=1893456000, execution_end_epoch=1893456300)
 
 
 def check_documents(documents: dict[str, str], lint: Callable) -> dict:
