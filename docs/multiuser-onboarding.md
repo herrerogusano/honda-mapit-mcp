@@ -96,6 +96,30 @@ test. Retention and exact reconciliation remain mandatory after ambiguous writes
 
 ### Approved isolated owner OAuth client — 2026-10-09
 
+**Actual cloud checkpoint:** PR #81 merged normally to develop `2118d9b` after
+eight green PR checks (CI 37922442130) and eight integrated checks (CI
+37922805228). Frozen suite: 3,968 passed/twelve skips; 73 focused checks,
+compilation, deterministic evaluation 12/12 and 49 network-denied schemas pass.
+Fresh preparation/preflight/create/readback completed with 16/18/33/23 calls.
+Only one `CreateStack` was dispatched; its intent is consumed. The new retained
+stack has exactly three complete resources, and the old pool/domain/MFA/clients
+and closed nineteen-resource application match the pinned pre-create context.
+Independent receipt review and 22 bounded metadata reads accepted that unchanged
+context, the three owned resources and the exact candidate readback digest.
+No real login or MAPIT session operation followed. The registered assisted
+callback is not yet a listener or a Codex callback registration. Do not replay
+this operation, reset users or confuse infrastructure acceptance with onboarding.
+
+The remaining real-account deployment is not a replay of the synthetic E2E.
+The MAPIT factory/schema-two namespace and runtime/archive source exist, but
+their exact bootstrap/key-publication, private manifest and closed-runtime
+delivery operators are not ready. A fresh owner invitation also needs its own
+exact authorization-table grant and runtime read permission: the old technical
+A/B keys/grants are immutable and cannot authorize a new real identity. The
+assisted PKCE listener/token exchange is another explicit missing integration;
+registering a callback is not evidence of a working login. Do not ask for guest
+credentials or substitute historical users while these seams remain unverified.
+
 The owner approved a DEV-exclusive public OAuth client in the existing permanent
 identity pool, reusing the same user and enrolled MFA. The separate stack owns
 only a DEV resource server, code/PKCE client and Cognito-provided managed-login
