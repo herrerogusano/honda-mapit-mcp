@@ -471,6 +471,42 @@ bounded first-page evidence are required. The coordinator deliberately needs
 trusted adapters for fresh source/protections and the complete current runtime:
 injected successful fixtures are not cloud acceptance or deployment authority.
 
+`dev_mapit_runtime_evidence.py` supplies the separate read-only adapter. Its
+private bundle binds the entire fresh context, exact MAPIT plan and immutable
+historical file digests. The old coordinator is used only as a strict receipt
+parser. All actual handler policies are read and validated before exposing a
+cached three-policy view to the unchanged historical runtime verifier; full
+policy/trust inventory, API closure, zero reservation and caller identity are
+then freshly checked again. Pagination, cross-service clock rollback, failed
+reads, drift and the 64-read/25-second limits fail closed.
+
+`prepare_dev_mapit_bootstrap_private.py` creates only fresh ACL-private local
+metadata after source/CI and protection checks. It creates one opaque tenant
+path disjoint from historical synthetic keys, never binding cryptographic keys
+or MAPIT credentials. Partial files remain retained, without overwrite/retry.
+`run_dev_mapit_bootstrap.py` consumes those reviewed inputs for one explicit
+preflight/create/readback step, rejects historical journal destinations before
+locking, and reports SDK attempts separately from local/GitHub command attempts.
+Preparing files, passing source tests or parsing old receipts does not establish
+current AWS acceptance. Exact reviewed scope/cost and fresh source/protections
+must precede any real bootstrap. Neither operator publishes keys, enrolls MAPIT,
+authenticates the owner, grants a tenant invitation nor opens the API.
+
+The reviewed next bootstrap owns only four resources: its retained on-demand
+DynamoDB table, enrollment role, permissions boundary and read-only attachment.
+It does not add a Lambda or enable the endpoint. Public eu-west-1 Standard
+on-demand rates checked on 2026-10-09 are USD 0.1415/million read units,
+0.705/million write units and 0.283/GB-month beyond the account's storage free
+tier. A reference workload of 1,000 read units, 1,000 write units and 1 MB of
+storage is about USD 0.0012/month excluding other DEV resources, taxes and
+optional services; it is an estimate, not a billing cap. IAM itself adds no
+charge. Future standard-throughput Standard SSM parameters add no Parameter
+Store charge, but key/session publication is not part of this bootstrap.
+Sources: [DynamoDB pricing](https://aws.amazon.com/dynamodb/pricing/),
+[regional public price list](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonDynamoDB/current/eu-west-1/index.json),
+[IAM FAQ](https://aws.amazon.com/iam/faqs/),
+[Parameter Store pricing](https://aws.amazon.com/systems-manager/pricing/).
+
 Runtime archives must include transitive imports, not just their entrypoint.
 The opt-in identity verifier introduced an unconditional `cloud_provider` import
 of `mapit_identity`; both the production and synthetic multiuser source lists

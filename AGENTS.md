@@ -1,5 +1,18 @@
 # Project Agent Workflow
 
+PR #87 merged normally to develop d6b0768 after eight green source checks
+(37940783332) and eight green integrated checks (37941174116). Frozen source:
+4,139 tests passed with twelve environment skips; compilation and model-free
+evaluation 12/12 passed. Separate real-MAPIT runtime/private-operator preparation
+now preserves the frozen synthetic verifier by first validating the full actual
+three/four-policy inventory, projecting only verified legacy policies, and
+rereading the complete IAM inventory and closure afterward. An offline check
+against the original actual private bootstrap receipt passed its strict parser
+with zero AWS calls and unchanged historical bytes. This is provenance evidence,
+not a new cloud preflight or bootstrap acceptance. Fresh authority/source CI,
+protections, private runtime evidence and one-shot journals remain required.
+No real-MAPIT namespace, binding keys or sessions have been published.
+
 PR #86 merged normally to develop 457c75b after eight green source checks
 (37940251010). Frozen packaging source passed 4,122 tests with twelve
 environment skips, compilation and model-free evaluation 12/12. The isolated
