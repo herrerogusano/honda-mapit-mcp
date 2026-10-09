@@ -11,6 +11,39 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+PR #101 merged normally to develop at `3d3e6a7`; its eight source checks
+(37972505452) and eight integrated checks (37973283671) passed. That is source
+acceptance, not an actual owner runtime delivery.
+
+The next increment adds a receipt-bound restart checkpoint before any actual
+owner delivery. The original pre-update template and builder summary are saved
+privately before publication. An accepted-readback callback exclusively persists
+and verifies `observation-capsule.json` before the coordinator can mark its update
+journal accepted. Failure leaves an acknowledged update held for reconciliation;
+it does not permit another update. The v2 runtime-evidence digest binds all
+nineteen resource IDs, authorization TableId, full historical-row hashes in fixed
+logical A/B slots, the original synthetic policy hash, target/archive/context and
+the accepted read-call count. Raw historical tenant selectors, keys, sessions and
+tokens are not copied to the capsule.
+
+`dev_owner_enrolled_accepted_inputs.py` reconstructs the original authority,
+manifest, target and archive using the owning private parsers and the delivery
+constructor only. It unwraps and checks both terminal journal envelopes, the exact
+artifact receipt and capsule/update receipt before any SDK read. Historical
+authority windows are neither renewed nor executed. A fresh read-only observer
+requires the exact accepted update state and a separate bounded source/CI/window;
+it checks the current state against the receipt-bound baseline and rejects every
+pre-update phase before SDK access.
+
+`run_dev_owner_enrolled_login.py` composes that loader, the registered SDK observer
+and the pure same-credential lineage validator before starting the existing
+single-use loopback channel. It obtains fresh public verification keys from the
+fixed issuer, rechecks source/protections and the exclusive observation deadline
+before listening, and discards the verified owner token in memory. It does not
+reuse or weaken the old pre-update owner verifier, reset MFA, enroll MAPIT,
+open the API, accept guests or promote production. Synthetic composition tests
+use a fake human-channel edge; real human OAuth/MFA remains a separate proof.
+
 The one-process closed delivery runner passes independent offline review:
 26 focused tests and 74 broader focused tests. The complete positive uses real
 private parsers, SDK-shaped edge clients, the real coordinator and complete

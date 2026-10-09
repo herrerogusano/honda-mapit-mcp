@@ -1,5 +1,26 @@
 # Project Agent Workflow
 
+Accepted delivery restart preparation, 2026-10-09: PR #101 merged normally at
+develop 3d3e6a7 after eight green source checks (37972505452); all eight integrated
+checks passed (37973283671). Frozen prior suite: 4,526 passed/twelve skips.
+The follow-up privately persists the exact prior template and builder summary
+before publication, and an exclusive receipt-bound observation capsule inside
+the accepted current-state callback before the update journal becomes accepted.
+Capsule persistence failure holds the acknowledged update; never replay it.
+The v2 accepted evidence binds stable resource/TableId/full-row/policy baselines,
+using only fixed logical A/B slots for row hashes. A separate accepted-input
+loader reconstructs original metadata with owning parsers and constructor-only
+archive/target validation; it never renews or executes historical authority.
+Accepted-only observation requires the exact terminal update receipt, fresh
+source/CI/protections/window, registered same-credential clients and current
+provider reads. Post-update human login uses this path, not the old pre-update
+verifier. Tokens are discarded in memory; no enrollment or endpoint opening.
+Source review/CI/promotion and fresh private authority still precede the one
+actual closed owner delivery. No owner runtime update, actual human login or
+MAPIT account E2E follows from synthetic tests. Production/MFA/quota ten remain
+unchanged. Maintain owned temporary wakefulness while working and remove it
+before final handoff.
+
 One-process owner delivery runner accepted independently offline, 2026-10-09:
 26 focused tests pass, including genuine private parsers/current-state SDK
 readback/core/writer composition through one synthetic conditional publication,
