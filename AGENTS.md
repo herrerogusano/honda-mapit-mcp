@@ -1,5 +1,28 @@
 # Project Agent Workflow
 
+Owner OAuth DEV cloud checkpoint, 2026-10-09: PR #81 merged normally to develop
+2118d9b after eight green PR checks (CI 37922442130); all eight integrated checks
+passed (CI 37922805228). Independent offline review accepted the three-resource
+factory, SDK readback and private one-shot runner. Frozen local suite: 3,968
+passed, twelve environment skips; 73 focused checks, compilation, model-free
+evaluation 12/12 and all 49 pinned network-denied schemas passed. One fresh
+private authority passed preparation (16 reads), preflight (18 calls), a single
+acknowledged CreateStack (33 calls) and exact acceptance (23 calls).
+Independent receipt review and 22 further bounded metadata reads accepted the
+same context, exact three resources and candidate readback digest.
+The retained DEV owner OAuth stack is CREATE_COMPLETE with three resources;
+its create intent is consumed. Never replay it or use a fresh journal to repeat creation. Owner
+pool/domain/MFA and every prior client read back unchanged; the original
+nineteen-resource DEV app remains closed with Lambda reserve zero. Production,
+MAPIT, Telegram, historical synthetic storage/users/keys and quota ten are
+unchanged. The exact assisted loopback callback is registered, not a running
+listener or observed Codex registration. This is OAuth infrastructure acceptance,
+not an owner login, real MAPIT enrollment, hosted real-account E2E or production
+multiuser promotion. Real-namespace bootstrap/key publication, fresh invitation
+authorization and closed enrolled-runtime delivery still need reviewed operators
+and new exact private authority. Remove owned temporary wakefulness before final
+handoff; no persistent display settings are changed.
+
 Real-account DEV preparation, 2026-10-09: the owner approved a separate real
 MAPIT namespace with independent keys/secrets and minimal DEV read permissions,
 within the existing gross USD 1/month target (not a hard billing cap). Exact
