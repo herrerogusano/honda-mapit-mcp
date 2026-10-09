@@ -11,6 +11,19 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The one-process closed delivery runner passes independent offline review:
+26 focused tests and 74 broader focused tests. The complete positive uses real
+private parsers, SDK-shaped edge clients, the real coordinator and complete
+current-state verifier through one publication, one update and closed accepted
+readback. Its two new intent journals use a strict storage envelope
+`{schema: 1, delivery_state: {binding, phase, receipt}}`; the core and historical
+FileJournal formats are unchanged. A future post-delivery login loader must
+validate and unwrap that exact envelope, not pass it directly to the pure
+lineage validator. Malformed envelopes and durable-intent replay fail closed.
+This remains offline acceptance until source CI/promotion, fresh private
+authority and one actual closed delivery have passed. It does not open the API,
+enroll a MAPIT session, perform human login or promote production.
+
 The SDK JSON reader correction passes independent review and 84 focused tests.
 Actual read-only GetTemplate diagnostics confirmed nested OrderedDict at both
 the root and Metadata, with the exact accepted template digest and nineteen
