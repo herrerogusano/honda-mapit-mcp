@@ -170,7 +170,8 @@ def _read_json(path: Path, *, acl_checker=None) -> dict[str, Any]:
     return value
 
 
-def _validate_authority(value: Any, *, state_dir: Path) -> dict[str, Any]:
+def _validate_authority_metadata(value: Any) -> dict[str, Any]:
+    """Pure metadata checks; does not establish file or state-path provenance."""
     if type(value) is not dict or set(value) != _FIELDS:
         raise ValueError
     account = value.get("account_id")
@@ -196,10 +197,16 @@ def _validate_authority(value: Any, *, state_dir: Path) -> dict[str, Any]:
             or type(value.get("owner_oauth_client_id")) is not str
             or re.fullmatch(r"[A-Za-z0-9]{8,128}", value["owner_oauth_client_id"]) is None
             or type(value.get("owner_tenant_key")) is not str or _KEY.fullmatch(value["owner_tenant_key"]) is None
-            or type(value.get("state_directory")) is not str
-            or Path(value["state_directory"]).resolve() != Path(state_dir).resolve()):
+            or type(value.get("state_directory")) is not str):
         raise ValueError
     return dict(value)
+
+
+def _validate_authority(value: Any, *, state_dir: Path) -> dict[str, Any]:
+    value = _validate_authority_metadata(value)
+    if Path(value["state_directory"]).resolve() != Path(state_dir).resolve():
+        raise ValueError
+    return value
 
 
 def _exclusive_write(path: Path, payload: bytes) -> None:

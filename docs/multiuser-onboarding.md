@@ -11,6 +11,15 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The next independently reviewed offline increment adds explicit SDK credential
+freezing and one-attempt artifact/update adapters, a metadata-only verifier for
+the published namespace, and pure owner manifest assembly. It passed 4,364
+tests with twelve environment skips, compilation and model-free evaluation
+12/12. PR #94 is integrated with eight green checks on develop `b0b7dee`.
+These components are not a complete live deployment operator; fresh exact
+runtime verification, private authority composition, ARM readiness and owner
+login integration remain prerequisites. No accepted operation is replayed.
+
 The owner authorization and separate MAPIT key publication are now accepted on
 develop `ca94c92` (PR #93), after eight source and eight integrated checks.
 The fresh owner invitation used 93 bounded SDK calls and one create-only CAS;
