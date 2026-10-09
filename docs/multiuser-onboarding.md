@@ -11,6 +11,28 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+PR #104 integrated at `cbe749b`, all eight source/integrated checks green and
+4,587 frozen local tests passed/twelve skips. A fresh closed delivery stopped
+at `artifact_write_unknown`, leaving artifact intent consumed and update ready.
+Seven independent readonly calls confirmed exact identity, closed endpoint,
+reserve zero, unchanged nineteen-resource stack/template and exact artifact
+HEAD 404. No accepted artifact or delivery receipt follows; no replay is allowed.
+Offline reproductions identify a composition defect: the SDK starts its 30s
+deadline before slow coordinator readbacks. The same category can result before
+SDK dispatch; this does not establish the live run's exact dispatch count.
+Any correction must retain a strict 30s write-step budget, exclusive authority
+cutoff, cross-step rollback checks, shared call cap and sticky one-shot fences.
+A separate fresh owner decision and reviewed source/CI precede a new attempt.
+
+The offline fix scopes the unchanged 30s budget to each validated SDK write
+operation, while retaining the exclusive wall cutoff, a session monotonic cap
+bounded by remaining authority lifetime, rollback checks and aggregate48 calls.
+Sticky callback-start and dispatch flags plus a nonblocking operation lock
+prevent repeats/concurrent entry, including pre-dispatch failures. A synthetic
+real-coordinator test covers long preflight and inter-step idle; it does not
+establish acceptance of a new live attempt. Existing intent/receipt schemas and
+all consumed private evidence remain unchanged.
+
 PR #103 integrated the two namespace-consumer corrections at `c072f5d` after
 eight green source checks and 4,568 local tests/twelve skips. Actual readonly
 current-state construction passed, but its preflight stopped after five reads:
