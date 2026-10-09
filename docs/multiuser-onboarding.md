@@ -11,6 +11,18 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+Local ARM readiness now passes nine checks on the actual enrolled handler,
+using the pinned image, network disabled, 256 MiB and 28 locked wheels. The
+synthetic authorization reader permits tool discovery, while session loading
+deliberately fails. Anonymous/revoked/expired requests and missing sessions are
+rejected. This proves package readiness, not real MAPIT business results.
+Eleven offline tests cover the probe, including duplicate-output-key rejection.
+Full frozen suite excluding the current-state verifier under development:
+4,375 passed, twelve environment skips; evaluation 12/12 and compilation pass.
+Accepted private receipts assemble the actual 1,305-byte owner manifest in
+memory after two public JWKS GETs, with no SDK calls or writes. A complete
+real-loader PRE/POST verifier remains required before runtime delivery.
+
 The next independently reviewed offline increment adds explicit SDK credential
 freezing and one-attempt artifact/update adapters, a metadata-only verifier for
 the published namespace, and pure owner manifest assembly. It passed 4,364

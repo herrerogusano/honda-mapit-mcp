@@ -1,5 +1,25 @@
 # Project Agent Workflow
 
+Enrolled-handler ARM readiness passed locally, 2026-10-09: the pinned Lambda
+ARM image ran the actual packaged enrolled handler with networking disabled,
+256 MiB memory and all 28 hash-locked wheels. Nine predicates passed: import,
+manifest, independent public JWKS, handler load, exact ten tools, anonymous
+denial, missing-session denial, revocation denial and exclusive window expiry.
+The session loader deliberately fails; this is not MAPIT business acceptance.
+Independent review caught duplicate JSON output keys; recursive rejection and
+eleven offline probe tests now pass. Frozen suite excluding the in-progress
+current-runtime verifier: 4,375 passed, twelve environment skips; compilation
+and model-free evaluation 12/12 passed. Actual accepted private receipts also
+assembled a 1,305-byte owner manifest only in memory, with two bounded public
+JWKS GETs, zero AWS SDK calls and zero writes. No secret/session was loaded.
+PR #95 merged normally to develop 58a0ebe after eight green source checks
+(37959132411); its first source CI failed because SDK-dependent fixture tests
+lacked an optional import skip in generic jobs. They remain mandatory in the
+pinned SDK job. Integrated CI is pending at this checkpoint. Complete real
+loader/runtime PRE/POST verification still blocks any owner runtime delivery.
+No production/MFA/MAPIT/Telegram/quota operation follows. Remove owned temporary
+wakefulness before handoff and retain original power settings.
+
 Offline owner delivery SDK and input preparation, 2026-10-09: independent
 review accepted explicit frozen-credential SDK clients, one-attempt artifact
 and closed-runtime update adapters, published namespace metadata readback and
