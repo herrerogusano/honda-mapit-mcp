@@ -23,7 +23,7 @@ from test_dev_owner_enrolled_delivery import Harness as DeliveryHarness
 from test_dev_owner_login_context import receipt as owner_receipt
 
 
-def _context_for_delivery(delivery):
+def _context_for_delivery(delivery, *, candidate_readback_sha256="c" * 64):
     parts = owner_receipt()
     auth, binding, state, _trusted = parts
     auth["expected_caller_arn"] = delivery.auth["operator_arn"]
@@ -61,7 +61,7 @@ def _context_for_delivery(delivery):
         "intent": {"token": coordinator._request_token(), "stack_name": STACK_NAME,
                    "template_sha256": coordinator.template_sha256},
         "readback": {"verified": True, "client_id": delivery.auth["owner_client_id"],
-                     "readback_sha256": "c" * 64},
+                     "readback_sha256": candidate_readback_sha256},
     })
     return login_context.parse_accepted_owner_login_context(auth, binding, state,
         trusted_owner_policy=trusted)
