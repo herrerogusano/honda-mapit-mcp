@@ -1,5 +1,23 @@
 # Project Agent Workflow
 
+One-process owner delivery runner accepted independently offline, 2026-10-09:
+26 focused tests pass, including genuine private parsers/current-state SDK
+readback/core/writer composition through one synthetic conditional publication,
+one exact stack update and accepted closed readback. Broader focused suite: 74
+passed. The runner-local schema-1 delivery_state envelope adapts the core's
+exact triple to unchanged FileJournal durability; malformed envelopes and
+persisted intent replay fail closed. No consumed historical journal is migrated.
+Fresh unique private roots, source/protection checks, pinned ARM readiness,
+exact prior lineage, bounded closed polling and exclusive deadlines remain
+mandatory. Interrupted or uncertain runs are held, never resumed or retried.
+PR #100 merged normally to develop bdc64dd after eight source checks
+(37971401874), 4,500 local tests/twelve skips, compilation/evaluation 12/12;
+all eight integrated checks passed (37971917670). The new operator still needs its
+own source CI/promotion and fresh private authority before one live delivery.
+There has been no owner runtime update, API opening, MAPIT session or real E2E.
+Production/MFA/quota ten remain unchanged. Remove owned temporary wakefulness
+before final handoff.
+
 SDK JSON compatibility correction accepted independently offline, 2026-10-09:
 84 focused readback tests pass, including an actual verifier composition with
 recursively nested OrderedDict matching Botocore GetTemplate output. Normalize
