@@ -132,7 +132,7 @@ jobs:
       - name: Test synthetic cloud storage proof without deployment or credentials
         run: python -m pytest -q tests/test_run_dev_identity_binding_storage_probe.py tests/test_run_dev_identity_binding_storage_probe_independent.py
       - name: Test enrolled DEV runtime composition without deployment or credentials
-        run: python -m pytest -q tests/test_dev_contextual_provider.py tests/test_dev_mapit_binding_namespace.py tests/test_dev_enrolled_runtime.py tests/test_dev_enrolled_runtime_independent.py tests/test_dev_enrolled_manifest.py tests/test_aws_dev_enrolled_entrypoint.py tests/test_build_aws_dev_enrolled_archive.py tests/test_aws_dev_mapit_binding_bootstrap.py
+        run: python -m pytest -q tests/test_dev_contextual_provider.py tests/test_dev_mapit_binding_namespace.py tests/test_dev_enrolled_runtime.py tests/test_dev_enrolled_runtime_independent.py tests/test_dev_enrolled_manifest.py tests/test_aws_dev_enrolled_entrypoint.py tests/test_build_aws_dev_enrolled_archive.py tests/test_aws_dev_mapit_binding_bootstrap.py tests/test_probe_aws_dev_enrolled_arm.py tests/test_probe_aws_dev_enrolled_arm_independent.py
       - name: Test isolated owner OAuth bootstrap offline
         run: python -m pytest -q tests/test_aws_dev_owner_oauth.py tests/test_dev_owner_oauth_independent.py tests/test_dev_owner_oauth_bootstrap.py tests/test_dev_owner_oauth_sdk.py tests/test_run_aws_dev_owner_oauth_bootstrap.py tests/test_dev_owner_oauth_runner_independent.py
       - name: Test assisted owner login without credentials or network
