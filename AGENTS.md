@@ -1,5 +1,18 @@
 # Project Agent Workflow
 
+Runtime packaging repair preparation, 2026-10-09: local synthetic ARM readiness
+failed at runtime import because the production and synthetic multiuser source
+inventories omitted the new unconditional cloud_provider dependency
+mapit_identity.py. Only those two source lists were extended; legacy base
+inventory and deployed artifacts remain unchanged. Independent review accepted
+isolated source import tests with no repository/editable fallback and deliberate
+missing-module negatives. After the fix, the unchanged synthetic multiuser ARM
+probe passed all nine checks with 28 pinned wheels, networking disabled and
+pull=never. The production-profile ARM probe with geography passed all 22 checks
+with 30 pinned wheels and simulated services; no production service was called.
+This is local synthetic evidence, not a new hosted runtime acceptance
+or MAPIT onboarding. Production/MFA/Telegram and quota ten remain untouched.
+
 Fresh real-MAPIT bootstrap contract source preparation, 2026-10-09: independent
 offline review accepted exact field/digest/template validation, distinct intent
 kind, historically disjoint tenant paths and a sticky exclusive time guard.

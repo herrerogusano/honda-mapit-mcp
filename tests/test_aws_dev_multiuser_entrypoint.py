@@ -247,7 +247,8 @@ def test_legacy_auth_import_does_not_require_opt_in_identity_module(tmp_path: Pa
     source_root = Path(__file__).parents[1] / "src" / "mapit"
     for name in ("auth.py", "config.py", "http_transport.py"):
         (package / name).write_bytes((source_root / name).read_bytes())
-    assert "mapit_identity.py" not in module_list
+    # Legacy auth is independently importable even when a full runtime profile
+    # also bundles identity verification for cloud_provider's optional API.
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(tmp_path)
     completed = subprocess.run(

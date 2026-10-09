@@ -460,6 +460,18 @@ cancels an already started request nor deletes credentials.
 
 ### Separate real-MAPIT key publication preparation
 
+Runtime archives must include transitive imports, not just their entrypoint.
+The opt-in identity verifier introduced an unconditional `cloud_provider` import
+of `mapit_identity`; both the production and synthetic multiuser source lists
+now include that module. Tests import the selected bundled sources under
+`python -I` from an isolated package, remove editable-package finders, deny
+socket networking and verify that no `mapit.*` module came from the repository.
+Negative cases intentionally omit the module and must fail. These checks do
+not deploy or authenticate any user; ARM probes use synthetic fixtures only.
+The separate legacy-auth regression still imports only `auth`, `config` and
+`http_transport`; it no longer assumes the full production inventory cannot
+also contain identity verification needed by `cloud_provider`.
+
 The pure `scripts/dev_mapit_bootstrap_contract.py` binds proposed fresh source,
 CI/runtime evidence references, an exact caller, a short exclusive window and
 fresh tenant paths to the fixed four-resource MAPIT template. The new intent
