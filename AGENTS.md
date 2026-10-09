@@ -1,5 +1,37 @@
 # Project Agent Workflow
 
+Fresh MAPIT key-publication operator preparation, 2026-10-09: the separate
+runner binds a new source/CI/protection authorization and journal to exact
+current four-resource bootstrap and nineteen-resource closed runtime readbacks.
+Historical accepted bootstrap state is parsed only; its expired authority is
+never executed or renewed. Only the explicitly assumed enroller's SSM proxy
+allows the create-only PUT; base clients and assumed STS do not. Independent
+review found and corrected both an expired-constructor clock issue and the
+missing proxy PUT capability before any cloud use. Exact callback proof shape
+is shared with the coordinator, and failed dispatched calls count. Fresh CI,
+accepted real namespace bootstrap and separate publication intent remain
+required. No keys, real MAPIT session, invitation or endpoint opening follows
+from these offline tests.
+Frozen follow-up verification: 4,182 tests passed with twelve environment
+skips, 39 focused operator/runtime tests passed, compilation and model-free
+evaluation 12/12 passed, and all 49 pinned network-denied official schemas
+passed. Independent operator holdouts accepted historical expiry and scoped
+PUT capability. These source results do not substitute for fresh CI or live
+bootstrap/key-publication receipts.
+
+PR #88 merged normally to develop dd7e27d after eight green source checks
+(37942447565) and eight green integrated checks (37942830553). Its local full
+suite passed 4,169 tests with twelve skips before the final added SDK-failure
+counter holdout; the final focused independent units passed nineteen tests,
+including that extra holdout. Compilation and model-free evaluation 12/12
+passed. No cloud creation or key publication followed. Before any live use,
+independent review additionally required explicit exclusion of the retained
+hosted A/B LeadingKeys, not only the two separate storage-proof keys. The
+follow-up verifier checks the exact baseline tenant-read condition after the
+full actual IAM snapshot; three callback-level holdouts reject overlap and
+malformed/duplicate keys before the legacy verifier or closure reads. Nineteen
+focused wrapper tests pass. Fresh source CI is required for this correction.
+
 PR #87 merged normally to develop d6b0768 after eight green source checks
 (37940783332) and eight green integrated checks (37941174116). Frozen source:
 4,139 tests passed with twelve environment skips; compilation and model-free
