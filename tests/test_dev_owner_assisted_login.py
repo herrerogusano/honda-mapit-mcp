@@ -341,6 +341,7 @@ def test_real_loopback_server_waits_for_callback_worker_and_closes(signing_keys)
                                   monotonic=time.monotonic, random_bytes=_Random())
     outcomes = []
     ready = []
+    listening = threading.Event()
     def on_ready(url):
         ready.append(url)
         assert url == "http://127.0.0.1:8787/"
@@ -348,21 +349,15 @@ def test_real_loopback_server_waits_for_callback_worker_and_closes(signing_keys)
         probe = http.client.HTTPConnection("127.0.0.1", 8787, timeout=1)
         probe.connect()
         probe.close()
+        listening.set()
     # Pass the readiness callback from the serving worker after bind/listen.
     server_thread = threading.Thread(target=lambda: outcomes.append(login.serve(ready_callback=on_ready)), daemon=True)
     server_thread.start()
-    deadline = time.monotonic() + 2
+    assert listening.wait(timeout=2), "listener did not signal bound socket"
     conn = http.client.HTTPConnection("127.0.0.1", 8787, timeout=2)
-    while True:
-        try:
-            conn.request("GET", "/")
-            root = conn.getresponse()
-            root_body = root.read()
-            break
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.02)
+    conn.request("GET", "/")
+    root = conn.getresponse()
+    root_body = root.read()
     assert root.status == 200
     assert root.getheader("Content-Security-Policy").startswith("default-src 'none'")
     cap = root_body.decode().split('name=cap value="', 1)[1].split('"', 1)[0]
