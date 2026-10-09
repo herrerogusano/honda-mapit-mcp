@@ -38,6 +38,7 @@ from scripts.dev_owner_enrolled_delivery import (
     OwnerEnrolledClosedDelivery,
     OwnerEnrolledDeliveryError,
     _canonical,
+    _summary_dict,
     _template_sha,
 )
 from scripts.dev_owner_enrolled_delivery_sdk import (
@@ -498,6 +499,7 @@ def run_owner_enrolled_delivery_once(
         _create_private_directory(root, acl_checker=acl_checker)
         manifest_path, invitation_path, mapit_path = _write_private_inputs(
             root, manifest_raw, invitation_jwks, mapit_jwks, acl_checker=acl_checker)
+        prior_template_bytes = _canonical(prior_template)
         archive_path = root / "runtime.zip"
         try:
             summary = archive_builder(Path(wheel_dir), manifest_path, invitation_path,
@@ -511,6 +513,11 @@ def run_owner_enrolled_delivery_once(
                 raise ValueError
         except Exception:
             _fail("archive_build_failed")
+        summary_payload = _summary_dict(summary)
+        if type(summary_payload) is not dict:
+            _fail("archive_build_failed")
+        _write_exclusive(root / "inputs" / "archive-summary.json", _canonical(summary_payload),
+            maximum=8 * 1024, acl_checker=acl_checker)
         if loaded.assert_unchanged() is not True:
             _fail("private_inputs_unverified")
 
@@ -528,6 +535,11 @@ def run_owner_enrolled_delivery_once(
                 or assembled["manifest_raw"] != manifest_raw
                 or type(accepted) is not dict or type(authority) is not dict):
             _fail("private_inputs_unverified")
+        if (hashlib.sha256(prior_template_bytes).hexdigest()
+                != authority.get("prior_template_sha256")):
+            _fail("private_inputs_unverified")
+        _write_exclusive(root / "inputs" / "prior-template.json", prior_template_bytes,
+            maximum=64 * 1024, acl_checker=acl_checker)
 
         # Fixed one-run layout prevents relocating the accepted authority under
         # a fresh empty journal. Each intent has its own exclusive FileJournal.
@@ -565,6 +577,20 @@ def run_owner_enrolled_delivery_once(
             execution_end_epoch=authority["execution_end_epoch"])
         sdk = OwnerEnrolledDeliverySdk(client_bundle=bundle, authority=authority,
             target_template_sha256=_template_sha(target), clock=clock, monotonic=monotonic)
+        capsule_path = root / "observation-capsule.json"
+
+        def accepted_current_state(phase, binding):
+            value = _verified_current_state(phase, binding, loaded, current_state)
+            if phase == "accepted":
+                capsule = current_state.export_accepted_observation_capsule()
+                payload = _canonical(capsule)
+                _write_exclusive(capsule_path, payload, maximum=32 * 1024,
+                    acl_checker=acl_checker)
+                # The exclusive writer includes an exact readback before this
+                # callback returns, so the coordinator cannot persist accepted
+                # state before the restart capsule is durable.
+            return value
+
         coordinator = OwnerEnrolledClosedDelivery(
             authority=authority, accepted=accepted, prior_template=prior_template,
             mapit_bootstrap_template=loaded.bootstrap_template, manifest_raw=manifest_raw,
@@ -572,8 +598,7 @@ def run_owner_enrolled_delivery_once(
             archive_bytes=archive_bytes, archive_summary=summary,
             artifact_journal=artifact_journal, update_journal=update_journal,
             source_check=source_check, protection_check=protection_check,
-            current_state=lambda phase, binding: _verified_current_state(
-                phase, binding, loaded, current_state),
+            current_state=accepted_current_state,
             publish_once=sdk.publish_once, update_once=sdk.update_once,
             clock=clock, monotonic=monotonic)
 

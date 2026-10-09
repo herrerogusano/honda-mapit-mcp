@@ -222,7 +222,9 @@ def test_poll_rejects_pagination_before_accepting_stack_status():
     assert exc.value.category == "current_state_unverified"
 
 
-def test_full_private_loader_to_pre_publish_update_and_accepted_readback(tmp_path, monkeypatch):
+@pytest.mark.parametrize("capsule_write_fails", [False, True])
+def test_full_private_loader_to_pre_publish_update_and_accepted_readback(
+        tmp_path, monkeypatch, capsule_write_fails):
     """Run the real owning parsers/core/readback over SDK-shaped fake clients."""
     from tests.test_dev_owner_enrolled_private_inputs import _private_inputs
     from scripts import dev_owner_enrolled_delivery_sdk as delivery_sdk
@@ -334,15 +336,15 @@ def test_full_private_loader_to_pre_publish_update_and_accepted_readback(tmp_pat
     wheel_dir.mkdir()
     private_parent = tmp_path / "operator-private"
     private_parent.mkdir()
-    clock_value = 1_800_000_100.0
-    mono_value = 100.0
+    clock_value = [1_800_000_100.0]
+    mono_value = [100.0]
 
     class Clock:
         def __call__(self):
-            return clock_value
+            return clock_value[0]
 
         def monotonic(self):
-            return mono_value
+            return mono_value[0]
 
     clock = Clock()
     loaded_holder = {}
@@ -411,6 +413,8 @@ def test_full_private_loader_to_pre_publish_update_and_accepted_readback(tmp_pat
 
         cfn.update_stack = update_stack
         current_state = real_make_current_state(**kwargs)
+        loaded_holder["current_state"] = current_state
+        loaded_holder["current_state_kwargs"] = dict(kwargs)
         return current_state
 
     def put_object(**request):
@@ -422,6 +426,26 @@ def test_full_private_loader_to_pre_publish_update_and_accepted_readback(tmp_pat
 
     scenario.clients()["s3"].put_object = put_object
     monkeypatch.setattr(runner, "make_owner_enrolled_current_state", current_state_factory)
+    persistence_order = []
+    original_write_exclusive = runner._write_exclusive
+
+    def tracked_write_exclusive(path, payload, *, maximum, acl_checker=None):
+        if capsule_write_fails and Path(path).name == "observation-capsule.json":
+            raise OSError("injected capsule durability failure")
+        result = original_write_exclusive(path, payload, maximum=maximum, acl_checker=acl_checker)
+        if Path(path).name == "observation-capsule.json":
+            persistence_order.append("capsule")
+        return result
+
+    original_journal_save = runner._DeliveryIntentJournal.save
+
+    def tracked_journal_save(journal, state):
+        if state.get("phase") == "accepted":
+            persistence_order.append("accepted")
+        return original_journal_save(journal, state)
+
+    monkeypatch.setattr(runner, "_write_exclusive", tracked_write_exclusive)
+    monkeypatch.setattr(runner._DeliveryIntentJournal, "save", tracked_journal_save)
     result = runner.run_owner_enrolled_delivery_once(
         private_inputs=private_inputs, wheel_dir=wheel_dir, private_parent=private_parent,
         source_sha=raw_inputs["source_sha"], ci_run_id=88,
@@ -437,9 +461,130 @@ def test_full_private_loader_to_pre_publish_update_and_accepted_readback(tmp_pat
         clock=clock, monotonic=clock.monotonic, sleep=lambda _seconds: None,
     )
 
+    private_root = Path(result["private_root"])
+    if capsule_write_fails:
+        assert result["ok"] is False, result
+        update_state = runner._DeliveryIntentJournal(private_root / "update-intent").load()
+        assert update_state["phase"] == "acknowledged"
+        assert not (private_root / "observation-capsule.json").exists()
+        assert "accepted" not in persistence_order
+        assert len([call for call in scenario.calls if call[1] == "put_object"]) == 1
+        assert len([call for call in scenario.calls if call[1] == "update_stack"]) == 1
+        return
+
     assert result["ok"] is True, result
     assert result["phase"] == "accepted"
+    assert persistence_order.index("capsule") < persistence_order.index("accepted")
     assert result["polls"] == 1
     assert scenario.phase == "accepted"
     assert len([call for call in scenario.calls if call[1] == "put_object"]) == 1
     assert len([call for call in scenario.calls if call[1] == "update_stack"]) == 1
+    capsule = json.loads((private_root / "observation-capsule.json").read_bytes())
+    update_state = runner._DeliveryIntentJournal(private_root / "update-intent").load()
+    from scripts.dev_owner_enrolled_observation import validate_capsule_for_accepted_update
+    validate_capsule_for_accepted_update(
+        capsule, delivery_binding=update_state["binding"], accepted_update_state=update_state)
+    assert (private_root / "inputs" / "prior-template.json").read_bytes() == _canonical(
+        loaded_holder["current_state_kwargs"]["prior_template"])
+    assert json.loads((private_root / "inputs" / "archive-summary.json").read_bytes()) == {
+        "zip_bytes": len(scenario.archive), "sha256": hashlib.sha256(scenario.archive).hexdigest(),
+        "wheel_count": 28, "archive_entries": 3, "source_modules": 1,
+        "public_key_count": 2, "dependencies_valid": True,
+        "source_allowlist_valid": True, "lock_valid": True, "manifest_valid": True,
+    }
+    assert "opaque-tenant-selector" not in repr(capsule)
+
+    # Fresh accepted-only observation after the original delivery authority has
+    # expired. It reuses the immutable update receipt/capsule, never reruns the
+    # pre-update phases or a historical write.
+    from scripts.dev_owner_enrolled_runtime_readback import make_owner_enrolled_accepted_observer
+    old_current = loaded_holder["current_state"]
+    current_authority = loaded_holder["current_state_kwargs"]["authority"]
+    clock_value[0] = current_authority["authorized_until_epoch"] + 10
+    mono_value[0] = 1.0
+    fresh_window = {
+        "schema": 1, "kind": "owner-enrolled-readonly-observation",
+        "account_id": current_authority["account_id"],
+        "operator_arn": current_authority["operator_arn"],
+        "source_sha": "f" * 40, "ci_run_id": 89,
+        "authorized_from_epoch": clock_value[0] - 1,
+        "authorized_until_epoch": clock_value[0] + 500,
+        "github_owner_id": github_ids[0], "github_repository_id": github_ids[1],
+    }
+    fresh_checks = {"source_sha": "f" * 40, "ci_run_id": 89,
+                    "head_sha": "f" * 40, "checks_passed": True}
+    fresh_protection = {"owner_id": github_ids[0], "repository_id": github_ids[1],
+                        "dev_environment_protected": True}
+    kwargs = dict(loaded_holder["current_state_kwargs"])
+    kwargs.update(
+        clock=clock, monotonic=clock.monotonic,
+        accepted_observation_capsule=capsule,
+        accepted_update_state=update_state,
+        observation_window=fresh_window,
+        accepted_runtime_evidence_sha256=update_state["receipt"]["runtime_evidence_sha256"],
+        observation_source_check=lambda _window: fresh_checks,
+        observation_protection_check=lambda _window: fresh_protection,
+    )
+    observer = make_owner_enrolled_accepted_observer(**kwargs)
+    from scripts.dev_owner_enrolled_runtime_readback import OwnerEnrolledReadbackError
+    with pytest.raises(OwnerEnrolledReadbackError):
+        observer("preflight", old_current.delivery_binding)
+    observed = observer("accepted", old_current.delivery_binding)
+    assert observed["phase"] == "accepted"
+    assert observed["runtime_evidence_sha256"] == capsule["runtime_evidence_sha256"]
+    from scripts.dev_owner_enrolled_login_lineage import validate_owner_enrolled_login_lineage
+    runtime_projection, identity_projection = observer.owner_login_projections(observed)
+    try:
+        validate_owner_enrolled_login_lineage(
+            original_context=kwargs["owner_oauth_context"],
+            delivery_authority=current_authority,
+            accepted_receipts=kwargs["accepted"],
+            accepted_update_state=update_state,
+            current_runtime_readback=runtime_projection,
+            owner_identity_readback=identity_projection,
+        )
+    except Exception as exc:
+        pytest.fail(f"owner login lineage rejected: {getattr(exc, 'category', type(exc).__name__)}")
+
+    # Exercise the root-owned post-delivery composition against the same real
+    # private loader/readback path. Only source/protection, AWS SDK and the
+    # single-use HTTP/channel edge are synthetic; no token is persisted.
+    from scripts import run_dev_owner_enrolled_login as login_runner
+    login_stages = []
+    original_lineage_validator = login_runner.validate_owner_enrolled_login_lineage
+
+    def track_lineage(**kwargs):
+        login_stages.append("lineage")
+        return original_lineage_validator(**kwargs)
+
+    monkeypatch.setattr(login_runner, "validate_owner_enrolled_login_lineage", track_lineage)
+
+    def fake_jwks_fetcher(policy):
+        login_stages.append("jwks")
+        return raw_inputs["jwks_fetcher"](policy.issuer_url + "/.well-known/jwks.json")
+
+    class SyntheticChannel:
+        def __init__(self, _policy, _keys, consume):
+            login_stages.append("channel")
+            self.consume = consume
+
+        def serve(self, *, ready_callback=None):
+            login_stages.append("serve")
+            self.consume("verified-token-is-not-persisted")
+            return "verified"
+
+    login_result = login_runner.run_post_delivery_login(
+        delivery_root=private_root, private_paths=private_inputs,
+        source_sha="e" * 40, ci_run_id=90,
+        acl_checker=lambda _path: True,
+        source_validator=lambda _auth: None,
+        protection_reader=lambda **_kwargs: github_ids,
+        bundle_factory=bundle_factory,
+        jwks_fetcher=fake_jwks_fetcher,
+        channel_factory=SyntheticChannel,
+        clock=clock, monotonic=clock.monotonic,
+    )
+    assert login_result["ok"] is True, (login_result, login_stages)
+    assert login_result["category"] == "owner_enrolled_login_verified"
+    assert type(login_result["calls"]) is int and login_result["calls"] > 0
+    assert login_stages == ["lineage", "jwks", "channel", "serve"]

@@ -59,6 +59,14 @@ from scripts.run_aws_closed_rehearsal import FileJournal
 from scripts.run_aws_retained_dev_bootstrap import validate_private_location
 from scripts.run_dev_mapit_binding_key_setup import _load_accepted_bootstrap
 from scripts.dev_owner_enrolled_namespace_readback import _FIELDS as _PUBLICATION_FIELDS
+from scripts.dev_owner_enrolled_observation import (
+    make_capsule as _make_observation_capsule,
+    progress_digest as _observation_progress_digest,
+    runtime_evidence_digest as _runtime_evidence_digest_v2,
+    sha256_json as _observation_sha256_json,
+    validate_capsule_for_accepted_update as _validate_capsule_for_update,
+    validate_observation_window as _validate_observation_window,
+)
 
 
 _REGION = "eu-west-1"
@@ -183,8 +191,10 @@ def _status(value: Any) -> bool:
 
 
 class _ReadBudget:
-    def __init__(self, *, authority: Mapping[str, Any], clock, monotonic, max_calls: int):
+    def __init__(self, *, authority: Mapping[str, Any], clock, monotonic, max_calls: int,
+                 observation_window: Mapping[str, Any] | None = None):
         self.authority = authority
+        self.observation_window = observation_window
         self.clock, self.monotonic = clock, monotonic
         self.max_calls = max_calls
         self.calls = 0
@@ -205,8 +215,12 @@ class _ReadBudget:
 
     def check(self):
         wall, mono = self._wall(), self._mono()
+        start = (self.observation_window["authorized_from_epoch"]
+                 if self.observation_window is not None else self.authority["authorized_from_epoch"])
+        end = (self.observation_window["authorized_until_epoch"]
+               if self.observation_window is not None else self.authority["authorized_until_epoch"])
         if (wall < self.last_wall or mono < self.last or mono - self.started >= _MAX_SECONDS
-                or not self.authority["authorized_from_epoch"] <= wall < self.authority["authorized_until_epoch"]):
+                or not start <= wall < end):
             _fail("current_state_unverified")
         self.last_wall, self.last = wall, mono
 
@@ -860,6 +874,12 @@ class OwnerEnrolledCurrentState:
                  mapit_publication_state_dir: Path,
                  mapit_evidence_path: Path, synthetic_binding_path: Path,
                  synthetic_authorization_path: Path, synthetic_state_dir: Path,
+                 accepted_observation_capsule: Mapping[str, Any] | None = None,
+                 accepted_update_state: Mapping[str, Any] | None = None,
+                 observation_window: Mapping[str, Any] | None = None,
+                 accepted_runtime_evidence_sha256: str | None = None,
+                 observation_source_check: Callable[[Mapping[str, Any]], Any] | None = None,
+                 observation_protection_check: Callable[[Mapping[str, Any]], Any] | None = None,
                  acl_checker: Callable[[Path], bool] | None = None,
                  clock: Callable[[], float] = time.time,
                  monotonic: Callable[[], float] = time.monotonic):
@@ -974,12 +994,69 @@ class OwnerEnrolledCurrentState:
             }
             self._resource_ids = None
             self._historical_rows = None
+            self._historical_row_sha256 = None
             self._synthetic_policy = None
             self._authorization_table_id = None
+            self._accepted_capsule = None
+            self._accepted_update_state = None
+            self._observation_window = None
+            self._accepted_runtime_evidence_sha256 = accepted_runtime_evidence_sha256
+            self._last_accepted_observation = None
+            self._last_successful_state = None
+            self._last_read_call_count = 0
+            self._observation_source_check = observation_source_check
+            self._observation_protection_check = observation_protection_check
+            if (accepted_observation_capsule is not None or observation_window is not None
+                    or accepted_update_state is not None):
+                if (accepted_observation_capsule is None or observation_window is None
+                        or accepted_update_state is None
+                        or not _SHA256.fullmatch(accepted_runtime_evidence_sha256 or "")
+                        or not callable(observation_source_check)
+                        or not callable(observation_protection_check)):
+                    raise ValueError
+                now = clock()
+                self._observation_window = _validate_observation_window(
+                    dict(observation_window), account_id=self.authority["account_id"],
+                    operator_arn=self.authority["operator_arn"],
+                    github_owner_id=self.authority["github_owner_id"],
+                    github_repository_id=self.authority["github_repository_id"], now=now)
+                self._accepted_update_state = dict(accepted_update_state)
+                self._accepted_capsule = _validate_capsule_for_update(
+                    dict(accepted_observation_capsule), delivery_binding=self.delivery_binding,
+                    accepted_update_state=self._accepted_update_state)
+                if (self._accepted_capsule["runtime_evidence_sha256"]
+                        != accepted_runtime_evidence_sha256):
+                    raise ValueError
+                progress = self._accepted_capsule["progress"]
+                if (set(progress["resource_ids"]) != set(_LOGICAL_TYPES)
+                        or set(progress["historical_row_sha256"])
+                            != {"tenant_a", "tenant_b"}
+                        or type(self.authority.get("historical_tenant_keys")) is not list
+                        or len(self.authority["historical_tenant_keys"]) != 2
+                        or len(set(self.authority["historical_tenant_keys"])) != 2):
+                    raise ValueError
+                self._resource_ids = dict(progress["resource_ids"])
+                self._historical_row_sha256 = {
+                    key: progress["historical_row_sha256"][f"tenant_{'a' if index == 0 else 'b'}"]
+                    for index, key in enumerate(self.authority["historical_tenant_keys"])
+                }
+                self._authorization_table_id = progress["authorization_table_id"]
+                self._progress_digest = self._accepted_capsule["progress_sha256"]
+                if (self._accepted_capsule["target_template_sha256"] != self.target_sha
+                        or self._accepted_capsule["artifact_sha256"] != self.zip_sha
+                        or self._accepted_capsule["owner_context_sha256"] == self.context.context_digest):
+                    raise ValueError
+                # Reconstruct the expected historical policy from its owning
+                # private evidence; the capsule stores only its digest.
+                self._synthetic_policy = self._historical_synthetic_policy()
+                if _observation_sha256_json(self._synthetic_policy) != progress["synthetic_policy_sha256"]:
+                    raise ValueError
             self._input_objects = (self.bundle, self.clients, self.context,
-                self.bootstrap_authority, self.clock, self.monotonic, self.pre_runtime_verifier, self.acl_checker)
+                self.bootstrap_authority, self.clock, self.monotonic, self.pre_runtime_verifier,
+                self.acl_checker, self._observation_source_check, self._observation_protection_check)
             self._input_digest = self._fixed_input_digest()
-            self._progress_digest = None
+            if self._accepted_capsule is None:
+                self._progress_digest = None
         except Exception:
             _fail("binding_invalid")
 
@@ -1007,17 +1084,126 @@ class OwnerEnrolledCurrentState:
                 self.mapit_bootstrap_state_dir, self.mapit_publication_state_dir,
                 self.mapit_evidence_path, self.synthetic_binding_path,
                 self.synthetic_authorization_path, self.synthetic_state_dir)],
+            "observation_window": self._observation_window,
+            "observation_capsule": self._accepted_capsule,
+            "accepted_update_state": self._accepted_update_state,
+            "accepted_runtime_evidence_sha256": self._accepted_runtime_evidence_sha256,
         }
         return hashlib.sha256(_canonical(value)).hexdigest()
 
     def _phase_progress_digest(self):
-        return hashlib.sha256(_canonical({"resources": self._resource_ids,
-            "history": self._historical_rows, "table_id": self._authorization_table_id,
-            "synthetic_policy": self._synthetic_policy})).hexdigest()
+        return _observation_progress_digest(self._phase_progress_projection())
+
+    def _phase_progress_projection(self):
+        history_hashes = self._historical_row_sha256
+        if self._historical_rows is not None:
+            history_hashes = {key: _observation_sha256_json(row)
+                              for key, row in sorted(self._historical_rows.items())}
+        if type(self._synthetic_policy) is not dict:
+            raise ValueError
+        if type(history_hashes) is not dict or type(self.authority.get("historical_tenant_keys")) is not list:
+            raise ValueError
+        tenant_keys = self.authority["historical_tenant_keys"]
+        if len(tenant_keys) != 2 or set(history_hashes) != set(tenant_keys):
+            raise ValueError
+        # Fixed slot labels preserve the historical-key order from the trusted
+        # authority without writing those opaque keys into the capsule.
+        history_slots = {
+            f"tenant_{'a' if index == 0 else 'b'}": history_hashes[key]
+            for index, key in enumerate(tenant_keys)
+        }
+        return {
+            "resource_ids": dict(sorted(self._resource_ids.items())) if type(self._resource_ids) is dict else None,
+            "historical_row_sha256": history_slots,
+            "authorization_table_id": self._authorization_table_id,
+            "synthetic_policy_sha256": _observation_sha256_json(self._synthetic_policy),
+        }
+
+    def export_accepted_observation_capsule(self) -> dict[str, Any]:
+        """Export the validated, secret-free restart baseline after accepted readback."""
+        try:
+            if (self._last_accepted_observation is None or self._last_successful_state is None
+                    or self._last_successful_state.get("phase") != "accepted"):
+                raise ValueError
+            self._assert_integrity()
+            capsule = _make_observation_capsule(
+                delivery_binding=self.delivery_binding,
+                progress=self._phase_progress_projection(),
+                target_template_sha256=self.target_sha,
+                artifact_sha256=self.zip_sha,
+                owner_context_sha256=self._last_accepted_observation["owner_context_sha256"],
+                accepted_read_call_count=self._last_accepted_observation["calls"],
+            )
+            if capsule["runtime_evidence_sha256"] != self._last_accepted_observation["runtime_evidence_sha256"]:
+                raise ValueError
+            return capsule
+        except Exception:
+            _fail("current_state_unverified")
+
+    @property
+    def last_read_call_count(self) -> int:
+        """Bounded SDK calls attempted in the most recent phase, including failures."""
+        return self._last_read_call_count
+
+    def owner_login_projections(self, readback: Mapping[str, Any]):
+        """Return same-snapshot projections for the pure lineage validator."""
+        try:
+            if (self._last_successful_state is not readback or type(readback) is not dict
+                    or readback.get("phase") != "accepted" or not _is_registered_client_bundle(self.bundle)):
+                raise ValueError
+            policy = self.context.policy
+            identity = {
+                "account_id": self.authority["account_id"],
+                "owner_pool_id": policy.user_pool_id,
+                "client_id": policy.client_id,
+                "owner_subject": policy.owner_subject,
+                "api_id": policy.api_id,
+                "issuer": policy.issuer_url,
+                "resource_uri": policy.resource_url,
+                "audience": policy.audience,
+                "scope": policy.required_scope,
+            }
+            snapshot = self.bundle.credential_snapshot
+            digest = readback["owner_context_sha256"]
+            return (
+                {"state": readback, "owner_identity": identity,
+                 "current_context_sha256": digest, "credential_snapshot": snapshot},
+                {"owner_identity": identity, "current_context_sha256": digest,
+                 "credential_snapshot": snapshot},
+            )
+        except Exception:
+            _fail("current_state_unverified")
+
+    def _check_observation_gates(self):
+        if self._observation_window is None:
+            return
+        try:
+            _validate_observation_window(self._observation_window,
+                account_id=self.authority["account_id"], operator_arn=self.authority["operator_arn"],
+                github_owner_id=self.authority["github_owner_id"],
+                github_repository_id=self.authority["github_repository_id"], now=self.clock())
+            source = self._observation_source_check(dict(self._observation_window))
+            if (type(source) is not dict or set(source) != {
+                    "source_sha", "ci_run_id", "head_sha", "checks_passed"}
+                    or source != {"source_sha": self._observation_window["source_sha"],
+                        "ci_run_id": self._observation_window["ci_run_id"],
+                        "head_sha": self._observation_window["source_sha"],
+                        "checks_passed": True}):
+                raise ValueError
+            protections = self._observation_protection_check(dict(self._observation_window))
+            if (type(protections) is not dict or set(protections) != {
+                    "owner_id", "repository_id", "dev_environment_protected"}
+                    or protections != {"owner_id": self._observation_window["github_owner_id"],
+                        "repository_id": self._observation_window["github_repository_id"],
+                        "dev_environment_protected": True}):
+                raise ValueError
+        except Exception:
+            _fail("current_state_unverified")
 
     def _assert_integrity(self):
         objects = (self.bundle, self.clients, self.context, self.bootstrap_authority,
-                   self.clock, self.monotonic, self.pre_runtime_verifier, self.acl_checker)
+                   self.clock, self.monotonic, self.pre_runtime_verifier, self.acl_checker,
+                   self._observation_source_check, self._observation_protection_check)
         if (not _is_registered_client_bundle(self.bundle)
                 or self.clients is not self.bundle.clients
                 or _ACCEPTED_OWNER_CONTEXTS.get(id(self.context)) is not self.context
@@ -1031,9 +1217,14 @@ class OwnerEnrolledCurrentState:
         clients = {name: self.clients[name] for name in (
             "sts", "cloudformation", "iam", "dynamodb", "ssm", "cognito",
             "apigatewayv2", "lambda", "kms")}
+        # This owning coordinator is instantiated solely to parse immutable
+        # accepted evidence. Pin its parser clock inside the old authorization
+        # window; never call run_step, renew, or save the consumed authority.
+        parser_clock = lambda: self.bootstrap_authority.authorized_from_epoch + 1
+        parser_monotonic = lambda: 0.0
         authority, source, github, state, plan, receipt = _load_accepted_bootstrap(
             self.mapit_bootstrap_authority_path, self.mapit_bootstrap_state_dir,
-            clients, acl_checker=self.acl_checker, clock=self.clock, monotonic=self.monotonic)
+            clients, acl_checker=self.acl_checker, clock=parser_clock, monotonic=parser_monotonic)
         if (authority._binding_sha256 != self.bootstrap_authority._binding_sha256
                 or authority != self.bootstrap_authority
                 or source != self.bootstrap_source or github != self.bootstrap_github
@@ -1045,8 +1236,12 @@ class OwnerEnrolledCurrentState:
     def __call__(self, phase: str, delivery_binding: Mapping[str, Any]) -> dict[str, Any]:
         if phase not in {"preflight", "pre_publish", "pre_update", "accepted"}:
             _fail("binding_invalid")
+        if self._accepted_capsule is not None and phase != "accepted":
+            _fail("binding_invalid")
+        budget = None
         try:
             self._assert_integrity()
+            self._check_observation_gates()
             authority = self.authority
             if (not isinstance(delivery_binding, Mapping)
                     or dict(delivery_binding) != self.delivery_binding):
@@ -1058,7 +1253,7 @@ class OwnerEnrolledCurrentState:
             if publication != self.publication:
                 raise ValueError
             budget = _ReadBudget(authority=authority, clock=self.clock, monotonic=self.monotonic,
-                                 max_calls=_MAX_READS)
+                                 max_calls=_MAX_READS, observation_window=self._observation_window)
             budget.clients = self.clients
             view = _ClientsView(budget, self.clients)
             identity = view["sts"].get_caller_identity()
@@ -1086,9 +1281,10 @@ class OwnerEnrolledCurrentState:
             # compares the historical snapshot; post-update records a new one.
             oauth = OwnerOAuthSdkBindings(
                 {"cloudformation": view["cloudformation"], "cognito": view["cognito"],
-                 "apigatewayv2": view["apigatewayv2"], "lambda": view["lambda"], "sts": view["sts"]},
+                "apigatewayv2": view["apigatewayv2"], "lambda": view["lambda"], "sts": view["sts"]},
                 account_id=authority["account_id"], operator_user_arn=authority["operator_arn"],
-                until_epoch=authority["authorized_until_epoch"], wall_clock=self.clock,
+                until_epoch=(self._observation_window["authorized_until_epoch"]
+                    if self._observation_window is not None else authority["authorized_until_epoch"]), wall_clock=self.clock,
                 monotonic=self.monotonic, max_calls=64)
             if not accepted:
                 if not verify_current_context(self.context, oauth):
@@ -1132,11 +1328,15 @@ class OwnerEnrolledCurrentState:
             if (history[historical_a]["status"] != {"S": "revoked"}
                     or history[historical_b]["status"] != {"S": "active"}):
                 raise ValueError
-            if self._historical_rows is None:
+            observed_history_hashes = {key: _observation_sha256_json(row)
+                                       for key, row in sorted(history.items())}
+            if self._historical_rows is None and self._historical_row_sha256 is None:
                 if accepted:
                     raise ValueError
                 self._historical_rows = json.loads(_canonical(history))
-            elif history != self._historical_rows:
+                self._historical_row_sha256 = observed_history_hashes
+            elif (self._historical_row_sha256 != observed_history_hashes
+                    or (self._historical_rows is not None and history != self._historical_rows)):
                 raise ValueError
             if accepted:
                 synthetic_policy = self._historical_synthetic_policy()
@@ -1172,10 +1372,7 @@ class OwnerEnrolledCurrentState:
                 mapit_digest = authority["mapit_bootstrap_receipt_sha256"]
                 invitation_digest = authority["invitation_receipt_sha256"]
                 key_digest = authority["key_publication_receipt_sha256"]
-                runtime_evidence_sha = hashlib.sha256(_canonical({
-                    "template": template_sha, "resources": sorted(expected_ids.items()),
-                    "owner_context_sha256": owner_context_sha,
-                    "calls": budget.calls})).hexdigest()
+                runtime_evidence_sha = None  # finalized after closure and final STS readback
             else:
                 _verify_artifact(view, authority, authority["prior_zip_sha256"])
                 runtime_clients = {name: view._views[name] for name in (
@@ -1261,6 +1458,21 @@ class OwnerEnrolledCurrentState:
             if (final_identity.get("Account") != authority["account_id"]
                     or final_identity.get("Arn") != authority["operator_arn"]):
                 raise ValueError
+            self._check_observation_gates()
+            if accepted:
+                progress = self._phase_progress_projection()
+                progress_sha = _observation_progress_digest(progress)
+                if self._accepted_capsule is not None:
+                    if (progress_sha != self._accepted_capsule["progress_sha256"]
+                            or owner_context_sha != self._accepted_capsule["owner_context_sha256"]):
+                        raise ValueError
+                    runtime_evidence_sha = self._accepted_capsule["runtime_evidence_sha256"]
+                else:
+                    runtime_evidence_sha = _runtime_evidence_digest_v2(
+                        target_template_sha256=template_sha, artifact_sha256=zip_sha,
+                        owner_context_sha256=owner_context_sha, progress_sha256=progress_sha,
+                        accepted_read_call_count=budget.calls)
+                value["runtime_evidence_sha256"] = runtime_evidence_sha
             self._assert_integrity()
             _strict_state(value, phase=phase, binding=authority,
                 prior_sha=authority["prior_template_sha256"], target_sha=self.target_sha,
@@ -1268,10 +1480,22 @@ class OwnerEnrolledCurrentState:
                 issuer=template["Resources"]["McpJwtAuthorizer"]["Properties"]["JwtConfiguration"]["Issuer"])
             if self._progress_digest is None:
                 self._progress_digest = self._phase_progress_digest()
+            if accepted:
+                self._last_accepted_observation = {
+                    "owner_context_sha256": owner_context_sha,
+                    "runtime_evidence_sha256": runtime_evidence_sha,
+                    "calls": budget.calls,
+                }
+            self._last_successful_state = value
+            self._last_read_call_count = budget.calls
             return value
         except OwnerEnrolledReadbackError:
+            if budget is not None:
+                self._last_read_call_count = budget.calls
             raise
         except Exception:
+            if budget is not None:
+                self._last_read_call_count = budget.calls
             _fail("current_state_unverified")
 
     def _historical_synthetic_policy(self) -> dict[str, Any]:
@@ -1319,5 +1543,27 @@ def make_owner_enrolled_current_state(**kwargs):
         _fail("binding_invalid")
 
 
+def make_owner_enrolled_accepted_observer(**kwargs):
+    """Construct accepted-only fresh readback from a verified restart capsule.
+
+    This read-only mode never runs pre-update phases or renews the expired
+    delivery authority. It requires the accepted runtime hash from the exact
+    accepted update-journal receipt and a fresh ≤600-second observation window
+    with fresh source/protection callbacks.
+    """
+    try:
+        required = {"accepted_observation_capsule", "observation_window",
+                    "accepted_update_state",
+                    "accepted_runtime_evidence_sha256", "observation_source_check",
+                    "observation_protection_check"}
+        if not required.issubset(kwargs):
+            raise ValueError
+        return OwnerEnrolledCurrentState(**kwargs)
+    except OwnerEnrolledReadbackError:
+        raise
+    except Exception:
+        _fail("binding_invalid")
+
+
 __all__ = ["OwnerEnrolledCurrentState", "OwnerEnrolledReadbackError",
-           "make_owner_enrolled_current_state"]
+           "make_owner_enrolled_accepted_observer", "make_owner_enrolled_current_state"]
