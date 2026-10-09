@@ -460,6 +460,16 @@ cancels an already started request nor deletes credentials.
 
 ### Separate real-MAPIT key publication preparation
 
+The pure `scripts/dev_mapit_bootstrap_contract.py` binds proposed fresh source,
+CI/runtime evidence references, an exact caller, a short exclusive window and
+fresh tenant paths to the fixed four-resource MAPIT template. The new intent
+kind cannot be confused with the synthetic bootstrap. Any existing journal
+state is consumed; the caller must durably persist the returned intent before
+an external create. The time guard is permanently invalid after a failed check.
+Evidence digests establish consistency only, not fresh CI or cloud evidence;
+this module performs no I/O and is not a deployment operator. A future runner
+must obtain and verify the referenced evidence and exact runtime permissions.
+
 `scripts/dev_mapit_binding_key_setup.py` is an injected, create-only operator
 core for the distinct DEV MAPIT schema-2 config path. It does not reuse the
 synthetic publisher or its consumed journals. A durable intent precedes the

@@ -1,5 +1,22 @@
 # Project Agent Workflow
 
+Fresh real-MAPIT bootstrap contract source preparation, 2026-10-09: independent
+offline review accepted exact field/digest/template validation, distinct intent
+kind, historically disjoint tenant paths and a sticky exclusive time guard.
+Forty-eight focused contract/independent/factory tests passed. Evidence hashes
+and frozen source validation passed 4,110 tests with twelve environment skips;
+compilation and model-free evaluation 12/12 passed. The hashes
+are references, not fresh CI or cloud evidence. The pure contract performs no
+I/O, grants no deployment authority and does not replace a reviewed live
+coordinator/runtime verifier. Synthetic receipts and consumed journals remain
+unchanged. Owner login/MAPIT onboarding and production promotion are not accepted.
+
+PR #84 merged normally to develop 7c74bb4 after eight green source checks
+(37935800337) and eight integrated checks (37936126885).
+A separate fresh readonly OAuth context check passed 22 AWS reads
+with exact accepted owner pool, DEV client and three-resource stack/readback.
+No listener, human login, cloud write or MAPIT access followed that check.
+
 Separate real-MAPIT key publisher source preparation, 2026-10-09: the injected
 core and paired-client factory passed independent offline review and 24 focused
 tests. Frozen full suite: 4,081 passed with twelve environment skips;
