@@ -1,5 +1,31 @@
 # Project Agent Workflow
 
+SDK JSON compatibility correction accepted independently offline, 2026-10-09:
+84 focused readback tests pass, including an actual verifier composition with
+recursively nested OrderedDict matching Botocore GetTemplate output. Normalize
+all JSON objects before the unchanged exact template validator; reject duplicate
+or non-string keys, non-JSON types/non-finite numbers, excessive depth/nodes,
+and aggregate canonical size above 64 KiB before final allocation. Bounded real
+read-only diagnostics confirmed the original template digest and nineteen
+resources; the earlier top-only conversion rejected nested Metadata. No AWS
+write, private key/session decryption or owner runtime delivery followed.
+One subsequent actual private-loader check passed with two SDK reads and two
+fixed public JWKS GETs, immutable receipts unchanged and zero writes; it loaded
+no key bytes or MAPIT sessions. Source CI/promotion and the separately reviewed one-shot operator remain
+required before any delivery. Historical consumed authority is not replayable.
+Keep owned temporary wakefulness active and remove it before final handoff.
+
+Private provenance integration checkpoint, 2026-10-09: PR #99 merged normally
+to develop 3bed243 after eight green source checks (37968202910); all eight
+integrated checks passed (37968785588). Frozen local suite: 4,485 passed,
+twelve environment skips; compilation and deterministic evaluation 12/12.
+PR #98 integrated checks also passed (37967747790). The one-process closed
+owner delivery operator remains under independent synthetic composition review;
+these parser/readback acceptances do not authorize replay of consumed journals
+or establish an actual owner runtime deployment, login or MAPIT business E2E.
+Production, owner MFA and quota ten are unchanged. Maintain owned temporary
+wakefulness while working and remove it before final handoff.
+
 Owner private-input loader accepted independently offline, 2026-10-09: twenty-one
 focused tests pass. Owning ACL-private receipt parsers bind the original owner
 OAuth state directory, complete MAPIT runtime evidence digest, accepted bootstrap,

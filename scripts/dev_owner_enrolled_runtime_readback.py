@@ -275,22 +275,80 @@ class _ClientsView:
 
 
 def _json_document(value: Any) -> dict[str, Any] | None:
-    if isinstance(value, Mapping):
-        return dict(value)
-    if type(value) is str and len(value) <= 64 * 1024:
-        try:
-            def unique(pairs):
+    try:
+        def unique(pairs):
+            result = {}
+            for key, item in pairs:
+                if type(key) is not str or len(key) > 64 * 1024 or key in result:
+                    raise ValueError
+                result[key] = item
+            return result
+
+        nodes = 0
+        encoded_bytes = 0
+
+        def charge(size):
+            nonlocal encoded_bytes
+            encoded_bytes += size
+            if encoded_bytes > 64 * 1024:
+                raise ValueError
+
+        def charge_scalar(node):
+            if type(node) is int and node.bit_length() > 262144:
+                raise ValueError
+            charge(len(json.dumps(node, ensure_ascii=True, allow_nan=False,
+                                  separators=(",", ":"))))
+
+        def normalize(node, depth=0):
+            nonlocal nodes
+            nodes += 1
+            if nodes > 32768 or depth > 64:
+                raise ValueError
+            if isinstance(node, Mapping):
+                charge(2)
                 result = {}
-                for key, item in pairs:
-                    if key in result:
+                for key, item in node.items():
+                    if type(key) is not str or len(key) > 64 * 1024 or key in result:
                         raise ValueError
-                    result[key] = item
+                    charge_scalar(key)
+                    charge(1 + bool(result))
+                    result[key] = normalize(item, depth + 1)
                 return result
-            parsed = json.loads(value, object_pairs_hook=unique)
-            return parsed if type(parsed) is dict else None
-        except Exception:
+            if type(node) is list:
+                charge(2)
+                result = []
+                for item in node:
+                    charge(bool(result))
+                    result.append(normalize(item, depth + 1))
+                return result
+            if type(node) is str:
+                if len(node) > 64 * 1024:
+                    raise ValueError
+                charge_scalar(node)
+                return node
+            if node is None or type(node) in (bool, int):
+                charge_scalar(node)
+                return node
+            if type(node) is float and math.isfinite(node):
+                charge_scalar(node)
+                return node
+            raise ValueError
+
+        if isinstance(value, Mapping):
+            # Botocore returns nested OrderedDict for GetTemplate JSON values.
+            # Normalize the entire document, not just its outermost mapping;
+            # keep the exact-type checks in the downstream template verifier.
+            parsed = normalize(value)
+        elif type(value) is str and len(value.encode("utf-8")) <= 64 * 1024:
+            parsed = normalize(json.loads(value, object_pairs_hook=unique,
+                parse_constant=lambda _value: (_ for _ in ()).throw(ValueError())))
+        else:
             return None
-    return None
+        if type(parsed) is not dict or len(_canonical(parsed)) > 64 * 1024:
+            return None
+        return parsed
+    except Exception:
+        return None
 
 
 def _resolve(node: Any, *, account: str, rows: Mapping[str, Mapping[str, Any]], table_arn: str):

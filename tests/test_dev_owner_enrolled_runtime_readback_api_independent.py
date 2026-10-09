@@ -388,3 +388,32 @@ def test_current_state_rejects_noncanonical_delivery_binding_before_sdk(tmp_path
     with pytest.raises(OwnerEnrolledReadbackError):
         fixture["current"]("preflight", binding)
     assert scenario.calls == []
+
+
+def test_nested_sdk_ordered_mappings_normalize_without_mutation():
+    from collections import OrderedDict
+    from scripts.dev_owner_enrolled_runtime_readback import _json_document
+
+    raw = OrderedDict(Metadata=OrderedDict(ManifestContract=OrderedDict(
+        tenants=[OrderedDict(key="synthetic", label="A")])))
+    result = _json_document(raw)
+    assert type(result) is dict
+    assert type(result["Metadata"]) is dict
+    assert type(result["Metadata"]["ManifestContract"]["tenants"][0]) is dict
+    assert type(raw["Metadata"]) is OrderedDict
+    assert result == raw
+
+
+@pytest.mark.parametrize("value", [
+    {"Metadata": {1: "not-a-json-key"}},
+    {"Metadata": ("not-a-json-array",)},
+    {"Metadata": float("nan")},
+    {"Metadata": float("inf")},
+    {"Metadata": "x" * (64 * 1024)},
+    '{"Metadata": NaN}',
+    '{"Metadata": {}, "Metadata": {}}',
+])
+def test_sdk_document_normalization_rejects_non_json_or_oversized_values(value):
+    from scripts.dev_owner_enrolled_runtime_readback import _json_document
+
+    assert _json_document(value) is None
