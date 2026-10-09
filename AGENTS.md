@@ -2,7 +2,8 @@
 
 Owner runtime readback accepted independently offline, 2026-10-09: the actual
 private-loader composition passes synthetic PRE and accepted POST phases with
-64 focused tests. It preserves historical hosted A revoked/B active, exact
+69 focused tests, including real coordinator preflight/publication/update/
+acceptance composition with synthetic write adapters. It preserves historical hosted A revoked/B active, exact
 physical resources and table identity, and full four-policy IAM inventory before
 the frozen legacy three-policy projection. PRE pins the technical issuer/prior
 ZIP; POST pins the owner issuer/new ZIP and one exact completion event. Shared

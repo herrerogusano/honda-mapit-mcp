@@ -905,6 +905,15 @@ class OwnerEnrolledCurrentState:
                     or hashlib.sha256(mapit_jwks).hexdigest() != self.authority["mapit_jwks_sha256"]):
                 raise ValueError
             self.target_sha = _template_sha(self.target)
+            self.delivery_binding = {
+                "schema": 1, "kind": "dev-owner-enrolled-delivery",
+                "authority": json.loads(_canonical(self.authority)),
+                "accepted": json.loads(_canonical(self.accepted)),
+                "prior_template_sha256": self.authority["prior_template_sha256"],
+                "target_template_sha256": self.target_sha,
+                "artifact_sha256": self.zip_sha, "artifact_size": self.archive_size,
+                "client_request_token": f"owner-enrolled-{self.authority['run_id']}",
+            }
             self._resource_ids = None
             self._historical_rows = None
             self._synthetic_policy = None
@@ -923,6 +932,7 @@ class OwnerEnrolledCurrentState:
         value = {
             "authority": self.authority, "accepted": self.accepted,
             "prior": self.prior, "target": self.target, "target_sha": self.target_sha,
+            "delivery_binding": self.delivery_binding,
             "zip_sha": self.zip_sha, "archive_size": self.archive_size,
             "archive_sha": hashlib.sha256(self.archive).hexdigest(),
             "manifest_sha": hashlib.sha256(self.manifest_raw).hexdigest(),
@@ -975,20 +985,19 @@ class OwnerEnrolledCurrentState:
             _fail("current_state_unverified")
 
     def __call__(self, phase: str, delivery_binding: Mapping[str, Any]) -> dict[str, Any]:
-        if phase not in {"pre_publish", "pre_update", "accepted"}:
+        if phase not in {"preflight", "pre_publish", "pre_update", "accepted"}:
             _fail("binding_invalid")
         try:
             self._assert_integrity()
             authority = self.authority
+            if (not isinstance(delivery_binding, Mapping)
+                    or dict(delivery_binding) != self.delivery_binding):
+                raise ValueError
             self._reload_bootstrap_lineage()
             publication = _load_accepted_publication(
                 self.mapit_publication_state_dir, acl_checker=self.acl_checker,
                 expected_receipt_sha256=authority["key_publication_receipt_sha256"])
-            if (not isinstance(delivery_binding, Mapping)
-                    or publication != self.publication
-                    or delivery_binding.get("authority") != authority
-                    or delivery_binding.get("target_template_sha256") != self.target_sha
-                    or delivery_binding.get("artifact_sha256") != self.zip_sha):
+            if publication != self.publication:
                 raise ValueError
             budget = _ReadBudget(authority=authority, clock=self.clock, monotonic=self.monotonic,
                                  max_calls=_MAX_READS)

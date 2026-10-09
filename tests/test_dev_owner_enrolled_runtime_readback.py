@@ -554,9 +554,7 @@ def _build_owner_enrolled_current_state_fixture(tmp_path):
     return {
         "current": instance,
         "delivery": delivery,
-        "delivery_binding": {"authority": delivery_authority,
-            "target_template_sha256": instance.target_sha,
-            "artifact_sha256": instance.zip_sha},
+        "delivery_binding": copy.deepcopy(instance.delivery_binding),
         "owner_context": owner_context,
         "mapit_authority": authority,
         "mapit_state": coordinator_journal.state,

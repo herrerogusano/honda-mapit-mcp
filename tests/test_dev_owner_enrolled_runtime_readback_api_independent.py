@@ -297,3 +297,94 @@ def test_role_policy_document_response_must_echo_exact_requested_identity(field)
     with pytest.raises(readback.OwnerEnrolledReadbackError):
         _verify_role(view, {"account_id": ACCOUNT}, template, rows,
                      accepted=True, synthetic_policy=synthetic["PolicyDocument"])
+
+
+def test_delivery_coordinator_runs_full_current_state_preflight_publish_update_and_acceptance(tmp_path, monkeypatch):
+    """Exercise the real coordinator against its real current-state adapter."""
+    from pathlib import Path
+    import scripts.dev_identity_binding_runtime_evidence as legacy
+
+    monkeypatch.setattr(legacy, "validate_private_location", lambda path: Path(path))
+    fixture = _build_owner_enrolled_current_state_fixture(tmp_path)
+    delivery = fixture["delivery"]
+    scenario = fixture["scenario"]
+    # The fixture enriches the delivery authority with the accepted owner,
+    # MAPIT-publication and historical-lineage receipts after the generic
+    # delivery harness has been built. Reconstruct the real coordinator from
+    # that final authority instead of reusing the harness's intentionally
+    # earlier snapshot.
+    from scripts.dev_owner_enrolled_delivery import OwnerEnrolledClosedDelivery
+    from test_dev_owner_enrolled_delivery import Journal, _accepted
+
+    artifact_journal, update_journal = Journal(), Journal()
+    coordinator = OwnerEnrolledClosedDelivery(
+        authority=delivery.auth,
+        accepted=_accepted(delivery.auth),
+        prior_template=delivery.prior,
+        mapit_bootstrap_template=fixture["mapit_plan"].template,
+        manifest_raw=delivery.args["manifest_raw"],
+        invitation_jwks=delivery.args["invitation_jwks"],
+        mapit_jwks=delivery.args["mapit_jwks"],
+        archive_bytes=delivery.archive,
+        archive_summary=delivery.summary,
+        artifact_journal=artifact_journal,
+        update_journal=update_journal,
+        source_check=delivery.source_check,
+        protection_check=delivery.protection_check,
+        current_state=fixture["current"],
+        publish_once=delivery.publish,
+        update_once=delivery.update,
+        clock=delivery.clock,
+        monotonic=delivery.monotonic_clock,
+    )
+    delivery.coordinator = coordinator
+    observed_phases = []
+
+    def current_state(phase, binding):
+        observed_phases.append(phase)
+        return fixture["current"](phase, binding)
+
+    coordinator._current_state = current_state
+    assert coordinator.preflight() == {"ok": True, "phase": "ready"}
+    assert delivery.publish_calls == delivery.update_calls == 0
+    assert coordinator.publish()["phase"] == "published"
+    assert delivery.publish_calls == 1 and delivery.update_calls == 0
+    assert coordinator.update()["phase"] == "acknowledged"
+    assert delivery.publish_calls == delivery.update_calls == 1
+    scenario.phase = "accepted"
+    accepted = coordinator.readback()
+
+    assert accepted["phase"] == "accepted"
+    assert accepted["resource_count"] == 19
+    assert accepted["api_disabled"] is True
+    assert accepted["lambda_reserved_concurrency"] == 0
+    assert observed_phases == ["preflight", "pre_publish", "pre_publish",
+                               "pre_update", "pre_update", "accepted"]
+    assert delivery.publish_calls == delivery.update_calls == 1
+    assert artifact_journal.state["phase"] == "published"
+    assert update_journal.state["phase"] == "accepted"
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "size", "token"])
+def test_current_state_rejects_noncanonical_delivery_binding_before_sdk(tmp_path, monkeypatch, mutation):
+    fixture = _build_owner_enrolled_current_state_fixture(tmp_path)
+    from pathlib import Path
+    import scripts.dev_identity_binding_runtime_evidence as legacy
+    from scripts.dev_owner_enrolled_runtime_readback import OwnerEnrolledReadbackError
+
+    monkeypatch.setattr(legacy, "validate_private_location", lambda path: Path(path))
+    scenario = fixture["scenario"]
+    binding = dict(fixture["current"].delivery_binding)
+    if mutation == "missing":
+        binding.pop("client_request_token")
+    elif mutation == "extra":
+        binding["unexpected"] = True
+    elif mutation == "size":
+        binding["artifact_size"] += 1
+    else:
+        binding["client_request_token"] = "owner-enrolled-foreign"
+    scenario.calls.clear()
+
+    with pytest.raises(OwnerEnrolledReadbackError):
+        fixture["current"]("preflight", binding)
+    assert scenario.calls == []
