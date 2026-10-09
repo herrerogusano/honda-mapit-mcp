@@ -485,7 +485,10 @@ def make_mapit_runtime_evidence_verifier(
             if not isinstance(legacy_result, Mapping) or legacy_result.get("verified") is not True:
                 raise _EvidenceFailure
             after_template, after_rows = _current_template(counted, runtime_binding)
-            if _digest(after_template) != _digest(app_template) or _digest(after_rows) != _digest(app_rows):
+            # SDK resource summaries contain native datetime timestamps. Keep
+            # every returned field in the equality check instead of forcing
+            # non-JSON SDK values through the template's JSON digest function.
+            if _digest(after_template) != _digest(app_template) or after_rows != app_rows:
                 raise _EvidenceFailure
             after = _policy_snapshot(counted["iam"], expected_template=after_template, resource_rows=after_rows,
                                      account=authority.account_id, phase=phase,
