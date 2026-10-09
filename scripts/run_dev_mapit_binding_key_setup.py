@@ -141,6 +141,12 @@ def _load_accepted_bootstrap(authority_path: Path, state_dir: Path, clients, *, 
     state_path = validate_private_location(journal.path, acl_checker=acl_checker)
     if not state_path.is_file() or state_path.stat().st_size > 128 * 1024:
         raise ValueError
+    state, plan, receipt_digest = _parse_accepted_bootstrap_state(authority, journal, clients)
+    return authority, source, github, state, plan, receipt_digest
+
+
+def _parse_accepted_bootstrap_state(authority, journal, clients):
+    """Owning parser only; callers supply trusted immutable journal evidence."""
     from scripts.dev_mapit_bootstrap_coordinator import MapitBootstrapCoordinator
     coordinator = MapitBootstrapCoordinator(
         clients, journal, authority=authority, fresh_source=lambda _authority: {},
@@ -163,7 +169,7 @@ def _load_accepted_bootstrap(authority_path: Path, state_dir: Path, clients, *, 
         "intent": state["intent"], "readback_receipt": receipt,
         "template_sha256": plan.template_sha256,
     }
-    return authority, source, github, state, plan, _digest(receipt_binding)
+    return state, plan, _digest(receipt_binding)
 
 
 class _ReadClient:
@@ -255,8 +261,17 @@ def _validate_key_clients(clients):
             raise ValueError
 
 
-def _verify_current_bootstrap(clients, authority, state, plan, receipt_digest, counter, started, deadline, monotonic):
-    """Exact read-only current readback of the retained bootstrap resources."""
+def _verify_current_bootstrap_resources(clients, authority, state, plan, receipt_digest, counter, started, deadline, monotonic):
+    """Exact retained resources and empty binding document, not SSM absence.
+
+    Kept separate so a later published-config verifier can reuse the unchanged
+    resource checks without pretending that an accepted config is absent.
+    """
+    current = {"authority_sha256": authority._binding_sha256,
+               "intent": state["intent"], "readback_receipt": state["readback_receipt"],
+               "template_sha256": plan.template_sha256}
+    if _digest(current) != receipt_digest:
+        raise ValueError
     def call(service, method, **kwargs):
         return getattr(clients[service], method)(**kwargs)
     stack_reply = call("cloudformation", "describe_stacks", StackName=STACK_NAME)
@@ -408,6 +423,12 @@ def _verify_current_bootstrap(clients, authority, state, plan, receipt_digest, c
             or key.get("Enabled") is not True or key.get("KeyState") != "Enabled"
             or key.get("KeyUsage") != "ENCRYPT_DECRYPT"):
         raise ValueError
+def _verify_current_bootstrap(clients, authority, state, plan, receipt_digest, counter, started, deadline, monotonic):
+    """Original pre-publication contract: resources plus all paths absent."""
+    _verify_current_bootstrap_resources(clients, authority, state, plan,
+        receipt_digest, counter, started, deadline, monotonic)
+    def call(service, method, **kwargs):
+        return getattr(clients[service], method)(**kwargs)
     for parameter in (CONFIG_PARAMETER,) + tuple(
             f"/honda-mapit-mcp/dev/tenants/{key}/mapit-refresh-token" for key in authority._tenant_keys):
         try:

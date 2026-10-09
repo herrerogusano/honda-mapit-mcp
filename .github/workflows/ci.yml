@@ -117,6 +117,10 @@ jobs:
         run: python -m pytest -q tests/test_dev_owner_enrolled_runtime.py tests/test_dev_owner_enrolled_runtime_independent.py
       - name: Test one-shot closed owner delivery and post-update login lineage offline
         run: python -m pytest -q tests/test_dev_owner_enrolled_delivery.py tests/test_dev_owner_enrolled_delivery_independent.py tests/test_dev_owner_enrolled_delivery_changes_independent.py tests/test_dev_owner_enrolled_login_lineage.py tests/test_dev_owner_enrolled_login_lineage_independent.py
+      - name: Test explicit owner delivery SDK and published namespace readback offline
+        run: python -m pytest -q tests/test_dev_owner_enrolled_delivery_sdk.py tests/test_dev_owner_enrolled_delivery_sdk_independent.py tests/test_dev_owner_enrolled_namespace_readback.py tests/test_dev_owner_enrolled_namespace_readback_independent.py
+      - name: Test accepted owner manifest inputs without network or keys
+        run: python -m pytest -q tests/test_dev_owner_enrolled_inputs.py tests/test_dev_owner_enrolled_inputs_independent.py
       - name: Test separate MAPIT bootstrap one-shot coordinator offline
         run: python -m pytest -q tests/test_dev_mapit_bootstrap_coordinator.py tests/test_dev_mapit_bootstrap_coordinator_independent.py
       - name: Test complete readonly MAPIT runtime evidence and private operator offline

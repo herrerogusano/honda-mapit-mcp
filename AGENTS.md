@@ -1,5 +1,20 @@
 # Project Agent Workflow
 
+Offline owner delivery SDK and input preparation, 2026-10-09: independent
+review accepted explicit frozen-credential SDK clients, one-attempt artifact
+and closed-runtime update adapters, published namespace metadata readback and
+filesystem-free owner manifest assembly. Full suite: 4,364 passed, twelve
+environment skips; compilation and model-free evaluation 12/12 passed.
+The existing invitation path guard and historical bootstrap parsers remain
+unchanged in meaning. Config metadata readback never decrypts config keys.
+PR #94 is integrated on develop b0b7dee after eight green source and eight
+green integrated checks (37956827934). These new adapters are not a complete
+live operator: current runtime verification, private authority composition,
+ARM probe and owner login still require reviewed integration. No runtime
+deployment, API opening, MAPIT session or human login follows from offline
+acceptance. Accepted invitation/key publication intents remain consumed.
+Temporary wakefulness is owned and must be removed before final handoff.
+
 Separate MAPIT key publication accepted, 2026-10-09: on clean develop ca94c92
 and exact eight-green integrated CI 37955083936, one fresh private publication
 authority completed key_publication_verified with 72 SDK calls and 27 bounded
