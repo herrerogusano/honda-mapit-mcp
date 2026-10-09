@@ -11,7 +11,7 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
-The private-input loader passes independent review and twenty offline tests.
+The private-input loader passes independent review and twenty-one offline tests.
 It uses the owning private receipt parsers, binds the OAuth state directory and
 complete runtime evidence digest, and fetches only the two fixed public issuer
 JWKS documents. Its redacted projection is registered only after validation;

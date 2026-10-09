@@ -89,6 +89,26 @@ def test_returned_object_cannot_disable_file_fingerprint_rechecks(tmp_path):
     assert loaded.assert_unchanged() is False
 
 
+def test_equal_subclass_cannot_borrow_registered_projection_baseline(tmp_path):
+    inputs, _fixture = _private_inputs(tmp_path)
+    loaded = loader.load_owner_enrolled_private_inputs(**inputs)
+
+    class EqualProjection(loader.OwnerEnrolledPrivateInputs):
+        def __hash__(self):
+            return hash(loaded)
+
+        def __eq__(self, other):
+            return other is loaded
+
+    counterfeit = object.__new__(EqualProjection)
+    counterfeit.manifest_inputs = loaded.manifest_inputs
+    counterfeit.prior_template = loaded.prior_template
+    counterfeit.runtime_binding = loaded.runtime_binding
+    counterfeit.bootstrap_template = loaded.bootstrap_template
+    assert counterfeit is not loaded
+    assert counterfeit.assert_unchanged() is False
+
+
 def test_owner_oauth_state_directory_must_match_the_supplied_journal(tmp_path):
     inputs, _fixture = _private_inputs(tmp_path)
     original_state = inputs["owner_oauth_state_dir"]

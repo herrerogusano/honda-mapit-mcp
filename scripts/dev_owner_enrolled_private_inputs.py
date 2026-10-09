@@ -176,6 +176,8 @@ class OwnerEnrolledPrivateInputs:
 
     def assert_unchanged(self) -> bool:
         try:
+            if type(self) is not OwnerEnrolledPrivateInputs:
+                return False
             with _REGISTRY_LOCK:
                 baseline = _REGISTERED.get(self)
             if baseline is None:

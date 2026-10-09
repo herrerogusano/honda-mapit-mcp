@@ -1,6 +1,6 @@
 # Project Agent Workflow
 
-Owner private-input loader accepted independently offline, 2026-10-09: twenty
+Owner private-input loader accepted independently offline, 2026-10-09: twenty-one
 focused tests pass. Owning ACL-private receipt parsers bind the original owner
 OAuth state directory, complete MAPIT runtime evidence digest, accepted bootstrap,
 invitation and version-one publication. Two fixed issuer public JWKS GETs are
