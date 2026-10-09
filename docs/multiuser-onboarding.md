@@ -460,6 +460,17 @@ cancels an already started request nor deletes credentials.
 
 ### Separate real-MAPIT key publication preparation
 
+The injected `scripts/dev_mapit_bootstrap_coordinator.py` implements distinct
+preflight, one-shot creation and exact readback for the real-MAPIT namespace.
+It rechecks current evidence and absence before consuming a durable create
+intent, then checks caller identity again immediately before dispatch. An
+ambiguous response consumes that intent; only read-only reconciliation against
+the exact root completion token can accept it later. Exact table identity,
+fractional creation time, owned encryption, role/boundary/policy documents and
+bounded first-page evidence are required. The coordinator deliberately needs
+trusted adapters for fresh source/protections and the complete current runtime:
+injected successful fixtures are not cloud acceptance or deployment authority.
+
 Runtime archives must include transitive imports, not just their entrypoint.
 The opt-in identity verifier introduced an unconditional `cloud_provider` import
 of `mapit_identity`; both the production and synthetic multiuser source lists
