@@ -11,6 +11,18 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The read-only owner runtime adapter now composes the owning private historical
+loaders with bounded same-credential SDK readbacks, rather than injected success
+flags. Its SDK-shaped integration fixture exercises the real constructor and
+both prior/accepted phases. PRE checks the historical technical issuer and ZIP;
+POST checks the new owner issuer, exact candidate ZIP and a unique matching
+CloudFormation completion event. Historical A stays revoked, B active, and their
+complete rows and physical resources must remain unchanged. Both phases end by
+rechecking closed API, zero reservation and operator identity. This is offline
+composition evidence only: no owner runtime update or MAPIT session is accepted.
+Private preparation, fresh source/CI/protections and an independently reviewed
+one-shot operator are still required before a live update.
+
 The offline delivery metadata assembler now passes independent review and a
 4,395-test frozen suite (twelve environment skips), compilation and model-free
 evaluation 12/12. It validates receipt projections and separates historical

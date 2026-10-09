@@ -434,6 +434,12 @@ class OwnerEnrolledClosedDelivery:
             prior_zip_match = None
         if prior_zip_match is None or prior_zip_match.group(1) != self.authority["prior_zip_sha256"]:
             _fail("accepted_evidence_invalid")
+        try:
+            prior_tenant_keys = [row["key"] for row in self.prior["Metadata"]["ManifestContract"]["tenants"]]
+        except Exception:
+            _fail("accepted_evidence_invalid")
+        if prior_tenant_keys != self.authority["historical_tenant_keys"]:
+            _fail("accepted_evidence_invalid")
         self.zip_sha = hashlib.sha256(archive_bytes).hexdigest()
         manifest_sha = hashlib.sha256(manifest_raw).hexdigest()
         if (manifest_sha != self.authority["manifest_sha256"]

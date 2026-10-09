@@ -1,5 +1,21 @@
 # Project Agent Workflow
 
+Owner runtime readback accepted independently offline, 2026-10-09: the actual
+private-loader composition passes synthetic PRE and accepted POST phases with
+69 focused tests, including real coordinator preflight/publication/update/
+acceptance composition with synthetic write adapters. It preserves historical hosted A revoked/B active, exact
+physical resources and table identity, and full four-policy IAM inventory before
+the frozen legacy three-policy projection. PRE pins the technical issuer/prior
+ZIP; POST pins the owner issuer/new ZIP and one exact completion event. Shared
+read/time budgets, SDK model checks, duplicate JSON/tag rejection and final
+closed API/reserve-zero/STS checks remain mandatory. This is not an actual owner
+runtime update, MAPIT session or business E2E. Private input/operator preparation
+and fresh exact source/CI/protection evidence remain prerequisites. Historical
+invitation/key-publication intents remain consumed. PR #97 is integrated on
+develop 1f4e87c after eight green checks (37962433939); its frozen suite passed
+4,395 tests with twelve environment skips. Remove owned temporary wakefulness
+before handoff and preserve original power settings.
+
 Owner delivery metadata preparation accepted offline, 2026-10-09: 4,395 tests
 passed with twelve environment skips, compilation and model-free evaluation
 12/12. The assembler validates accepted receipt projections and distinct hosted
