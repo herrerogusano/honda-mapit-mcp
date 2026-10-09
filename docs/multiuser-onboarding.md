@@ -556,6 +556,24 @@ clients remain read-only apart from that exact role assumption. Failed SDK
 attempts count toward the shared budget, and no consumed publication is retried.
 This operator still does not enroll a MAPIT account or open the endpoint.
 
+`dev_owner_enrolled_runtime.py` reconstructs the complete prior nineteen-resource
+template and exact four-resource MAPIT bootstrap before constructing the closed
+owner-enrolled target. Its single owner key must already be the bootstrap's
+authorized key; it does not generate another key. Only the artifact/handler/
+environment, existing authorizer issuer, authorization-table read key and
+explicit target metadata change. API closure and reservation zero are retained.
+The manifest/JWKS parser and exact target comparator reject crossed accounts,
+key/context substitution and unrelated resource drift. The official offline
+schema inventory includes this target using public-only synthetic fixtures.
+
+This pure profile is not delivery authority or an owner identity receipt.
+The live operator still must bind the manifest pool/client/subject to the
+accepted owner OAuth and original trusted owner receipts, activate a separately
+authorized invitation, publish/update/read back the exact artifact/runtime and
+verify bounded HTTP acceptance and closure. The single issuer changes from the
+technical pool to the permanent pool: historical A/B records, pool and keys are
+not mutated, but those technical identities cannot authenticate in owner mode.
+
 These are offline preparations, not a key-publication or cloud-bootstrap
 receipt. Live use still needs a separately accepted real-namespace bootstrap,
 fresh source/protection checks, private authority and its own immutable journal.

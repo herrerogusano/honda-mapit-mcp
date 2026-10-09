@@ -26,6 +26,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "retained_dev_controls_draft", "retained_dev_artifacts_draft",
         "retained_dev_oauth_draft",
         "retained_dev_multiuser_setup", "retained_dev_multiuser_runtime",
+        "retained_dev_owner_enrolled_runtime",
         "retained_dev_multiuser_roles_bootstrap", "retained_dev_multiuser_roles_recurrent",
         "retained_dev_multiuser_roles_recurrent_existing_key",
         "retained_dev_multiuser_timed_controls",
