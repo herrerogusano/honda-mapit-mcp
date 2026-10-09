@@ -1,5 +1,45 @@
 # Project Agent Workflow
 
+Separate MAPIT key publication accepted, 2026-10-09: on clean develop ca94c92
+and exact eight-green integrated CI 37955083936, one fresh private publication
+authority completed key_publication_verified with 72 SDK calls and 27 bounded
+source/protection command calls. The separate Standard SecureString is version
+one; its intent is consumed. Never regenerate, overwrite, rotate, republish or
+replay these accepted keys. Key bytes/hashes were not persisted in Git, vault,
+environments or journals. Ten independent bounded readonly AWS calls confirmed
+exact caller, owner active/revision one, config metadata version one, same
+accepted TableId, AWS-owned table encryption, unchanged nineteen app resources,
+four namespace resources, UPDATE_COMPLETE, closed API and Lambda reserve zero.
+Two diagnostic preparation errors occurred before SDK construction: an unused
+wrong import and use of the CAS-envelope parser for a legacy direct journal;
+the final check uses the owning FileJournal. No writes were retried. Production,
+owner MFA, MAPIT sessions/business data, Telegram and quota ten are unchanged.
+
+Offline owner-enrolled delivery and post-update lineage are independently
+accepted: 4,304 tests passed with twelve environment skips (SDK adapter work
+excluded), compilation and 74 focused holdouts passed. The core binds exact
+embedded manifest/JWKS ZIP bytes, strict integer receipt versions, separate
+one-shot publication/update journals and distinct new accepted context/runtime
+digests, including repeat-readback receipt integrity. The historical owner
+context verifier is unchanged. The new lineage seam requires registered
+original context, exact accepted delivery and matching fresh paired projections
+with one shared process-local credential capability. Injected projections are
+not AWS proof. Full current-state adapters, private manifest/authority assembly,
+ARM owner-enrolled probe and human login integration remain pending; neither
+this core nor its fake-adapter tests authorize deployment or prove real MAPIT.
+
+Owner invitation accepted in real DEV, 2026-10-09: PR #93 merged normally to
+develop ca94c92 after eight green source checks (37954532658) and eight green
+integrated checks (37955083936). One new private authority, distinct from the
+earlier stopped read-only attempt, completed with owner_invitation_accepted
+and 93 bounded SDK calls. Exactly one create-only owner authorization CAS and
+strong readback are accepted; its intent is consumed. Never replay or revoke/
+revive this owner row implicitly. The bootstrap-authorized owner key remains
+unchanged. A separate fresh key-publication authority has been prepared, but
+publication is not accepted at this checkpoint. No handler update, API opening,
+MAPIT session, human login or business E2E occurred. Historical synthetic state,
+production/MFA/Telegram and regional Lambda quota ten remain unchanged.
+
 Offline invitation-read correction and private key metadata preparation,
 2026-10-09: independent review accepted the exact second readonly table/key
 pair without changing the singleton authorization writer. Real bootstrap
