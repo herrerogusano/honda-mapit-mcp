@@ -28,6 +28,32 @@ from scripts.run_aws_dev_owner_oauth_bootstrap import _load_binding, _reject_dup
 from scripts.run_aws_retained_dev_bootstrap import load_authorization, validate_private_location, validate_source_and_ci
 
 
+def parse_trusted_owner_policy(value, *, expected_account: str):
+    """Pure validation of an operator-owned accepted release metadata snapshot.
+
+    This does not establish file provenance; callers must first read a bounded,
+    ACL-verified private receipt. It selects no MAPIT credential/session fields.
+    """
+    try:
+        manifest = value["inventory"]["manifest"]
+        digest = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=True, allow_nan=False).encode("ascii")).hexdigest()
+        final = value["final_release_verified"]
+        if (type(value.get("schema")) is not int or value["schema"] != 1
+                or value.get("kind") != "cd_delivery_preparation"
+                or manifest.get("environment") != "prod" or manifest.get("region") != "eu-west-1"
+                or manifest.get("account_id") != expected_account
+                or value["inventory"].get("account") != expected_account
+                or value["inventory"].get("manifest_sha") != digest
+                or final.get("exact_readback_verified") is not True
+                or final.get("manifest_sha256") != digest):
+            raise ValueError
+        return CognitoProdPolicy(**{key: manifest[key] for key in
+            ("user_pool_id", "api_id", "client_id", "owner_subject")})
+    except Exception:
+        raise ValueError("owner_login_context_unverified") from None
+
+
 def load_trusted_owner_policy(path: Path, *, expected_account: str, acl_checker=None):
     """Read the accepted original release receipt, not a callback-derived user.
 
@@ -44,21 +70,7 @@ def load_trusted_owner_policy(path: Path, *, expected_account: str, acl_checker=
             raise ValueError
         value = json.loads(raw, object_pairs_hook=_reject_duplicates,
             parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-        manifest = value["inventory"]["manifest"]
-        digest = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":"),
-            ensure_ascii=True, allow_nan=False).encode("ascii")).hexdigest()
-        final = value["final_release_verified"]
-        if (type(value.get("schema")) is not int or value["schema"] != 1
-                or value.get("kind") != "cd_delivery_preparation"
-                or manifest.get("environment") != "prod" or manifest.get("region") != "eu-west-1"
-                or manifest.get("account_id") != expected_account
-                or value["inventory"].get("account") != expected_account
-                or value["inventory"].get("manifest_sha") != digest
-                or final.get("exact_readback_verified") is not True
-                or final.get("manifest_sha256") != digest):
-            raise ValueError
-        return CognitoProdPolicy(**{key: manifest[key] for key in
-            ("user_pool_id", "api_id", "client_id", "owner_subject")})
+        return parse_trusted_owner_policy(value, expected_account=expected_account)
     except Exception:
         raise ValueError("owner_login_context_unverified") from None
 

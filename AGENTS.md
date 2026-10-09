@@ -1,5 +1,36 @@
 # Project Agent Workflow
 
+Offline invitation-read correction and private key metadata preparation,
+2026-10-09: independent review accepted the exact second readonly table/key
+pair without changing the singleton authorization writer. Real bootstrap
+readback composition and malformed request holdouts passed. The frozen full
+suite passed 4,253 tests with twelve environment skips; six subsequently added
+independent guard cases are included in 63 focused passing tests. Compilation,
+model-free evaluation 12/12 and all 50 pinned network-denied official template
+schemas passed. The private preparer selects only validated public config from
+one ACL-private original release snapshot, retains partial exclusive output,
+and generates no binding keys or sessions. Source CI/promotion and fresh private
+authorities remain required before new invitation or key-publication operations.
+The separate injected delivery coordinator is excluded from this acceptance;
+its review found strict integer receipt checks needing correction. No additional
+AWS write, owner invitation, key publication or real MAPIT acceptance follows.
+
+Owner invitation checkpoint, 2026-10-09: PR #92 merged normally to develop
+b7be46f after eight green source checks (37952297624) and eight integrated
+checks (37952729987). The initial generic CI exposed an optional Botocore test
+import; the SDK-specific proof is now mandatory in the existing pinned SDK job,
+not required where that optional SDK is absent. A fresh private owner invitation
+authority was prepared. Its run stopped at bootstrap_readback after 28 SDK
+reads, before durable intent, CAS or any row write; the journal is absent.
+The narrow local GetItem guard allowed only the original owner authorization
+row, but the owning current-bootstrap verifier also requires a strong read of
+exact key identity-bindings-v1 in the new MAPIT binding table. Preserve the
+failed envelope. Correct only that second readonly table/key pair; retain the
+original authorization-table-only singleton writer. Test the actual bootstrap
+readback through the guard, not a mocked adapter, and obtain fresh source CI,
+protections and a new private authority before another run. No owner invitation
+or key publication is accepted by this stopped attempt.
+
 Latest separate real-MAPIT DEV namespace checkpoint, 2026-10-09: PR #91 merged
 normally to develop 0f11fee after eight green source checks (37950083226) and
 eight integrated checks (37950476922). A new private bootstrap authority passed

@@ -388,9 +388,19 @@ class _GuardedClients:
                             or owner.calls >= owner.max_calls):
                         raise ValueError
                     if method == "get_item":
+                        allowed_reads = {
+                            (f"arn:aws:dynamodb:eu-west-1:{owner.account_id}:table/{_AUTH_TABLE}", owner.owner_key),
+                            (f"arn:aws:dynamodb:eu-west-1:{owner.account_id}:table/honda-mapit-mcp-dev-mapit-identity-bindings",
+                             "identity-bindings-v1"),
+                        }
+                        requested_key = kwargs.get("Key")
+                        key_text = (requested_key.get("key", {}).get("S")
+                                    if isinstance(requested_key, Mapping)
+                                    and isinstance(requested_key.get("key"), Mapping) else None)
                         if (set(kwargs) != {"TableName", "Key", "ConsistentRead", "ReturnConsumedCapacity"}
-                                or kwargs.get("TableName") != f"arn:aws:dynamodb:eu-west-1:{owner.account_id}:table/{_AUTH_TABLE}"
-                                or kwargs.get("Key") != {"key": {"S": owner.owner_key}}
+                                or type(kwargs.get("TableName")) is not str or type(key_text) is not str
+                                or (kwargs["TableName"], key_text) not in allowed_reads
+                                or requested_key != {"key": {"S": key_text}}
                                 or kwargs.get("ConsistentRead") is not True
                                 or kwargs.get("ReturnConsumedCapacity") != "NONE"):
                             raise ValueError
