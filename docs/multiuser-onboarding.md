@@ -78,9 +78,10 @@ Remaining execution sequence:
    authority for the new namespace; no replay of accepted synthetic operations.
 2. Read back/provision only approved real-DEV resources and create-only keys.
    Preserve the original tables, rows, key versions and complete old receipts.
-3. Pin the real MAPIT configuration/JWKS and explicit DEV invitation. A dedicated
-   DEV OAuth client for the existing owner identity was separately approved;
-   no MFA change, new user, password reset or identity-pool migration is implied.
+3. Pin the real MAPIT configuration/JWKS and explicit DEV invitation. The dedicated
+   owner-pool DEV OAuth client is now created and accepted (checkpoint below);
+   its creation must not be replayed. No MFA change, new user, password reset
+   or identity-pool migration is implied.
 4. Deliver the new closed runtime through reviewed artifact/CD gates, then arm
    independent closure before a bounded test. No endpoint opening from imports.
 5. Connect the owner's session through the private assisted channel with consent,
