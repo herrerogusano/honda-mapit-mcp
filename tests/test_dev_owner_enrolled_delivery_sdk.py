@@ -79,6 +79,9 @@ class FakeClient:
 
 
 def _bundle_for(raw_clients):
+    # The general matrix intentionally omits the optional SDK. These tests are
+    # mandatory in the separate pinned boto3/botocore contract job.
+    pytest.importorskip("boto3")
     frozen = SimpleNamespace(access_key="AKIAEXAMPLE123456", secret_key="do-not-print-secret-value", token=None)
 
     class Provider:
