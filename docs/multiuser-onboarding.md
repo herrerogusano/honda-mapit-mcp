@@ -11,6 +11,28 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The owner authorization and separate MAPIT key publication are now accepted on
+develop `ca94c92` (PR #93), after eight source and eight integrated checks.
+The fresh owner invitation used 93 bounded SDK calls and one create-only CAS;
+the separately authorized key publication used 72 SDK calls and produced config
+version one. Both intents are consumed. Ten independent readonly calls confirmed
+the active owner row, version-one config metadata, same retained table identity,
+four namespace and nineteen app resources, closed API and reserve zero. Do not
+replay either operation or republish the keys. This does not accept a MAPIT
+session, handler deployment, human login or real business-data E2E.
+
+The injected `dev_owner_enrolled_delivery.py` coordinator and separate
+`dev_owner_enrolled_login_lineage.py` are offline contracts, not live operators.
+They bind the accepted OAuth/bootstrap/invitation/key receipts, exact embedded
+manifest/public JWKS bytes, a one-shot private artifact/update pair and a new
+post-update context digest. The original context remains mandatory before the
+update and is never weakened to ignore code drift. Accepted receipts are checked
+again on repeat readback. Paired fresh runtime/OAuth projections must carry the
+same registered credential capability; that capability does not itself prove
+SDK credential usage. The actual bounded live verifier, immutable private input
+assembly, owner-enrolled ARM probe and human-login composition still need review
+and integration before any deployment or login claim.
+
 The separate MAPIT namespace bootstrap is now accepted on develop `0f11fee`,
 after eight source and eight integrated checks. The one creation intent is
 consumed; exact readback accepted four new resources and a separate nine-call
