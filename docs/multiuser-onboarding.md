@@ -11,6 +11,23 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+PR #102 is integrated at develop `bb601f9` with all eight source checks
+(37975506967) and integrated checks (37975988155) green; the frozen local suite
+passed 4,564 tests with twelve environment skips. One actual preparation stopped
+before private authority or intent journals existed. Its local public
+manifest/JWKS/archive/summary are retained, not a resumable delivery. No S3
+publication, stack update, endpoint opening, MAPIT session or human login occurred.
+
+Readonly diagnosis found that the assembler treated the original bootstrap's
+storage-only exclusion list as if it contained the distinct hosted app pair too.
+The original preparer explicitly owns only its storage pair. The correction
+preserves that immutable authority and its storage coverage, retains separation
+between the hosted/storage pairs, and explicitly checks the fresh owner against
+their union. A producer-shaped positive and four individual collision negatives
+pass independent review. It does not modify historical receipts or keys, relax
+owner isolation, or authorize replay. Fresh source/CI and a new private run remain
+required before an actual closed delivery.
+
 PR #101 merged normally to develop at `3d3e6a7`; its eight source checks
 (37972505452) and eight integrated checks (37973283671) passed. That is source
 acceptance, not an actual owner runtime delivery.

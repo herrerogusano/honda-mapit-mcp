@@ -48,6 +48,8 @@ def assemble_delivery_metadata(*, manifest_inputs, prior_template, runtime_bindi
         bootstrap_state = manifest_inputs["bootstrap_state"]
         prior, old_keys, bucket, api, account = _rebuild_prior(prior_template)
         storage_keys = runtime_binding.get("tenant_keys")
+        owner_keys = getattr(bootstrap, "_tenant_keys", None)
+        excluded_keys = getattr(bootstrap, "_excluded_tenant_keys", None)
         if (set(runtime_binding) != _BINDING_FIELDS
                 or account != context.account or api != context.policy.api_id
                 or runtime_binding["account_id"] != account
@@ -56,8 +58,9 @@ def assemble_delivery_metadata(*, manifest_inputs, prior_template, runtime_bindi
                 or runtime_binding["template_sha256"] != _template_sha(prior)
                 or type(storage_keys) not in (tuple, list) or len(storage_keys) != 2
                 or any(type(key) is not str or re.fullmatch(r"tenant-[0-9a-f]{64}", key) is None for key in storage_keys)
-                or len(set(storage_keys)) != 2 or set(storage_keys).intersection(old_keys)
-                or not (set(old_keys) | set(storage_keys)).issubset(bootstrap._excluded_tenant_keys)
+                or not _valid_namespace_key_separation(
+                    owner_keys=owner_keys, storage_keys=storage_keys,
+                    hosted_keys=old_keys, excluded_keys=excluded_keys)
                 or type(runtime_binding["app_run_id"]) is not int or runtime_binding["app_run_id"] <= 0
                 or type(runtime_binding["user_pool_id"]) is not str
                 or re.fullmatch(r"eu-west-1_[A-Za-z0-9]{9,45}", runtime_binding["user_pool_id"]) is None
@@ -134,3 +137,30 @@ def assemble_delivery_metadata(*, manifest_inputs, prior_template, runtime_bindi
         return {"authority": authority, "accepted": accepted, "manifest_raw": raw}
     except Exception:
         raise ValueError("owner_delivery_metadata_unverified") from None
+
+
+def _valid_namespace_key_separation(*, owner_keys, storage_keys, hosted_keys, excluded_keys):
+    """Keep bootstrap-owned storage exclusions distinct from hosted A/B keys.
+
+    The accepted bootstrap excludes its storage namespace pair; the prior
+    hosted manifest independently identifies the historical hosted pair. The
+    new owner key must be fresh across both sets, without rewriting the
+    immutable bootstrap authority to include unrelated hosted keys.
+    """
+    pattern = re.compile(r"tenant-[0-9a-f]{64}")
+    groups = (owner_keys, storage_keys, hosted_keys, excluded_keys)
+    if any(type(group) not in (tuple, list) for group in groups):
+        return False
+    if any(any(type(key) is not str or pattern.fullmatch(key) is None for key in group)
+           for group in groups):
+        return False
+    owner, storage, hosted, excluded = map(set, groups)
+    return (
+        len(owner) == len(owner_keys) and len(owner) > 0
+        and len(storage) == len(storage_keys) == 2
+        and len(hosted) == len(hosted_keys) == 2
+        and len(excluded) == len(excluded_keys)
+        and storage.issubset(excluded)
+        and not storage.intersection(hosted)
+        and not owner.intersection(hosted | storage)
+    )
