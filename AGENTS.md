@@ -9,12 +9,16 @@ assembly. It retained only local public manifest/JWKS/archive/summary preparatio
 authorization.json and both intent journals were never created. No artifact PUT,
 UpdateStack, API opening, MAPIT session or human login followed. Preserve that
 preparation; do not resume it or infer write permission from empty cloud reads.
-Readonly diagnosis isolated one incompatible consumer predicate: the original
+Readonly diagnosis isolated the same incompatible predicate in two consumers
+(metadata assembly and current-runtime construction): the original
 MAPIT bootstrap preparer excluded its two storage keys, whereas the assembler
 incorrectly required the hosted app's separate pair inside the same historical
 list. Independent review accepts preserving storage coverage and directly
 checking the new owner is disjoint from both historical pairs, with authentic
 preparer-shaped positive and four collision negatives (39 focused tests).
+The second constructor failure was isolated read-only before its SDK calls.
+Its genuine PRE/POST fixture now also uses the producer's storage-only list;
+independent preparation/readback/SDK-model review passed 48 focused tests.
 One actual readonly check passed the private loader, corrected pure assembly and
 constructor-only archive/target validation with two bounded SDK reads and public
 JWKS fetches; historical authority/files remained unchanged. This does not run

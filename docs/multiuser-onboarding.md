@@ -18,7 +18,7 @@ before private authority or intent journals existed. Its local public
 manifest/JWKS/archive/summary are retained, not a resumable delivery. No S3
 publication, stack update, endpoint opening, MAPIT session or human login occurred.
 
-Readonly diagnosis found that the assembler treated the original bootstrap's
+Readonly diagnosis found that both the assembler and current-runtime constructor treated the original bootstrap's
 storage-only exclusion list as if it contained the distinct hosted app pair too.
 The original preparer explicitly owns only its storage pair. The correction
 preserves that immutable authority and its storage coverage, retains separation
@@ -27,6 +27,11 @@ their union. A producer-shaped positive and four individual collision negatives
 pass independent review. It does not modify historical receipts or keys, relax
 owner isolation, or authorize replay. Fresh source/CI and a new private run remain
 required before an actual closed delivery.
+
+The current-runtime incompatibility was found before its SDK calls. Its genuine
+PRE/POST fixture now retains the storage-only bootstrap list and the separate
+hosted pair, instead of manufacturing a historical four-key exclusion list.
+Independent preparation/readback/SDK-model review passed 48 focused tests.
 
 PR #101 merged normally to develop at `3d3e6a7`; its eight source checks
 (37972505452) and eight integrated checks (37973283671) passed. That is source

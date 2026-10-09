@@ -333,7 +333,7 @@ def _build_owner_enrolled_current_state_fixture(tmp_path):
         source_sha=source, run_id=run_id, expected_caller_arn=caller,
         authorized_from_epoch=start, authorized_until_epoch=end, ci_evidence_sha256=ci_sha,
         runtime_evidence_sha256="0" * 64, ssm_key_arn=KEY_ARN, tenant_keys=(owner_key,),
-        excluded_tenant_keys=(*hosted_historical_keys, *storage_keys))
+        excluded_tenant_keys=storage_keys)
     plan = build_plan(provisional)
 
     synthetic_coordinator, _synthetic_journal, _synthetic_evidence = _bootstrap_fixture()
@@ -428,7 +428,7 @@ def _build_owner_enrolled_current_state_fixture(tmp_path):
         authorized_from_epoch=start, authorized_until_epoch=end,
         ci_evidence_sha256=ci_sha,
         runtime_evidence_sha256=runtime_evidence_digest(bundle), ssm_key_arn=KEY_ARN,
-        tenant_keys=(owner_key,), excluded_tenant_keys=(*hosted_historical_keys, *storage_keys))
+        tenant_keys=(owner_key,), excluded_tenant_keys=storage_keys)
     authority_path = tmp_path / "mapit-bootstrap" / "authority.json"
     mapit_state_dir = tmp_path / "mapit-bootstrap" / "state"
     mapit_state_dir.mkdir(parents=True)
@@ -437,7 +437,7 @@ def _build_owner_enrolled_current_state_fixture(tmp_path):
         "authorized_from_epoch", "authorized_until_epoch", "ci_evidence_sha256",
         "runtime_evidence_sha256", "ssm_key_arn")}
     raw_authority.update(tenant_keys=[owner_key],
-        excluded_tenant_keys=[*hosted_historical_keys, *storage_keys])
+        excluded_tenant_keys=list(storage_keys))
     from scripts.run_dev_mapit_bootstrap import KIND as MAPIT_KIND
     authority_path.parent.mkdir(exist_ok=True)
     authority_path.write_text(json.dumps({"schema": 1, "kind": MAPIT_KIND,
@@ -535,8 +535,10 @@ def _build_owner_enrolled_current_state_fixture(tmp_path):
     assert authority._binding_sha256 == delivery_authority["mapit_bootstrap_authority_sha256"]
     assert authority.runtime_evidence_sha256 == delivery_authority["runtime_evidence_sha256"]
     assert delivery_authority["owner_tenant_key"] in authority._tenant_keys
-    assert set(delivery_authority["historical_tenant_keys"]).issubset(
-        authority._excluded_tenant_keys)
+    assert set(runtime_binding["tenant_keys"]).issubset(authority._excluded_tenant_keys)
+    assert set(delivery_authority["historical_tenant_keys"]).isdisjoint(runtime_binding["tenant_keys"])
+    assert set(authority._tenant_keys).isdisjoint(
+        set(delivery_authority["historical_tenant_keys"]) | set(runtime_binding["tenant_keys"]))
     assert mapit_receipt == delivery_authority["mapit_bootstrap_receipt_sha256"]
     instance = readback.OwnerEnrolledCurrentState(
         client_bundle=client_bundle, authority=delivery_authority,
