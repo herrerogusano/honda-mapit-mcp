@@ -11,6 +11,18 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The offline delivery metadata assembler now passes independent review and a
+4,395-test frozen suite (twelve environment skips), compilation and model-free
+evaluation 12/12. It validates receipt projections and separates historical
+hosted A/B keys from storage-proof keys; private runtime provenance remains an
+explicit caller trust boundary until owning loaders and current readbacks
+validate it. The existing factory reads a fixed public repository scaffold.
+PRs #95/#96 have eight green integrated checks. An actual post-publication
+namespace verification passed 21 bounded readonly SDK calls, with stable table,
+config version one, empty binding and absent sessions, closed API/reserve zero.
+No config key was decrypted. The complete runtime PRE/POST verifier is still
+being built; no handler delivery or real MAPIT E2E is implied.
+
 Local ARM readiness now passes nine checks on the actual enrolled handler,
 using the pinned image, network disabled, 256 MiB and 28 locked wheels. The
 synthetic authorization reader permits tool discovery, while session loading
