@@ -97,6 +97,33 @@ test. Retention and exact reconciliation remain mandatory after ambiguous writes
 
 ### Approved isolated owner OAuth client — 2026-10-09
 
+The next source increment implements a single-use assisted owner login on the
+registered `http://127.0.0.1:8787/callback`. It reuses the existing user and MFA
+through human-operated Cognito Managed Login, never a password form or automated
+owner credential entry. The query-free local start page redirects with random
+state, S256 PKCE, the exact DEV resource audience and its `/use` scope. The
+callback exchanges one code, verifies RS256 and exact owner/pool/client/audience/
+scope/lifetime, and may hand the verified token to an explicit in-memory consumer.
+No token, code, verifier or raw subject is printed or persisted. A malformed or
+unknown exchange consumes the attempt; it is not automatically retried.
+
+The read-only composition validates the consumed three-resource create receipt
+without renewing or executing it. Owner identity comes from the independently
+retained private original production release receipt, not the candidate token.
+Fresh clean-develop integrated CI/protections and exact current pool/client/app
+metadata precede listener construction. Public keys come from the pinned issuer.
+The human window is at most ten minutes; the short exchange lease begins only
+on callback. The listener signals readiness only after binding its exact socket
+and waits for callback completion before returning.
+
+`scripts/run_dev_owner_assisted_login.py` is an explicit **authentication smoke**,
+not invitation administration, MAPIT enrollment or a runtime deployment. Its
+default consumer discards the verified token after checking success; future
+enrollment must use a separately reviewed memory-only composition with its own
+invitation/publication authority. Source tests cannot substitute for a real
+human login receipt. Do not ask the owner to repeat MFA to mask a missing
+invitation, namespace/key publisher or closed-runtime delivery integration.
+
 **Actual cloud checkpoint:** PR #81 merged normally to develop `2118d9b` after
 eight green PR checks (CI 37922442130) and eight integrated checks (CI
 37922805228). Frozen suite: 3,968 passed/twelve skips; 73 focused checks,
@@ -117,8 +144,9 @@ their exact bootstrap/key-publication, private manifest and closed-runtime
 delivery operators are not ready. A fresh owner invitation also needs its own
 exact authorization-table grant and runtime read permission: the old technical
 A/B keys/grants are immutable and cannot authorize a new real identity. The
-assisted PKCE listener/token exchange is another explicit missing integration;
-registering a callback is not evidence of a working login. Do not ask for guest
+assisted PKCE listener/token exchange now has an offline source implementation
+(below), but not a real human login receipt. Registering a callback or passing
+its local tests is not evidence of a working hosted login. Do not ask for guest
 credentials or substitute historical users while these seams remain unverified.
 
 The owner approved a DEV-exclusive public OAuth client in the existing permanent

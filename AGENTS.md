@@ -1,5 +1,23 @@
 # Project Agent Workflow
 
+Assisted owner DEV login source checkpoint, 2026-10-09: independent offline
+review accepted the single-use loopback code/PKCE flow and consumed-receipt
+read-only composition; 89 focused tests passed. Owner identity comes from the
+accepted private original production release receipt, never the candidate JWT.
+Parser-only context identity registration rejects copied/replaced subjects
+before SDK access. Fresh clean-develop CI/protections and exact unchanged
+pool/app plus three-resource OAuth readback precede listening on registered
+127.0.0.1:8787. Readiness follows binding, callback completion precedes return,
+and the fifteen-second exchange lease starts only after the human callback.
+Only exact signed DEV resource/client/owner/scope and sufficient remaining
+lifetime reach the explicit in-memory consumer. No token/code/verifier is
+persisted or printed, and no personal password/MFA is automated. The explicit
+CLI is an authentication smoke, not an invitation, real MAPIT enrollment or
+runtime deployment. No cloud operation or human login occurred in this source
+checkpoint; source CI/live acceptance remain separate. Preserve every consumed
+creation/storage/user intent, production/MFA/MAPIT/Telegram and quota ten.
+Temporary wakefulness must be removed before handoff.
+
 Owner OAuth DEV cloud checkpoint, 2026-10-09: PR #81 merged normally to develop
 2118d9b after eight green PR checks (CI 37922442130); all eight integrated checks
 passed (CI 37922805228). Independent offline review accepted the three-resource
