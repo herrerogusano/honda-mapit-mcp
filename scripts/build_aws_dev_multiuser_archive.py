@@ -20,7 +20,7 @@ from scripts import build_aws_dev_runtime as base
 SOURCE_MODULES = tuple(name for name in base.SOURCE_MODULES if name != "aws_dev_entrypoint.py") + (
     "aws_dev_multiuser_entrypoint.py", "aws_durable_tenants.py", "durable_tenants.py",
     "invited_lambda.py", "invited_mcp.py", "tenant_router.py", "aws_prod_runtime.py",
-    "cloud_provider.py", "cloud_transport.py",
+    "cloud_provider.py", "cloud_transport.py", "mapit_identity.py",
 )
 
 

@@ -38,6 +38,7 @@ PROD_SOURCE_MODULES = (
     "aws_prod_entrypoint.py",
     "aws_session_reader.py",
     "cloud_provider.py",
+    "mapit_identity.py",
     "cloud_transport.py",
     "lambda_adapter.py",
     "remote_http.py",
