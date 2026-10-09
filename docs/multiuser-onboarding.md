@@ -9,6 +9,91 @@ identities and synthetic business data; that evidence remains separate.
 
 ## Assisted user experience when a guest is available
 
+### Real-account DEV continuation — 2026-10-09
+
+The owner requested completing preparation/integration up to a consenting second
+real MAPIT account, and authorized a **separate real-config DEV namespace** with
+its own keys/secrets and minimum read permissions, within the existing gross
+USD 1/month DEV target (not a billing cap). Exact changes and costs must be
+reviewed before applying them. Production, definitive owner MFA, consumed
+synthetic journals/keys, Telegram and regional Lambda quota ten are preserved.
+
+The accepted synthetic key document pins a fictitious MAPIT pool/client and
+identity pool in its configuration digest. It must not be rebound, rewritten,
+rotated or reused as authorization for real accounts. The new explicit `mapit`
+namespace uses table `honda-mapit-mcp-dev-mapit-identity-bindings` and config
+`/honda-mapit-mcp/dev/mapit-identity-binding-config`, with a separate schema-two
+key envelope. The legacy default preserves its schema-one bytes and fixed paths.
+New invitations/session paths must use keys disjoint from historical keys.
+
+The new DEV-only contextual provider receives the **existing verified grant**,
+the exact durable authorization snapshot and a request-liveness check. It never
+constructs an invitation from an email, free tenant argument, or unsigned claim.
+The readonly enrolled factory reconstructs a binding and MAPIT proof per tool
+operation; it supplies no writer to the shared registry. The opt-in entrypoint
+pins a private manifest, separate invitation/MAPIT public JWKS and a fixed
+maximum five-minute window. Only authenticated, durably authorized tools may
+load private key material/session values. Latest config version one and its
+accepted publication window are checked before the pinned decrypt read.
+The paired same-credential STS verifier runs before the first authorization
+table read, and independently before key metadata/decryption reads.
+
+The separate pure four-resource bootstrap uses AWS-owned DynamoDB encryption
+from creation, one exact-operator role/boundary and a read-only handler policy.
+Operator and boundary retain identical exact KMS parameter-context conditions;
+runtime gets decrypt only, never publication. The factory accepts at most eight
+explicitly permitted tenant paths to stay below the managed-policy size limit.
+This is an initial IAM subset, not a two-user product limit: registry capacity
+remains sixteen, and more allowed paths require a separately reviewed change.
+No wildcard tenant path, new customer-managed KMS key, or historical key rewrite
+is introduced. These drafts do not grant the existing CD role new permissions.
+
+These are new source components, **not a deployment or real-login receipt**.
+The deterministic new archive is separate from the historical synthetic archive.
+Offline payload-v2 tests traverse the actual MCP router, signed MAPIT identity
+verifier, shared registry, pinned SSM adapter and business provider. They cover
+A/B isolation, crossed sessions and in-call revocation using synthetic transports.
+Actual Lambda-role decrypt permission still needs separate live readback/proof;
+an enroller-role success does not establish handler-role permission.
+
+Incremental storage cost model checked 2026-10-09 (not the full DEV bill):
+the public AWS Ireland DynamoDB offer lists USD 0.1415/million on-demand read
+units, USD 0.705/million write units and USD 0.283/GB-month Standard storage.
+An illustrative 10,000 read units, 1,000 write units and 0.01 GB, plus 10,000
+symmetric KMS requests at USD 0.03/10,000, totals approximately USD 0.035/month
+before tax, ignoring free allowances and credits. Units are not API-call counts:
+strong reads and document sizes determine consumed units. IAM has no standalone
+resource fee; Standard Parameter Store/default throughput has no additional SSM
+charge, while KMS requests remain separate. No new customer-managed key fee is
+introduced. This excludes existing/new runtime invocations, API, logs, artifacts,
+data transfer and any Cognito usage; complete scope/cost review still precedes
+live provisioning and the USD 1/month target is not a guaranteed billing cap.
+Sources: [Ireland DynamoDB public offer](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonDynamoDB/current/eu-west-1/index.json),
+[Parameter Store pricing](https://aws.amazon.com/systems-manager/pricing/),
+[KMS pricing](https://aws.amazon.com/kms/pricing/).
+
+Remaining execution sequence:
+
+1. Independent review, source CI, exact cost/IAM/template diff and fresh private
+   authority for the new namespace; no replay of accepted synthetic operations.
+2. Read back/provision only approved real-DEV resources and create-only keys.
+   Preserve the original tables, rows, key versions and complete old receipts.
+3. Pin the real MAPIT configuration/JWKS and explicit DEV invitation. A dedicated
+   DEV OAuth client for the existing owner identity is a separate approval;
+   no MFA change, new user, password reset or identity-pool migration is implied.
+4. Deliver the new closed runtime through reviewed artifact/CD gates, then arm
+   independent closure before a bounded test. No endpoint opening from imports.
+5. Connect the owner's session through the private assisted channel with consent,
+   verify real identity/refresh continuity and readonly status/distance access.
+   No password/session token in chat, source, archives, environment or vault.
+6. Stop for the second consenting real MAPIT user; test cross-account isolation
+   and revocation with two real accounts before any production promotion.
+
+No self-service public registration, hosted password portal, paid model or
+Telegram multiuser expansion is included. A guest is not required for offline
+integration, but synthetic acceptance cannot substitute for the final real-user
+test. Retention and exact reconciliation remain mandatory after ambiguous writes.
+
 ### Actual DEV storage checkpoint — 2026-10-07
 
 **Superseding accepted recovery:** PR #78 merged to develop `4169fa4` after eight

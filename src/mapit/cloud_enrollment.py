@@ -39,10 +39,12 @@ class CloudEnrollmentFactory:
                  verifier: MapitIdentityVerifier, binding_key: bytes,
                  auth_transport: Callable[..., Any], clock: Callable[[], datetime],
                  credentials_supplier: Callable[[], EnrollmentCredentials],
+                 namespace: str = "synthetic",
                  monotonic: Callable[[], float] = time.monotonic):
         if (type(authority) is not InvitedTenantAuthority or type(durable_guard) is not DurableTenantGuard
             or not durable_guard.is_bound_to(authority) or environment != "dev"
             or not authority.matches_environment(environment)
+            or type(namespace) is not str or namespace not in {"synthetic", "mapit"}
             or type(account_id) is not str or re.fullmatch(r"[0-9]{12}", account_id) is None
             or account_id == "000000000000" or type(config) is not MapitConfig
             or type(verifier) is not MapitIdentityVerifier or verifier.config is not config
@@ -51,7 +53,7 @@ class CloudEnrollmentFactory:
             or not all(callable(value) for value in (auth_transport, clock, credentials_supplier, monotonic))):
             raise ValueError("cloud_enrollment_configuration_invalid")
         self._authority, self._guard = authority, durable_guard
-        self._environment, self._account = environment, account_id
+        self._environment, self._account, self._namespace = environment, account_id, namespace
         self._config, self._verifier, self._key = config, verifier, bytes(binding_key)
         self._transport, self._clock, self._credentials = auth_transport, clock, credentials_supplier
         self._monotonic = monotonic
@@ -73,9 +75,12 @@ class CloudEnrollmentFactory:
             self._authority.validate(grant)
             self._guard.check(grant, snapshot)
             registry = DynamoDBIdentityBindingRegistry(clients.dynamodb, clients.dynamodb,
-                table_arn=f"arn:aws:dynamodb:eu-west-1:{self._account}:table/honda-mapit-mcp-dev-identity-bindings",
+                table_arn=(f"arn:aws:dynamodb:eu-west-1:{self._account}:table/"
+                    + ("honda-mapit-mcp-dev-identity-bindings" if self._namespace == "synthetic"
+                       else "honda-mapit-mcp-dev-mapit-identity-bindings")),
                 account_id=self._account, authority=self._authority, durable_guard=self._guard,
-                environment=self._environment, config=self._config, verifier=self._verifier,
+                environment=self._environment, namespace=self._namespace,
+                config=self._config, verifier=self._verifier,
                 binding_key=self._key, auth_transport=self._transport, clock=self._clock,
                 deadline=deadline, monotonic=self._monotonic,
                 account_verifier=clients.dynamodb_account_verifier)

@@ -1,5 +1,24 @@
 # Project Agent Workflow
 
+Real-account DEV preparation, 2026-10-09: the owner approved a separate real
+MAPIT namespace with independent keys/secrets and minimal DEV read permissions,
+within the existing gross USD 1/month target (not a hard billing cap). Exact
+scope/cost review precedes live provisioning. New opt-in source composes the
+existing verified invitation/durable snapshot with a readonly enrolled provider,
+private manifest, distinct invitation/MAPIT public JWKS and a five-minute window.
+The namespace uses its own mapit table/config and schema-two key envelope; legacy
+synthetic schema-one bytes, tables, keys and consumed journals remain immutable.
+A new pure four-resource bootstrap preserves exact KMS context in handler,
+operator and identical boundary policies. Its initial IAM subset allows at most
+eight exact fresh tenant paths; registry capacity remains sixteen. New source
+is not a deployment, real-login receipt or permission to replay historical ops.
+Fresh review/CI, exact runtime/manifest/private authorities and bounded closure
+are still required. A DEV-only OAuth client in the definitive owner identity
+provider is a separate pending decision, not implied by real-MAPIT config scope.
+Do not reset historical technical users, change owner MFA/production/Telegram,
+raise quota ten or use paid models. See docs/multiuser-onboarding.md. Temporary
+owned wakefulness must be removed before handoff.
+
 Latest accepted cloud storage checkpoint, 2026-10-07: PR #78 merged normally
 to develop at 4169fa4 after eight green PR checks; all eight integrated checks
 passed (CI 37646210883). Full local suite: 3,842 passed, twelve environment skips;

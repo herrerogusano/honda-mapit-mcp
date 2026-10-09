@@ -213,25 +213,37 @@ class TenantServicesRouter:
     The injected factory is responsible for an exact tenant-scoped credential
     reader. No provider or business data is cached between contexts. An async
     child retaining a copied ContextVar is denied after its parent context ends.
+    The optional contextual factory is DEV-only, requires a durable guard, and
+    receives the exact request grant/snapshot plus a liveness check; it cannot
+    be combined with the legacy key/deadline factory.
     """
 
     def __init__(
         self,
         authority: InvitedTenantAuthority,
-        provider_factory: Callable[[str, float], Any],
+        provider_factory: Callable[[str, float], Any] | None = None,
         *,
+        contextual_provider_factory: Callable[..., Any] | None = None,
         deadline_provider: Callable[[], float] | None = None,
         authorization_guard: DurableTenantGuard | None = None,
     ):
-        if type(authority) is not InvitedTenantAuthority or not callable(provider_factory):
+        if (type(authority) is not InvitedTenantAuthority
+            or (provider_factory is None) == (contextual_provider_factory is None)
+            or (provider_factory is not None and not callable(provider_factory))
+            or (contextual_provider_factory is not None and not callable(contextual_provider_factory))):
             raise TenantIsolationError("tenant_configuration_invalid")
         if deadline_provider is not None and not callable(deadline_provider):
             raise TenantIsolationError("tenant_configuration_invalid")
         if authorization_guard is not None:
             if type(authorization_guard) is not DurableTenantGuard or not authorization_guard.is_bound_to(authority):
                 raise TenantIsolationError("tenant_configuration_invalid")
+        if contextual_provider_factory is not None and (
+            authorization_guard is None or not authority.matches_environment("dev")
+        ):
+            raise TenantIsolationError("tenant_configuration_invalid")
         self._authority = authority
         self._factory = provider_factory
+        self._contextual_factory = contextual_provider_factory
         self._deadline_provider = deadline_provider
         self._authorization_guard = authorization_guard
         self._context: ContextVar[_RequestState | None] = ContextVar("mapit_tenant_request", default=None)
@@ -311,7 +323,36 @@ class TenantServicesRouter:
         state = self._state()
         try:
             if state.provider is None:
-                provider = self._factory(state.grant.key, state.deadline)
+                if self._contextual_factory is None:
+                    factory = self._factory
+                    if factory is None:
+                        raise TenantIsolationError("tenant_configuration_invalid")
+                    provider = factory(state.grant.key, state.deadline)
+                else:
+                    grant = state.grant
+                    snapshot = state.durable_snapshot
+                    guard = self._authorization_guard
+                    if guard is None or snapshot is None:
+                        raise TenantIsolationError("tenant_configuration_invalid")
+
+                    def request_check() -> None:
+                        current = self._state()
+                        if (current is not state or current.grant is not grant
+                            or current.durable_snapshot is not snapshot
+                            or self._authorization_guard is not guard):
+                            raise TenantIsolationError("tenant_context_missing")
+
+                    request_check()
+                    provider = self._contextual_factory(
+                        tenant_key=grant.key,
+                        deadline=state.deadline,
+                        authority=self._authority,
+                        grant=grant,
+                        durable_guard=guard,
+                        snapshot=snapshot,
+                        request_check=request_check,
+                    )
+                    request_check()
                 if not callable(getattr(provider, "get", None)):
                     raise TenantIsolationError("tenant_provider_failed")
                 # Factory work is deliberately outside the lock. Claiming the
