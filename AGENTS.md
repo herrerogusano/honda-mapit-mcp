@@ -1,5 +1,21 @@
 # Project Agent Workflow
 
+Owner private-input loader accepted independently offline, 2026-10-09: twenty-one
+focused tests pass. Owning ACL-private receipt parsers bind the original owner
+OAuth state directory, complete MAPIT runtime evidence digest, accepted bootstrap,
+invitation and version-one publication. Two fixed issuer public JWKS GETs are
+bounded; tests inject them without network. Only the validated factory registers
+the redacted result, with registry-held immutable file/content baselines and
+exact accepted context/bootstrap identities. Copies, forged construction,
+private-file drift, ACL relaxation and monotonic rollback fail closed. No AWS
+SDK call, session/key decryption, write or historical authority renewal follows.
+PR #98 merged normally to develop f2e5249 after eight source checks
+(37967221307); final frozen suite passed 4,464 tests/twelve skips, compilation,
+evaluation 12/12 and all fifty offline official schemas. Integrated CI is pending
+at this checkpoint. The one-shot live delivery operator is still being prepared;
+no owner runtime deployment, MAPIT session or business E2E is accepted. Remove
+owned temporary wakefulness before final handoff.
+
 Owner runtime readback accepted independently offline, 2026-10-09: the actual
 private-loader composition passes synthetic PRE and accepted POST phases with
 69 focused tests, including real coordinator preflight/publication/update/

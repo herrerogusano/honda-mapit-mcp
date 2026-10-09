@@ -11,6 +11,17 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The private-input loader passes independent review and twenty-one offline tests.
+It uses the owning private receipt parsers, binds the OAuth state directory and
+complete runtime evidence digest, and fetches only the two fixed public issuer
+JWKS documents. Its redacted projection is registered only after validation;
+registry-held file/content baselines and accepted object identities prevent
+caller construction or mutation from becoming accepted provenance. No AWS SDK
+call, private key/session load or historical authority renewal occurs. This is
+input readiness, not a live operator. PR #98 merged normally after eight source
+checks and a frozen suite of 4,464 passing tests/twelve skips; integrated CI is
+pending at this checkpoint. Owner runtime deployment and real E2E remain pending.
+
 The read-only owner runtime adapter now composes the owning private historical
 loaders with bounded same-credential SDK readbacks, rather than injected success
 flags. Its SDK-shaped integration fixture exercises the real constructor and
