@@ -100,8 +100,9 @@ def _create_invited_lambda_runtime(
     invited_policies: Mapping[str, CognitoProdPolicy | CognitoDevPolicy],
     public_keys: Mapping[str, bytes | str],
     *,
-    provider_factory: Callable[[str, float], Any],
+    provider_factory: Callable[[str, float], Any] | None = None,
     geographic_queries: bool = False,
+    contextual_provider_factory: Callable[..., Any] | None = None,
     authorization_store: TenantAuthorizationStore | None = None,
     environment: str = "prod",
 ) -> InvitedLambdaRuntime:
@@ -122,7 +123,9 @@ def _create_invited_lambda_runtime(
         or not 1 <= len(invited_policies) <= 16
         or any(type(key) is not str or type(value) is not expected_type
                for key, value in invited_policies.items())
-        or not callable(provider_factory)
+        or (provider_factory is None) == (contextual_provider_factory is None)
+        or (provider_factory is not None and not callable(provider_factory))
+        or (contextual_provider_factory is not None and not callable(contextual_provider_factory))
         or type(geographic_queries) is not bool
         or (authorization_store is not None and (
             not callable(getattr(authorization_store, "get", None))
@@ -135,6 +138,10 @@ def _create_invited_lambda_runtime(
         or policy.request_deadline_seconds != 14.0
     ):
         raise ValueError("dev invited Lambda requires durable authorization and a 14 second deadline")
+    if contextual_provider_factory is not None and (
+        environment != "dev" or authorization_store is None or provider_factory is not None
+    ):
+        raise ValueError("contextual provider factory is DEV-only and requires durable authorization")
     copied_policies = dict(invited_policies)
     policy_snapshot = MappingProxyType(copied_policies)
     if not all(
@@ -180,6 +187,7 @@ def _create_invited_lambda_runtime(
         router = TenantServicesRouter(
             authority,
             provider_factory,
+            contextual_provider_factory=contextual_provider_factory,
             deadline_provider=current_deadline,
             authorization_guard=authorization_guard,
         )
@@ -306,9 +314,10 @@ def create_invited_dev_lambda_runtime(
     invited_policies: Mapping[str, CognitoDevPolicy],
     public_keys: Mapping[str, bytes | str],
     *,
-    provider_factory: Callable[[str, float], Any],
+    provider_factory: Callable[[str, float], Any] | None = None,
     authorization_store: TenantAuthorizationStore,
     geographic_queries: bool = False,
+    contextual_provider_factory: Callable[..., Any] | None = None,
 ) -> InvitedLambdaRuntime:
     """Build the explicitly opted-in, durable-authorized DEV composition.
 
@@ -321,6 +330,7 @@ def create_invited_dev_lambda_runtime(
         invited_policies,
         public_keys,
         provider_factory=provider_factory,
+        contextual_provider_factory=contextual_provider_factory,
         geographic_queries=geographic_queries,
         authorization_store=authorization_store,
         environment="dev",

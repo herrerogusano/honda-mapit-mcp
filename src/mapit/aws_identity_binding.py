@@ -33,7 +33,12 @@ from .identity_binding import (
 from .mapit_identity import MapitIdentityError, MapitIdentityProof, MapitIdentityVerifier
 from .tenant_router import AuthenticatedTenant, InvitedTenantAuthority
 
-_TABLE_ARN = re.compile(r"arn:aws:dynamodb:eu-west-1:([0-9]{12}):table/honda-mapit-mcp-(dev|prod)-identity-bindings\Z")
+_TABLE_ARN = re.compile(r"arn:aws:dynamodb:eu-west-1:([0-9]{12}):table/(honda-mapit-mcp-(?:dev|prod)-identity-bindings|honda-mapit-mcp-dev-mapit-identity-bindings)\Z")
+_TABLE_NAMES = {
+    ("synthetic", "dev"): "honda-mapit-mcp-dev-identity-bindings",
+    ("synthetic", "prod"): "honda-mapit-mcp-prod-identity-bindings",
+    ("mapit", "dev"): "honda-mapit-mcp-dev-mapit-identity-bindings",
+}
 _TENANT_KEY = re.compile(r"tenant-[0-9a-f]{64}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _DECIMAL = re.compile(r"(?:0|[1-9][0-9]{0,17})\Z")
@@ -65,6 +70,7 @@ class DynamoDBIdentityBindingRegistry:
         authority: InvitedTenantAuthority,
         durable_guard: DurableTenantGuard,
         environment: str,
+        namespace: str = "synthetic",
         config: MapitConfig,
         verifier: MapitIdentityVerifier,
         binding_key: bytes,
@@ -75,9 +81,14 @@ class DynamoDBIdentityBindingRegistry:
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         match = _TABLE_ARN.fullmatch(table_arn) if type(table_arn) is str else None
+        expected_table_name = (
+            _TABLE_NAMES.get((namespace, environment))
+            if type(namespace) is str and type(environment) is str else None
+        )
         if (
             match is None or type(account_id) is not str or match.group(1) != account_id
-            or type(environment) is not str or match.group(2) != environment
+            or type(environment) is not str or type(namespace) is not str
+            or expected_table_name is None or match.group(2) != expected_table_name
             or type(authority) is not InvitedTenantAuthority
             or type(durable_guard) is not DurableTenantGuard
             or not durable_guard.is_bound_to(authority)
@@ -104,6 +115,7 @@ class DynamoDBIdentityBindingRegistry:
             raise IdentityBindingError("identity_binding_configuration_invalid")
         self._reader, self._writer = reader, writer
         self._table_arn, self._account_id = table_arn, account_id
+        self._namespace = namespace
         self._authority, self._durable_guard = authority, durable_guard
         self._environment, self._config = environment, config
         self._verifier, self._binding_key = verifier, bytes(binding_key)
