@@ -14,7 +14,11 @@ eight exact fresh tenant paths; registry capacity remains sixteen. New source
 is not a deployment, real-login receipt or permission to replay historical ops.
 Fresh review/CI, exact runtime/manifest/private authorities and bounded closure
 are still required. A DEV-only OAuth client in the definitive owner identity
-provider is a separate pending decision, not implied by real-MAPIT config scope.
+provider was separately approved by the owner: reuse the existing user/MFA with
+only a new DEV resource server, public code/PKCE client and managed-login
+branding. Preserve every existing client and the pool/domain/MFA. Offline
+preparation is not a cloud receipt; reviewed source CI and fresh one-shot
+private authority must precede its creation. No endpoint opening is implied.
 Do not reset historical technical users, change owner MFA/production/Telegram,
 raise quota ten or use paid models. See docs/multiuser-onboarding.md. Temporary
 owned wakefulness must be removed before handoff.

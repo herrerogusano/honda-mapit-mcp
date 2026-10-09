@@ -79,7 +79,7 @@ Remaining execution sequence:
 2. Read back/provision only approved real-DEV resources and create-only keys.
    Preserve the original tables, rows, key versions and complete old receipts.
 3. Pin the real MAPIT configuration/JWKS and explicit DEV invitation. A dedicated
-   DEV OAuth client for the existing owner identity is a separate approval;
+   DEV OAuth client for the existing owner identity was separately approved;
    no MFA change, new user, password reset or identity-pool migration is implied.
 4. Deliver the new closed runtime through reviewed artifact/CD gates, then arm
    independent closure before a bounded test. No endpoint opening from imports.
@@ -93,6 +93,35 @@ No self-service public registration, hosted password portal, paid model or
 Telegram multiuser expansion is included. A guest is not required for offline
 integration, but synthetic acceptance cannot substitute for the final real-user
 test. Retention and exact reconciliation remain mandatory after ambiguous writes.
+
+### Approved isolated owner OAuth client — 2026-10-09
+
+The owner approved a DEV-exclusive public OAuth client in the existing permanent
+identity pool, reusing the same user and enrolled MFA. The separate stack owns
+only a DEV resource server, code/PKCE client and Cognito-provided managed-login
+branding. It does not update the identity stack, its clients, pool, domain,
+users or MFA; it does not open DEV or touch MAPIT. The DEV resource URI and
+scope cannot authorize production. Callback registration must use the exact
+assisted listener URL from fresh private authority, not a guessed Codex callback.
+
+The injected coordinator requires source CI/protection checks, a pinned readonly
+security-context digest and a durable one-shot create intent. Existing client
+configurations, pool MFA, identity/app templates, closed API and zero Lambda
+reservation must read back unchanged, excluding only the newly created client.
+Any unacknowledged write is fenced, not retried. Offline tests/schema validation
+are not a deployed-client or real-login receipt. Fresh reviewed source and
+immutable private authority precede the single allowed create operation.
+
+For these three OAuth resources, the published Cognito price model has no
+minimum/upfront resource fee; direct user authentication is MAU-based. Essentials
+lists USD 0.015/MAU above the shared 10,000-MAU account/organization allowance.
+This client uses authorization code, not paid machine-to-machine client-credentials
+grants; existing user/pool/tier remain unchanged. For one owner's direct login,
+the illustrative authentication amount before allowances is USD 0.015/month,
+not the whole DEV bill or a guaranteed incremental charge. MFA remains existing
+TOTP (no SMS); no email/reset operation is included. Reviewed 2026-10-09 against
+[Cognito pricing](https://aws.amazon.com/cognito/pricing/). Runtime, storage and
+logs remain governed by the separate DEV estimate above.
 
 ### Actual DEV storage checkpoint — 2026-10-07
 
