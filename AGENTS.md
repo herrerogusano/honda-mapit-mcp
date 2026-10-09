@@ -1,5 +1,20 @@
 # Project Agent Workflow
 
+Owner delivery metadata preparation accepted offline, 2026-10-09: 4,395 tests
+passed with twelve environment skips, compilation and model-free evaluation
+12/12. The assembler validates accepted receipt projections and distinct hosted
+and storage-proof tenant keys; it reads only the fixed public repository
+scaffold. Caller-supplied runtime metadata still requires owning private
+provenance loaders and current AWS verification, not trust by assembly alone.
+PR #95 and #96 both passed eight integrated checks; develop c9548d2 is the
+latest accepted source. A fresh metadata-only namespace verification passed
+21 bounded readonly SDK calls: stable table/config version one, empty binding,
+absent sessions, closed API and reserve zero. No keys were decrypted.
+The complete current-runtime PRE/POST verifier remains under development;
+no owner runtime delivery, API opening or MAPIT session follows. Historical
+invitation/publication intents remain consumed. Remove owned temporary
+wakefulness before handoff; preserve the original power scheme.
+
 Enrolled-handler ARM readiness passed locally, 2026-10-09: the pinned Lambda
 ARM image ran the actual packaged enrolled handler with networking disabled,
 256 MiB memory and all 28 hash-locked wheels. Nine predicates passed: import,
