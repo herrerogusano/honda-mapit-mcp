@@ -458,6 +458,26 @@ cancels an already started request nor deletes credentials.
 
 ## Evidence and gates before real hosting
 
+### Separate real-MAPIT key publication preparation
+
+`scripts/dev_mapit_binding_key_setup.py` is an injected, create-only operator
+core for the distinct DEV MAPIT schema-2 config path. It does not reuse the
+synthetic publisher or its consumed journals. A durable intent precedes the
+single SecureString PUT; ambiguous outcomes consume that intent. Acceptance
+requires version-one metadata and decrypted readback against the same in-memory
+material. No key bytes or key hashes enter the journal.
+
+`scripts/dev_mapit_key_clients.py` constructs STS and SSM from one explicit,
+short-lived credential triple, with pinned endpoints, TLS and no SDK retries.
+Fresh STS checks in the publisher still verify the exact new enrollment role.
+Role-shaped STS responses alone do not establish credential parity.
+
+These are offline preparations, not a key-publication or cloud-bootstrap
+receipt. Live use still needs a separately accepted real-namespace bootstrap,
+fresh source/protection checks, private authority and its own immutable journal.
+Do not substitute the accepted synthetic receipt, overwrite existing version-one
+keys, or infer owner MAPIT onboarding from the separate OAuth login smoke.
+
 Local tests must cover two independently signed MCP callers and MAPIT accounts,
 durable reopen with a new verifier, swapped sessions, malformed context/keys,
 duplicate accounts, pending/revoked records, ambiguous publication, replay,

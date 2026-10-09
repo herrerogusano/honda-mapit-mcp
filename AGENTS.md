@@ -1,5 +1,25 @@
 # Project Agent Workflow
 
+Separate real-MAPIT key publisher source preparation, 2026-10-09: the injected
+core and paired-client factory passed independent offline review and 24 focused
+tests. Frozen full suite: 4,081 passed with twelve environment skips;
+compilation and model-free evaluation 12/12 passed. No live publication occurred.
+The
+schema-2 DEV core uses a distinct journal and create-only SecureString version
+one, exact role checks and bounded metadata/decrypted readback. Explicit STS/SSM
+client construction uses the same temporary in-memory credentials, never ambient
+discovery. This source is not live publication authority or an accepted real
+namespace bootstrap. Preserve historical synthetic keys/journals and all
+production/MFA/MAPIT/Telegram settings; quota remains ten. No cloud write follows
+without the separate reviewed bootstrap, private envelope and fresh CI gates.
+
+PR #83 merged normally to develop 8eca000 after eight green source checks
+(37934189579); all eight integrated checks passed (37934531539). Frozen local
+login suite passed 4,057 tests with twelve environment skips. Linux CI exposed
+only a test readiness race, corrected by waiting for the bound-listener event
+before the first HTTP request; independent review accepted the test-only fix.
+This is source acceptance, not a human login or real MAPIT onboarding receipt.
+
 Assisted owner DEV login source checkpoint, 2026-10-09: independent offline
 review accepted the single-use loopback code/PKCE flow and consumed-receipt
 read-only composition; 89 focused tests passed. Owner identity comes from the
