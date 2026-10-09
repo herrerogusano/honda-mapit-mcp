@@ -48,6 +48,7 @@ def fixed_documents() -> dict[str, str]:
     from mapit.aws_identity_binding_infra import build_dev_identity_binding_table
     from scripts.build_aws_dev_identity_binding_bootstrap import build_dev_identity_binding_bootstrap
     from scripts.build_aws_dev_mapit_binding_bootstrap import build_dev_mapit_binding_bootstrap
+    from scripts.build_aws_dev_owner_oauth import build_dev_owner_oauth_template
     from scripts.build_aws_dev_identity_binding_sse_recovery import templates as dev_binding_sse_templates
     from mapit.aws_dev_bootstrap_cleanup import build_dev_bootstrap_cleanup
     from mapit.aws_dev_oauth_cleanup import build_dev_oauth_cleanup
@@ -138,6 +139,10 @@ def fixed_documents() -> dict[str, str]:
         "a1b2c3d4e5", "eu-west-1_AbCdEfGhI", callback_url="http://127.0.0.1:8787/callback",
     ))
     documents["permanent_identity_draft"] = json.dumps(fixed_identity_template())
+    documents["dev_owner_oauth_draft"] = json.dumps(build_dev_owner_oauth_template(
+        account_id="123456789012", api_id="a1b2c3d4e5",
+        owner_pool_id="eu-west-1_AbCdEfGhI", callback_url="http://127.0.0.1:8787/callback",
+    ))
     documents["bootstrap_cleanup_draft"] = json.dumps(build_dev_bootstrap_cleanup(
         AwsDevShutdownPolicy("a1b2c3d4e5"),
         user_pool_id="eu-west-1_A1b2C3d4E",

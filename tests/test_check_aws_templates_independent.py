@@ -24,6 +24,7 @@ def test_fixed_documents_ignore_environment_canaries_and_have_no_path_input(monk
         "dev_identity_binding_bootstrap",
         "dev_identity_binding_sse_owned_target",
         "dev_mapit_identity_binding_bootstrap",
+        "dev_owner_oauth_draft",
         "retained_dev_closed_bootstrap_draft",
         "retained_dev_closed_runtime_draft",
         "retained_dev_controls_draft", "retained_dev_artifacts_draft",

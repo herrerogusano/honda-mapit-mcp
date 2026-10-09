@@ -30,6 +30,7 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "retained_dev_multiuser_roles_recurrent_existing_key",
         "retained_dev_multiuser_timed_controls",
         "permanent_identity_draft",
+        "dev_owner_oauth_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
         "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",
         "closed_oauth_setup_draft",
