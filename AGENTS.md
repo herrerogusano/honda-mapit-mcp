@@ -1,5 +1,29 @@
 # Project Agent Workflow
 
+Latest separate real-MAPIT DEV namespace checkpoint, 2026-10-09: PR #91 merged
+normally to develop 0f11fee after eight green source checks (37950083226) and
+eight integrated checks (37950476922). A new private bootstrap authority passed
+preflight with 52 SDK reads; the sole creation was acknowledged with 54 calls,
+and exact readback passed with 63 calls. This create intent is consumed: never
+replay it or regenerate the bootstrap-authorized owner tenant key. The new
+retained namespace has exactly four accepted resources and AWS-owned default
+table encryption. Nine separate bounded readonly checks confirmed exact caller,
+CREATE_COMPLETE, four namespace resources, unchanged nineteen app resources,
+same accepted TableId, closed API, reserve zero and absent MAPIT config metadata.
+No new binding keys, owner authorization row, MAPIT session, human login or
+business E2E has followed. The original synthetic state and production/MFA/
+Telegram/quota ten are unchanged. Owner invitation must use the original
+authorization table, not the separate MACed identity-binding table, and precede
+key publication while current bootstrap readback still requires absent paths.
+Fresh independently reviewed source/CI/private authority is required for each
+subsequent operator. Preserve the earlier failed read-only envelope unchanged.
+The separate owner invitation runner passed independent review, 4,233 tests
+with twelve environment skips, compilation and evaluation 12/12. It uses one
+explicit frozen credential tuple across all clients, the original authorization
+table and exact owner key, strict repeat protections/runtime proof, historical
+path disjointness and one-dispatch CAS fencing. Source CI is pending; no live
+invitation or key publication is accepted by these offline tests.
+
 PR #90 merged normally to develop bc90430 with eight green source checks
 (37947840560) and eight integrated checks (37948299259). The owner profile
 passed 4,202 local tests, twelve environment skips, compilation, model-free
