@@ -1,5 +1,21 @@
 # Project Agent Workflow
 
+PR #86 merged normally to develop 457c75b after eight green source checks
+(37940251010). Frozen packaging source passed 4,122 tests with twelve
+environment skips, compilation and model-free evaluation 12/12. The isolated
+legacy-auth test still imports only its three required files; a stale assertion
+about the complete production inventory was removed, not its import check.
+
+Separate real-MAPIT bootstrap coordinator preparation, 2026-10-09: independent
+offline review accepted the injected preflight/create/readback orchestration.
+The durable one-shot intent fences ambiguous writes; exact root/token readback
+can reconcile a committed request without repeating creation. Source, protection,
+identity, closure, exact template/resource/IAM/table metadata and pagination are
+validated within exclusive time and read budgets. This is not deploy-ready:
+trusted source/protection/current-runtime adapters and a fresh private runner
+still require integration and review. No live stack, keys or MAPIT session have
+been created by this coordinator. Historical synthetic receipts remain immutable.
+
 Runtime packaging repair preparation, 2026-10-09: local synthetic ARM readiness
 failed at runtime import because the production and synthetic multiuser source
 inventories omitted the new unconditional cloud_provider dependency
