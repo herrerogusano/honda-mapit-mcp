@@ -390,6 +390,23 @@ def _policy_snapshot(iam: Any, *, expected_template: Mapping[str, Any], resource
     return baseline_snapshot
 
 
+def _assert_historical_keys_disjoint(snapshot: Mapping[str, Any], authority: MapitBootstrapAuthority) -> None:
+    document = snapshot["projected_policies"]["honda-mapit-mcp-dev-retained-tenant-read"]
+    statements = document.get("Statement")
+    if type(statements) is not list or len(statements) != 1:
+        raise _EvidenceFailure
+    condition = statements[0].get("Condition")
+    if (not isinstance(condition, Mapping) or set(condition) != {"ForAllValues:StringEquals"}
+            or not isinstance(condition["ForAllValues:StringEquals"], Mapping)
+            or set(condition["ForAllValues:StringEquals"]) != {"dynamodb:LeadingKeys"}):
+        raise _EvidenceFailure
+    keys = condition["ForAllValues:StringEquals"]["dynamodb:LeadingKeys"]
+    if (type(keys) is not list or len(keys) != 2
+            or any(type(key) is not str or re.fullmatch(r"tenant-[0-9a-f]{64}", key) is None for key in keys)
+            or len(set(keys)) != 2 or set(keys).intersection(authority._tenant_keys)):
+        raise _EvidenceFailure
+
+
 def make_mapit_runtime_evidence_verifier(
     evidence_path: Path,
     *,
@@ -458,6 +475,7 @@ def make_mapit_runtime_evidence_verifier(
             before = _policy_snapshot(counted["iam"], expected_template=app_template, resource_rows=app_rows,
                                      account=authority.account_id, phase=phase,
                                      mapit_template=mapit_with_synthetic)
+            _assert_historical_keys_disjoint(before, authority)
             projection = _ProjectedIAM(before)
             legacy_clients = dict(counted)
             legacy_clients["iam"] = _ProjectionClient(projection)

@@ -80,7 +80,7 @@ def _app_template():
         {"PolicyName": "honda-mapit-mcp-dev-retained-owned-log-writes",
          "PolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "logs:PutLogEvents", "Resource": "arn:aws:logs:eu-west-1:123456789012:log-group:/owned:*"}]}},
         {"PolicyName": "honda-mapit-mcp-dev-retained-tenant-read",
-         "PolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "dynamodb:GetItem", "Resource": "arn:aws:dynamodb:eu-west-1:123456789012:table/old"}]}},
+         "PolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "dynamodb:GetItem", "Resource": "arn:aws:dynamodb:eu-west-1:123456789012:table/old", "Condition": {"ForAllValues:StringEquals": {"dynamodb:LeadingKeys": ["tenant-" + "3" * 64, "tenant-" + "4" * 64]}}}]}},
     ]
     resources = {
         "McpHandlerRole": {"Type": "AWS::IAM::Role", "Properties": {

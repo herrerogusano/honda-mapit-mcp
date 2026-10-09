@@ -479,6 +479,11 @@ cached three-policy view to the unchanged historical runtime verifier; full
 policy/trust inventory, API closure, zero reservation and caller identity are
 then freshly checked again. Pagination, cross-service clock rollback, failed
 reads, drift and the 64-read/25-second limits fail closed.
+The full IAM snapshot also extracts the exact two historical hosted A/B
+`LeadingKeys` and rejects overlap with fresh MAPIT tenant paths. The synthetic
+binding table's two storage-proof keys are a different historical set: checking
+only those is insufficient. Callback-level adverse tests require rejection
+before the legacy projection or closure reads.
 
 `prepare_dev_mapit_bootstrap_private.py` creates only fresh ACL-private local
 metadata after source/CI and protection checks. It creates one opaque tenant
@@ -540,6 +545,16 @@ material. No key bytes or key hashes enter the journal.
 short-lived credential triple, with pinned endpoints, TLS and no SDK retries.
 Fresh STS checks in the publisher still verify the exact new enrollment role.
 Role-shaped STS responses alone do not establish credential parity.
+
+`run_dev_mapit_binding_key_setup.py` composes the publisher with a separate
+fresh source/CI/protection authorization and publication journal. An accepted
+bootstrap is historical evidence, not a renewable write window: its owning
+parser validates immutable state, while current exact stack/table/IAM/runtime
+readbacks and the fresh authorization gate the new operation. Only the assumed
+enroller's SSM client may dispatch the single create-only publication; operator
+clients remain read-only apart from that exact role assumption. Failed SDK
+attempts count toward the shared budget, and no consumed publication is retried.
+This operator still does not enroll a MAPIT account or open the endpoint.
 
 These are offline preparations, not a key-publication or cloud-bootstrap
 receipt. Live use still needs a separately accepted real-namespace bootstrap,

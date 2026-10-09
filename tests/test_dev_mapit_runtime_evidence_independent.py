@@ -31,11 +31,18 @@ def _rows(template):
     ]
 
 
-def _wrapper_inputs(tmp_path):
-    authority, bundle, mapit_template = _authority_and_bundle()
+def _wrapper_inputs(tmp_path, *, fresh_tenant_key=None, baseline_keys=None):
+    _, bundle, _ = _authority_and_bundle()
     app = _app_template()
+    if baseline_keys is not None:
+        tenant_read = next(
+            item for item in app["Resources"]["McpHandlerRole"]["Properties"]["Policies"]
+            if item["PolicyName"] == "honda-mapit-mcp-dev-retained-tenant-read"
+        )
+        tenant_read["PolicyDocument"]["Statement"][0]["Condition"][
+            "ForAllValues:StringEquals"]["dynamodb:LeadingKeys"] = list(baseline_keys)
     bundle["runtime_binding"]["template_sha256"] = evidence._digest(app)
-    authority = make_authority(
+    common = dict(
         account_id=ACCOUNT,
         operator_user_arn=CALLER,
         source_sha="e" * 40,
@@ -44,10 +51,17 @@ def _wrapper_inputs(tmp_path):
         authorized_from_epoch=1_800_000_000,
         authorized_until_epoch=1_800_000_600,
         ci_evidence_sha256="f" * 64,
-        runtime_evidence_sha256=evidence.runtime_evidence_digest(bundle),
+        runtime_evidence_sha256="0" * 64,
         ssm_key_arn=KMS_KEY,
-        tenant_keys=("tenant-" + "a" * 64,),
+        tenant_keys=(fresh_tenant_key or "tenant-" + "a" * 64,),
         excluded_tenant_keys=("tenant-" + "1" * 64, "tenant-" + "2" * 64),
+    )
+    provisional = make_authority(**common)
+    from scripts.dev_mapit_bootstrap_contract import build_plan
+    mapit_template = build_plan(provisional).template
+    bundle["mapit_plan_sha256"] = build_plan(provisional).template_sha256
+    authority = make_authority(
+        **{**common, "runtime_evidence_sha256": evidence.runtime_evidence_digest(bundle)}
     )
     bundle_path = tmp_path / "runtime-evidence.json"
     bundle_path.write_text(json.dumps(bundle, sort_keys=True, separators=(",", ":")), encoding="utf-8")
@@ -137,6 +151,41 @@ def test_real_inventory_reread_detects_policy_drift_before_closure_reads(tmp_pat
     assert 0 < result["calls"] <= 64
 
 
+@pytest.mark.parametrize("fresh_key,baseline_keys", [
+    ("tenant-" + "3" * 64, ("tenant-" + "3" * 64, "tenant-" + "4" * 64)),
+    ("tenant-" + "a" * 64, ("tenant-" + "3" * 64, "tenant-" + "3" * 64)),
+    ("tenant-" + "a" * 64, ("not-a-tenant-key", "tenant-" + "4" * 64)),
+])
+def test_callback_rejects_historical_key_overlap_or_malformed_condition_before_legacy(
+    tmp_path, monkeypatch, fresh_key, baseline_keys,
+):
+    authority, _bundle, mapit_template, _app, clients, bundle_path, old_policy = _wrapper_inputs(
+        tmp_path, fresh_tenant_key=fresh_key, baseline_keys=baseline_keys,
+    )
+    monkeypatch.setattr(evidence, "_validate_historical_bootstrap", lambda **_kwargs: old_policy)
+    legacy_called = []
+    monkeypatch.setattr(
+        evidence, "verify_accepted_runtime",
+        lambda *_args, **_kwargs: legacy_called.append(True) or {"verified": True},
+    )
+    callback = evidence.make_mapit_runtime_evidence_verifier(
+        bundle_path,
+        synthetic_binding_path=bundle_path,
+        synthetic_authorization_path=bundle_path,
+        synthetic_state_dir=tmp_path,
+        acl_checker=lambda _path: True,
+        monotonic=lambda: 10.0,
+    )
+
+    result = callback(clients, authority, mapit_template, phase="readback")
+
+    assert result["verified"] is False
+    assert legacy_called == []
+    assert clients["apigatewayv2"].calls == []
+    assert clients["lambda"].calls == []
+    assert 0 < result["calls"] <= 64
+
+
 def test_current_template_rejects_duplicate_inventory_and_sdk_pagination():
     _, bundle, _, app, clients, _, _ = _wrapper_inputs_for_direct()
     binding = bundle["runtime_binding"]
@@ -186,4 +235,3 @@ def test_counting_client_enforces_exclusive_deadline_and_64_dispatched_calls():
         at_deadline.get_item()
     assert counter[0] == 64
     assert len(underlying.calls) == 64
-
