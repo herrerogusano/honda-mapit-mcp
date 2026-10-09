@@ -1,5 +1,35 @@
 # Project Agent Workflow
 
+Real owner delivery preparation checkpoint, 2026-10-09: PR #102 merged normally
+to develop bb601f9 after eight source checks (37975506967); all eight integrated
+checks passed (37975988155). Frozen suite: 4,564 passed/twelve skips, compilation
+and model-free evaluation 12/12, fifty official offline schemas passed.
+One actual invocation stopped at private_inputs_unverified during pure metadata
+assembly. It retained only local public manifest/JWKS/archive/summary preparation;
+authorization.json and both intent journals were never created. No artifact PUT,
+UpdateStack, API opening, MAPIT session or human login followed. Preserve that
+preparation; do not resume it or infer write permission from empty cloud reads.
+Readonly diagnosis isolated the same incompatible predicate in two consumers
+(metadata assembly and current-runtime construction): the original
+MAPIT bootstrap preparer excluded its two storage keys, whereas the assembler
+incorrectly required the hosted app's separate pair inside the same historical
+list. Independent review accepts preserving storage coverage and directly
+checking the new owner is disjoint from both historical pairs, with authentic
+preparer-shaped positive and four collision negatives (39 focused tests).
+The second constructor failure was isolated read-only before its SDK calls.
+Its genuine PRE/POST fixture now also uses the producer's storage-only list;
+independent preparation/readback/SDK-model review passed 48 focused tests.
+One actual readonly check passed the private loader, corrected pure assembly and
+constructor-only archive/target validation with two bounded SDK reads and public
+JWKS fetches; historical authority/files remained unchanged. This does not run
+delivery methods, publish the retained archive or establish cloud acceptance.
+Do not rewrite/rebind historical authority, rotate keys or replay consumed work.
+Fresh source/CI/protections and a new private run still precede any owner delivery.
+The first directory-date filter mixed UTC/local DateTime semantics; an unfiltered
+bounded inventory corrected the observation. Absence under an unverified time
+filter is not absence of preparation or replay authority. Production/MFA/quota
+ten remain unchanged. Remove owned temporary wakefulness before final handoff.
+
 Accepted delivery restart preparation, 2026-10-09: PR #101 merged normally at
 develop 3d3e6a7 after eight green source checks (37972505452); all eight integrated
 checks passed (37973283671). Frozen prior suite: 4,526 passed/twelve skips.

@@ -35,6 +35,7 @@ from scripts.dev_owner_enrolled_delivery import (
     _validate_authority,
     _template_sha,
 )
+from scripts.dev_owner_enrolled_preparation import _valid_namespace_key_separation
 from scripts.dev_owner_enrolled_runtime import build_owner_enrolled_dev_runtime_target
 from scripts.dev_owner_enrolled_delivery_sdk import (
     DeliveryClientBundle,
@@ -926,9 +927,7 @@ class OwnerEnrolledCurrentState:
                     or self.bootstrap_authority.expected_caller_arn != self.authority["operator_arn"]
                     or self.bootstrap_authority._binding_sha256 != self.authority["mapit_bootstrap_authority_sha256"]
                     or self.bootstrap_authority.runtime_evidence_sha256 != self.authority["runtime_evidence_sha256"]
-                    or self.authority["owner_tenant_key"] not in self.bootstrap_authority._tenant_keys
-                    or not set(self.authority["historical_tenant_keys"]).issubset(
-                        set(self.bootstrap_authority._excluded_tenant_keys))):
+                    or self.authority["owner_tenant_key"] not in self.bootstrap_authority._tenant_keys):
                 raise ValueError
             if self.bootstrap_receipt_sha != self.authority["mapit_bootstrap_receipt_sha256"]:
                 raise ValueError
@@ -958,6 +957,12 @@ class OwnerEnrolledCurrentState:
                 raise ValueError
             runtime_binding = _validate_mapit_evidence_bundle(
                 runtime_bundle, self.bootstrap_authority, self.bootstrap_template)
+            if not _valid_namespace_key_separation(
+                    owner_keys=self.bootstrap_authority._tenant_keys,
+                    storage_keys=runtime_binding.get("tenant_keys"),
+                    hosted_keys=self.authority.get("historical_tenant_keys"),
+                    excluded_keys=self.bootstrap_authority._excluded_tenant_keys):
+                raise ValueError
             self._app_run_id = runtime_binding["app_run_id"]
             if type(self._app_run_id) is not int or self._app_run_id <= 0:
                 raise ValueError
