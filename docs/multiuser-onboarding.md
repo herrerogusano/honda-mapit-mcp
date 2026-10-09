@@ -11,6 +11,37 @@ identities and synthetic business data; that evidence remains separate.
 
 ### Real-account DEV continuation — 2026-10-09
 
+The SDK JSON reader correction passes independent review and 84 focused tests.
+Actual read-only GetTemplate diagnostics confirmed nested OrderedDict at both
+the root and Metadata, with the exact accepted template digest and nineteen
+resources. The reader now normalizes the entire JSON document before invoking
+the unchanged exact-type template validator. Duplicate/non-string keys,
+non-JSON values, non-finite numbers and bounded depth/nodes/aggregate canonical
+size are checked before final allocation. Source integration remains required;
+this correction is not a runtime deployment or owner-account E2E. A subsequent
+actual private-loader check passed with two SDK reads, two fixed public JWKS
+GETs, unchanged immutable receipts and zero writes/key or session loads.
+
+PR #99 is integrated on develop `3bed243`, with eight green source checks
+(37968202910) and eight green integrated checks (37968785588). Its frozen
+local suite passed 4,485 tests with twelve environment skips; compilation and
+model-free evaluation passed 12/12. PR #98 integrated checks also passed
+(37967747790). The one-process closed delivery operator is still under review;
+no actual owner runtime update, owner login or MAPIT business E2E follows from
+these offline acceptances. Existing invitation/publication journals remain
+consumed and production remains unchanged.
+
+The closed-delivery operator under review composes these accepted parsers,
+the ARM packaging check and the complete PRE/POST verifier in one process.
+It creates a fresh private authority only after source, protected-environment,
+immutable-input and local packaging checks. Publication and stack update each
+have a distinct durable one-shot journal. An uncertain write, interruption,
+rollback or expired window stops the run; its root is retained for review and
+must not be resumed under a fresh empty journal. Completion additionally needs
+exact runtime readback with the API disabled and Lambda reservation zero.
+This operator does not open the endpoint, enroll a MAPIT session or perform a
+human login. Those require their own reviewed post-delivery lineage.
+
 The private-input loader passes independent review and twenty-one offline tests.
 It uses the owning private receipt parsers, binds the OAuth state directory and
 complete runtime evidence digest, and fetches only the two fixed public issuer
