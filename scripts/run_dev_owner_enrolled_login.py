@@ -32,6 +32,11 @@ from scripts.run_dev_owner_enrolled_delivery import (
 from scripts.run_aws_dev_owner_oauth_bootstrap import validate_github_protections
 from scripts.run_aws_retained_dev_bootstrap import validate_source_and_ci
 
+_LOGIN_OUTCOMES = frozenset({
+    "window_expired", "exchange_failed", "token_invalid", "consumer_failed",
+    "request_rejected", "login_failed", "listener_failed", "pending",
+})
+
 
 def run_post_delivery_login(*, delivery_root, private_paths, source_sha, ci_run_id,
         acl_checker=None, source_validator=validate_source_and_ci,
@@ -116,15 +121,23 @@ def run_post_delivery_login(*, delivery_root, private_paths, source_sha, ci_run_
         def consume(_verified_token):
             if seen:
                 raise ValueError
+            check_deadline()
             gates()
+            check_deadline()
             seen.append(True)
             # Deliberately no persistence or downstream token consumer.
-        channel = channel_factory(lineage.policy, keys, consume)
+        channel = channel_factory(lineage.policy, keys, consume,
+            consumer_seconds=90.0, absolute_until_epoch=window["authorized_until_epoch"],
+            wall_clock=clock, monotonic=monotonic)
         check_deadline()
         outcome = channel.serve(ready_callback=ready_callback)
         ok = outcome == "verified" and seen == [True]
-        return {"ok": ok, "category": "owner_enrolled_login_verified" if ok
-                else "owner_enrolled_login_unverified", "calls": calls}
+        result = {"ok": ok, "category": "owner_enrolled_login_verified" if ok
+                  else "owner_enrolled_login_unverified", "calls": calls}
+        if not ok:
+            result["login_outcome"] = (outcome if type(outcome) is str
+                and outcome in _LOGIN_OUTCOMES else "login_failed")
+        return result
     except Exception:
         try:
             attempted = observer.last_read_call_count

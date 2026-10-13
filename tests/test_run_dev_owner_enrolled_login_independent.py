@@ -78,8 +78,9 @@ def _runner(monkeypatch, *, events, evidence=None, clock=None, observer_call=Non
         return observer_factory(kwargs, Observer()) if observer_factory else Observer()
 
     class Channel:
-        def __init__(self, _policy, _keys, consume):
+        def __init__(self, _policy, _keys, consume, **kwargs):
             self.consume = consume
+            captured["channel_options"] = kwargs
 
         def serve(self, *, ready_callback=None):
             events.append("serve")
@@ -88,9 +89,9 @@ def _runner(monkeypatch, *, events, evidence=None, clock=None, observer_call=Non
             self.consume("opaque-verified-token")
             return "verified"
 
-    def make_channel(policy, keys, consume):
+    def make_channel(policy, keys, consume, **kwargs):
         events.append("channel_factory")
-        return channel_factory(policy, keys, consume) if channel_factory else Channel(policy, keys, consume)
+        return channel_factory(policy, keys, consume, **kwargs) if channel_factory else Channel(policy, keys, consume, **kwargs)
 
     monkeypatch.setattr(runner, "validate_owner_enrolled_login_lineage",
                         lambda **_kwargs: SimpleNamespace(policy=object()))
@@ -224,3 +225,48 @@ def test_fractional_initial_clock_keeps_integer_cutoff_exclusive(monkeypatch, la
 
     assert result["ok"] is expected_ok
     assert ("serve" in events) is expected_ok
+
+
+def test_channel_shares_original_observation_cutoff_and_runner_clocks(monkeypatch):
+    result, _, captured, _ = _runner(monkeypatch, events=[])
+    assert result["ok"] is True
+    options = captured["channel_options"]
+    assert options["consumer_seconds"] == 90.0
+    assert options["absolute_until_epoch"] == captured["observation_window"]["authorized_until_epoch"]
+    assert options["wall_clock"] is captured["clock"]
+    assert options["monotonic"] is captured["monotonic"]
+
+
+def test_expiry_during_consumer_gates_prevents_acceptance(monkeypatch):
+    events = []
+    clock_value = [1000.0]
+    protection_reads = 0
+
+    def protections(**_kwargs):
+        nonlocal protection_reads
+        protection_reads += 1
+        if protection_reads == 5:
+            clock_value[0] = 1599.0
+        return 7, 8
+
+    result, _, _, _ = _runner(monkeypatch, events=events,
+        clock=lambda: clock_value[0], protection_reader=protections)
+    assert result["ok"] is False
+
+
+@pytest.mark.parametrize("outcome, expected", [
+    ("token_invalid", "token_invalid"), ("window_expired", "window_expired"),
+    ("secret-provider-message", "login_failed"), ({"token": "secret"}, "login_failed"),
+])
+def test_unverified_channel_outcome_is_whitelisted(monkeypatch, outcome, expected):
+    class FailedChannel:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def serve(self, **_kwargs):
+            return outcome
+
+    result, _, _, _ = _runner(monkeypatch, events=[], channel_factory=FailedChannel)
+    assert result == {"ok": False, "category": "owner_enrolled_login_unverified",
+                      "calls": 6, "login_outcome": expected}
+    assert "secret" not in repr(result)

@@ -36,6 +36,7 @@ LOOPBACK_HOST = "127.0.0.1"
 LOOPBACK_PORT = 8787
 MAX_WINDOW_SECONDS = 600.0
 MAX_EXCHANGE_SECONDS = 15.0
+MAX_CONSUMER_SECONDS = 90.0
 MAX_REQUEST_LINE = 4096
 MAX_HEADER_COUNT = 32
 MAX_HEADER_BYTES = 8192
@@ -183,7 +184,9 @@ class DevOwnerAssistedLogin:
                  monotonic: Callable[[], float] = time.monotonic,
                  wall_clock: Callable[[], float] = time.time,
                  random_bytes: Callable[[int], bytes] = secrets.token_bytes,
-                 window_seconds: float = MAX_WINDOW_SECONDS) -> None:
+                 window_seconds: float = MAX_WINDOW_SECONDS,
+                 consumer_seconds: float = 0.0,
+                 absolute_until_epoch: int | None = None) -> None:
         try:
             if type(policy) is not CognitoDevPolicy or not callable(token_consumer):
                 raise ValueError
@@ -194,9 +197,17 @@ class DevOwnerAssistedLogin:
             window = float(window_seconds)
             if not math.isfinite(window) or not 1 <= window <= MAX_WINDOW_SECONDS:
                 raise ValueError
+            if (type(consumer_seconds) not in (int, float)
+                    or not math.isfinite(consumer_seconds)
+                    or not 0 <= consumer_seconds <= MAX_CONSUMER_SECONDS):
+                raise ValueError
             verifier = FixedRS256TokenVerifier(policy, public_keys)
             started = _finite_clock(monotonic())
             wall = _finite_clock(wall_clock())
+            if absolute_until_epoch is not None and (
+                    type(absolute_until_epoch) is not int
+                    or not 0 < absolute_until_epoch - wall <= MAX_WINDOW_SECONDS):
+                raise ValueError
             capability = _b64url(random_bytes(32))
             if len(capability) != 43:
                 raise ValueError
@@ -210,7 +221,12 @@ class DevOwnerAssistedLogin:
         self._wall_clock = wall_clock
         self._last_mono = started
         self._wall_started = wall
+        self._last_wall = wall
         self._window_end = started + window
+        self._absolute_until_epoch = absolute_until_epoch
+        if absolute_until_epoch is not None:
+            self._window_end = min(self._window_end, started + absolute_until_epoch - wall)
+        self._consumer_seconds = float(consumer_seconds)
         self._random_bytes = random_bytes
         self._capability = capability
         self._state: str | None = None
@@ -239,6 +255,11 @@ class DevOwnerAssistedLogin:
             self._last_mono = current
             if current >= self._window_end:
                 raise AssistedLoginError("window_expired")
+            if self._absolute_until_epoch is not None:
+                wall = _finite_clock(self._wall_clock())
+                if wall < self._last_wall or wall >= self._absolute_until_epoch:
+                    raise AssistedLoginError("window_expired")
+                self._last_wall = wall
             return current
         except AssistedLoginError:
             raise
@@ -335,17 +356,39 @@ class DevOwnerAssistedLogin:
                     if (verified is None or verified.subject != self._policy.owner_subject
                             or verified.client_id != self._policy.client_id
                             or verified.resource != self._policy.audience
-                            or wall_now < self._wall_started
+                            or wall_now < self._last_wall
                             or type(verified.expires_at) is not int or verified.expires_at - wall_now < 15
                             or type(verified.scopes) is not list
                             or verified.scopes != [self._policy.required_scope]):
                         raise AssistedLoginError("token_invalid")
+                    self._last_wall = wall_now
                     self._sample_until(exchange_deadline)
+                    consumer_deadline = exchange_deadline
+                    if self._consumer_seconds:
+                        consumer_start = self._sample()
+                        consumer_wall = _finite_clock(self._wall_clock())
+                        if consumer_wall < self._last_wall:
+                            raise AssistedLoginError("window_expired")
+                        self._last_wall = consumer_wall
+                        consumer_deadline = min(
+                            self._window_end,
+                            consumer_start + self._consumer_seconds,
+                            consumer_start + verified.expires_at - consumer_wall - 15,
+                        )
+                        self._sample_until(consumer_deadline)
                     try:
                         self._consumer(verified)
                     except Exception:
                         raise AssistedLoginError("consumer_failed") from None
-                    self._sample_until(exchange_deadline)
+                    self._sample_until(consumer_deadline)
+                    wall_after = _finite_clock(self._wall_clock())
+                    if (self._absolute_until_epoch is not None
+                            and wall_after >= self._absolute_until_epoch):
+                        raise AssistedLoginError("window_expired")
+                    if (wall_after < self._last_wall
+                            or verified.expires_at - wall_after < 15):
+                        raise AssistedLoginError("token_invalid")
+                    self._last_wall = wall_after
                     with self._lock:
                         self._outcome = "verified"
                     return self._reply(200, _SUCCESS_BODY, "verified")
@@ -488,7 +531,7 @@ class DevOwnerAssistedLogin:
                    ("Cache-Control", "no-store"), ("Pragma", "no-cache"),
                    ("Referrer-Policy", "no-referrer"), ("X-Content-Type-Options", "nosniff"),
                    ("X-Frame-Options", "DENY"),
-                   ("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"),
+                   ("Content-Security-Policy", f"default-src 'none'; frame-ancestors 'none'; form-action 'self' {AUTHORIZE_URL}; base-uri 'none'"),
                    ("Connection", "close"), *extra)
         if location is not None:
             headers += (("Location", location),)
