@@ -476,6 +476,10 @@ class DevOwnerAssistedLogin:
                 if lengths is not None and (len(lengths) != 1 or not lengths[0].isdigit()
                                              or int(lengths[0]) > MAX_TOKEN_RESPONSE_BYTES):
                     raise AssistedLoginError("exchange_failed")
+                expected_length = int(lengths[0]) if lengths is not None else None
+                transfers = headers.get_all("Transfer-Encoding") if headers is not None and callable(getattr(headers, "get_all", None)) else None
+                if expected_length is not None and transfers is not None:
+                    raise AssistedLoginError("exchange_failed")
                 content_types = headers.get_all("Content-Type") if headers is not None and callable(getattr(headers, "get_all", None)) else None
                 if (content_types is None or len(content_types) != 1
                         or content_types[0].split(";", 1)[0].strip().casefold() != "application/json"):
@@ -497,6 +501,10 @@ class DevOwnerAssistedLogin:
                     remaining = min(self._window_end - before_read, deadline - before_read)
                     if not math.isfinite(remaining) or remaining <= 0:
                         raise AssistedLoginError("window_expired")
+                    # HTTPResponse.read1 closes its socket when the declared
+                    # body is complete. Do not touch that socket again for EOF.
+                    if expected_length is not None and total == expected_length:
+                        break
                     if sock is not None:
                         settimeout = getattr(sock, "settimeout", None)
                         if callable(settimeout):
@@ -508,9 +516,12 @@ class DevOwnerAssistedLogin:
                     if not chunk:
                         break
                     total += len(chunk)
-                    if total > MAX_TOKEN_RESPONSE_BYTES:
+                    if (total > MAX_TOKEN_RESPONSE_BYTES
+                            or expected_length is not None and total > expected_length):
                         raise AssistedLoginError("exchange_failed")
                     chunks.append(chunk)
+                if expected_length is not None and total != expected_length:
+                    raise AssistedLoginError("exchange_failed")
                 return _parse_token_body(
                     b"".join(chunks), self._policy.required_scope, minimum_lifetime=15
                 )

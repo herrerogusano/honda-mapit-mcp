@@ -7,7 +7,9 @@ import json
 import threading
 import time
 import urllib.parse
+import urllib.request
 from email.message import Message
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import jwt
@@ -318,7 +320,7 @@ def test_exchange_deadline_is_checked_during_bounded_response_reads(signing_keys
     class SlowResponse(_Response):
         def read(self, count: int) -> bytes:
             clock.value += 8.0
-            return super().read(count)
+            return super().read(min(count, len(body) // 2))
 
     opener = _Opener(SlowResponse(body))
     received = []
@@ -578,3 +580,71 @@ def test_absolute_window_requires_exact_integer_epoch(signing_keys, until):
     _, keys = signing_keys
     with pytest.raises(AssistedLoginError, match="^configuration_invalid$"):
         DevOwnerAssistedLogin(POLICY, keys, lambda _token: None, absolute_until_epoch=until)
+
+
+@pytest.mark.parametrize("framing", ["length", "chunked", "close"])
+def test_native_http_response_completes_without_touching_closed_socket(signing_keys, framing):
+    body = json.dumps({"access_token": _signed_token(signing_keys[0]),
+                       "token_type": "Bearer", "expires_in": 240}).encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            if framing == "length":
+                self.send_header("Content-Length", str(len(body)))
+            elif framing == "chunked":
+                self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write((f"{len(body):X}\r\n".encode() + body + b"\r\n0\r\n\r\n")
+                             if framing == "chunked" else body)
+
+        def log_message(self, *_args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever)
+    worker.start()
+    received = []
+    calls = []
+
+    class NativeOpener:
+        def open(self, request, *, timeout):
+            assert request.full_url == TOKEN_URL and request.get_method() == "POST"
+            calls.append(True)
+            local = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/",
+                                           data=request.data, method="POST")
+            return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(local, timeout=timeout)
+
+    try:
+        login, _, _, _, _, start = _session(consumer=received.append)
+        login._opener = NativeOpener()
+        result = _callback(login, _start_params(start)["state"][0])
+        assert result.category == "verified"
+        assert len(received) == len(calls) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=3)
+    assert not worker.is_alive()
+
+
+@pytest.mark.parametrize("length_delta", [-1, 1])
+def test_declared_token_body_length_mismatch_is_rejected(signing_keys, length_delta):
+    login, _, response, received, _, start = _session()
+    response.headers.replace_header("Content-Length", str(len(response._body) + length_delta))
+    result = _callback(login, _start_params(start)["state"][0])
+    assert result.category == "exchange_failed"
+    assert received == []
+
+
+def test_conflicting_token_response_framing_is_rejected(signing_keys):
+    login, _, response, received, _, start = _session()
+    response.headers["Transfer-Encoding"] = "chunked"
+    result = _callback(login, _start_params(start)["state"][0])
+    assert result.category == "exchange_failed"
+    assert received == []
