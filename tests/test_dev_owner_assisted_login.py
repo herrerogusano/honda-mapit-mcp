@@ -112,7 +112,9 @@ def _signed_token(private_key, *, scope: str = SCOPE, subject: str = SUBJECT,
 
 
 def _session(*, token_response: bytes | None = None, exception: Exception | None = None,
-             clock: _Clock | None = None, random: _Random | None = None):
+             clock: _Clock | None = None, random: _Random | None = None,
+             consumer=None, consumer_seconds=0.0, wall_clock=time.time,
+             absolute_until_epoch=None):
     private, keys = _KEYS
     access = _signed_token(private)
     body = token_response if token_response is not None else json.dumps({
@@ -124,9 +126,10 @@ def _session(*, token_response: bytes | None = None, exception: Exception | None
     received = []
     selected_clock = clock or _Clock()
     login = DevOwnerAssistedLogin(
-        POLICY, keys, received.append, token_opener=opener,
-        monotonic=selected_clock, wall_clock=time.time,
+        POLICY, keys, consumer or received.append, token_opener=opener,
+        monotonic=selected_clock, wall_clock=wall_clock,
         random_bytes=random or _Random(),
+        consumer_seconds=consumer_seconds, absolute_until_epoch=absolute_until_epoch,
     )
     root = login.handle("GET", "/", [("Host", CALLBACK_HOST)], "127.0.0.1")
     cap = root.body.decode().split('name=cap value="', 1)[1].split('"', 1)[0]
@@ -422,3 +425,156 @@ def test_policy_type_and_consumer_are_required_without_weakening_owner_pin(signi
         DevOwnerAssistedLogin(object(), keys, lambda _token: None)
     with pytest.raises(AssistedLoginError, match="^configuration_invalid$"):
         DevOwnerAssistedLogin(POLICY, keys, None)
+
+
+def test_form_csp_allows_only_local_origin_and_fixed_cognito_authorization(signing_keys):
+    response = DevOwnerAssistedLogin._reply(200, b"fixed page", "root")
+    csp = dict(response.headers)["Content-Security-Policy"]
+    directives = dict(part.strip().split(" ", 1) for part in csp.split(";") if part.strip())
+    assert directives["form-action"].split() == ["'self'", AUTHORIZE_URL]
+    assert directives["default-src"] == "'none'"
+    assert directives["frame-ancestors"] == "'none'"
+    assert directives["base-uri"] == "'none'"
+
+
+@pytest.mark.parametrize("consumer_seconds, elapsed, expected", [
+    (0, 15, "window_expired"), (90, 20, "verified"),
+    (90, 89.999, "verified"), (90, 90, "window_expired"),
+])
+def test_opt_in_consumer_budget_is_separate_and_exclusive(signing_keys, consumer_seconds, elapsed, expected):
+    clock = _Clock()
+    consumed = []
+
+    def consumer(token):
+        consumed.append(token)
+        clock.value += elapsed
+
+    login, opener, _, _, _, start = _session(
+        clock=clock, consumer=consumer, consumer_seconds=consumer_seconds)
+    result = _callback(login, _start_params(start)["state"][0])
+    assert result.category == expected
+    assert len(consumed) == len(opener.calls) == 1
+    assert _callback(login, "another-state").status == 410
+    assert len(opener.calls) == 1
+
+
+def test_consumer_budget_does_not_extend_token_exchange_deadline(signing_keys):
+    clock = _Clock()
+    login, opener, _, received, _, start = _session(clock=clock, consumer_seconds=90)
+    original_open = opener.open
+
+    def slow_exchange(request, *, timeout):
+        clock.value += 15
+        return original_open(request, timeout=timeout)
+
+    opener.open = slow_exchange
+    result = _callback(login, _start_params(start)["state"][0])
+    assert result.category == "window_expired"
+    assert len(opener.calls) == 1
+    assert received == []
+
+
+@pytest.mark.parametrize("elapsed, expected", [(19.999, "verified"), (20, "window_expired")])
+def test_consumer_budget_is_clipped_to_remaining_token_lifetime(signing_keys, elapsed, expected):
+    private, _ = signing_keys
+    token = _signed_token(private, expires_in=35)
+    expires = jwt.decode(token, options={"verify_signature": False})["exp"]
+    wall = _Clock(expires - 35)
+    mono = _Clock()
+    body = json.dumps({"access_token": token, "token_type": "Bearer", "expires_in": 35}).encode()
+
+    def consume(_token):
+        mono.value += elapsed
+        wall.value += elapsed
+
+    login, _, _, _, _, start = _session(clock=mono, wall_clock=wall,
+        consumer=consume, consumer_seconds=90, token_response=body)
+    assert _callback(login, _start_params(start)["state"][0]).category == expected
+
+
+@pytest.mark.parametrize("elapsed, expected", [(19.999, "verified"), (20, "window_expired")])
+def test_consumer_budget_is_clipped_to_original_absolute_window(signing_keys, elapsed, expected):
+    wall = _Clock(int(time.time()))
+    mono = _Clock()
+
+    def consume(_token):
+        mono.value += elapsed
+        wall.value += elapsed
+
+    login, _, _, _, _, start = _session(clock=mono, wall_clock=wall,
+        consumer=consume, consumer_seconds=90, absolute_until_epoch=int(wall.value) + 20)
+    assert _callback(login, _start_params(start)["state"][0]).category == expected
+
+
+@pytest.mark.parametrize("wall_delta, expected", [(-1, "window_expired"), (250, "token_invalid")])
+def test_post_consumer_rejects_wall_rollback_and_token_expiry(signing_keys, wall_delta, expected):
+    wall = _Clock(int(time.time()))
+    mono = _Clock()
+
+    def consume(_token):
+        mono.value += 1
+        wall.value += wall_delta
+
+    login, _, _, _, _, start = _session(clock=mono, wall_clock=wall,
+        consumer=consume, consumer_seconds=90, absolute_until_epoch=int(wall.value) + 599)
+    assert _callback(login, _start_params(start)["state"][0]).category == expected
+
+
+def test_absolute_window_checks_latest_wall_sample_not_only_start(signing_keys):
+    wall = _Clock(int(time.time()))
+    login, opener, _, received, _, start = _session(wall_clock=wall,
+        absolute_until_epoch=int(wall.value) + 599)
+    wall.value += 5
+    login.handle("GET", "/", [("Host", CALLBACK_HOST)], "127.0.0.1")
+    wall.value -= 2
+    result = _callback(login, _start_params(start)["state"][0])
+    assert result.category == "window_expired"
+    assert opener.calls == received == []
+
+
+def test_final_post_consumer_wall_sample_must_remain_before_absolute_cutoff(signing_keys):
+    initial = int(time.time())
+    until = initial + 100
+    samples = []
+    mono = _Clock()
+
+    def wall():
+        return samples.pop(0) if samples else initial
+
+    consumed = []
+
+    def consume(token):
+        consumed.append(token)
+        mono.value += 1
+        samples.extend([until - 0.1, until])
+
+    login, opener, _, _, _, start = _session(clock=mono, wall_clock=wall,
+        consumer=consume, consumer_seconds=90, absolute_until_epoch=until)
+    result = _callback(login, _start_params(start)["state"][0])
+    assert result.category == "window_expired"
+    assert result.status == 400
+    assert len(consumed) == len(opener.calls) == 1
+    assert login.outcome == "window_expired"
+
+
+@pytest.mark.parametrize("budget", [True, -1, 90.001, float("inf"), float("nan"), "90"])
+def test_invalid_consumer_budget_is_rejected_at_construction(signing_keys, budget):
+    _, keys = signing_keys
+    with pytest.raises(AssistedLoginError, match="^configuration_invalid$"):
+        DevOwnerAssistedLogin(POLICY, keys, lambda _token: None, consumer_seconds=budget)
+
+
+@pytest.mark.parametrize("offset", [0, -1, 601])
+def test_expired_or_widened_absolute_window_is_rejected(signing_keys, offset):
+    _, keys = signing_keys
+    wall = _Clock(int(time.time()))
+    with pytest.raises(AssistedLoginError, match="^configuration_invalid$"):
+        DevOwnerAssistedLogin(POLICY, keys, lambda _token: None,
+            wall_clock=wall, absolute_until_epoch=int(wall.value) + offset)
+
+
+@pytest.mark.parametrize("until", [True, 1000.0, float("inf"), "1000"])
+def test_absolute_window_requires_exact_integer_epoch(signing_keys, until):
+    _, keys = signing_keys
+    with pytest.raises(AssistedLoginError, match="^configuration_invalid$"):
+        DevOwnerAssistedLogin(POLICY, keys, lambda _token: None, absolute_until_epoch=until)
