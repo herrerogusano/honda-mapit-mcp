@@ -68,12 +68,15 @@ def run_post_delivery_login(*, delivery_root, private_paths, source_sha, ci_run_
         now = clock()
         if type(now) not in (int, float) or isinstance(now, bool) or not math.isfinite(now) or now <= 0:
             raise ValueError
-        # Start strictly before the current sample, retaining the exclusive
-        # cutoff and a total window of at most 600 seconds.
+        # The OAuth SDK requires integer epoch bounds. Floor the sample so
+        # the exclusive cutoff never exceeds the original 599-second limit.
+        # Start strictly before the sample and keep a 600-second total window.
+        observation_start = math.floor(now) - 1
         window = {"schema": 1, "kind": "owner-enrolled-readonly-observation",
             "account_id": authority["account_id"], "operator_arn": authority["operator_arn"],
             "source_sha": source_sha, "ci_run_id": ci_run_id,
-            "authorized_from_epoch": now - 1, "authorized_until_epoch": now + 599,
+            "authorized_from_epoch": observation_start,
+            "authorized_until_epoch": observation_start + 600,
             "github_owner_id": owner_id, "github_repository_id": repository_id}
         def check_deadline():
             validate_observation_window(window, account_id=authority["account_id"],
