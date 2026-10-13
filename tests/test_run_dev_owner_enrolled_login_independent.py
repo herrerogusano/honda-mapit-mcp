@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import run_dev_owner_enrolled_login as runner
+from scripts.dev_owner_oauth_sdk import OwnerOAuthSdkBindings
 
 
 ACCOUNT = "123456789012"
@@ -176,3 +177,50 @@ def test_window_expiry_during_final_protection_gate_prevents_listener(monkeypatc
     assert result == {"ok": False, "category": "owner_enrolled_login_unverified", "calls": 6}
     assert "channel_factory" not in events
     assert "serve" not in events
+
+
+@pytest.mark.parametrize("now", [1000.0, 1000.125, 1000.999999])
+def test_observation_window_constructs_real_oauth_sdk_with_fractional_clock(monkeypatch, now):
+    events = []
+
+    def real_sdk_constructor(kwargs, observer):
+        window = kwargs["observation_window"]
+        sdk = OwnerOAuthSdkBindings(
+            {}, account_id=ACCOUNT, operator_user_arn=OPERATOR,
+            until_epoch=window["authorized_until_epoch"],
+            wall_clock=kwargs["clock"], monotonic=kwargs["monotonic"],
+        )
+        assert sdk.calls == 0
+        return observer
+
+    result, events, captured, _ = _runner(
+        monkeypatch, events=events, clock=lambda: now,
+        observer_factory=real_sdk_constructor,
+    )
+
+    assert result["ok"] is True, events
+    window = captured["observation_window"]
+    start, end = window["authorized_from_epoch"], window["authorized_until_epoch"]
+    assert type(start) is type(end) is int
+    assert start < now < end <= now + 599
+    assert end - start == 600
+    assert "serve" in events
+
+
+@pytest.mark.parametrize("later, expected_ok", [(1598.999, True), (1599.0, False), (1599.5, False)])
+def test_fractional_initial_clock_keeps_integer_cutoff_exclusive(monkeypatch, later, expected_ok):
+    events = []
+    clock_value = [1000.75]
+
+    def advance_during_jwks(_policy):
+        events.append("jwks")
+        clock_value[0] = later
+        return b"jwks"
+
+    result, events, _, _ = _runner(
+        monkeypatch, events=events, clock=lambda: clock_value[0],
+        jwks_fetcher=advance_during_jwks,
+    )
+
+    assert result["ok"] is expected_ok
+    assert ("serve" in events) is expected_ok
