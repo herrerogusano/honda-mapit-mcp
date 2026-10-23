@@ -369,6 +369,11 @@ def fixed_documents() -> dict[str, str]:
     documents["retained_dev_owner_enrolled_runtime"] = json.dumps(
         _fixed_owner_enrolled_document(json.loads(documents["retained_dev_multiuser_runtime"]))
     )
+    from scripts.build_multiuser_stack import build_artifacts_template, build_multiuser_template
+    for multiuser_env in ("dev", "prod"):
+        # Parameterized templates: synthetic parameter values live in the deploy CLI, not here.
+        documents[f"multiuser_{multiuser_env}_artifacts"] = json.dumps(build_artifacts_template(multiuser_env))
+        documents[f"multiuser_{multiuser_env}_stack"] = json.dumps(build_multiuser_template(multiuser_env))
     return documents
 
 
