@@ -196,12 +196,13 @@ class WindowsKeyringRefreshTokenStore:
             raise RefreshTokenStoreError("manifest limits are invalid")
         return parsed
 
-    def _read_all_chunks(self, prefix: str | None = None) -> list[str | None]:
-        return [self._get(self._chunk_account(index, prefix)) for index in range(self.MAX_CHUNKS)]
+    def _read_all_chunks(self, prefix: str | None = None, *, getter=None) -> list[str | None]:
+        selected = self._get if getter is None else getter
+        return [selected(self._chunk_account(index, prefix)) for index in range(self.MAX_CHUNKS)]
 
-    def _load_v1_chunks(self, manifest: dict[str, Any], prefix: str) -> str:
+    def _load_v1_chunks(self, manifest: dict[str, Any], prefix: str, *, getter=None) -> str:
         count = manifest["count"]
-        values = self._read_all_chunks(prefix)
+        values = self._read_all_chunks(prefix, getter=getter)
         chunks = values[:count]
         stale = values[count:]
         if any(not isinstance(chunk, str) or not chunk for chunk in chunks):
@@ -226,11 +227,11 @@ class WindowsKeyringRefreshTokenStore:
             raise RefreshTokenStoreError("manifest hash does not match")
         return token
 
-    def _load_v1(self, raw_manifest: str) -> str:
+    def _load_v1(self, raw_manifest: str, *, getter=None) -> str:
         manifest = self._parse_manifest(raw_manifest)
         for prefix in (self.CHUNK_ACCOUNT_PREFIX, self.ALTERNATE_CHUNK_ACCOUNT_PREFIX):
             try:
-                return self._load_v1_chunks(manifest, prefix)
+                return self._load_v1_chunks(manifest, prefix, getter=getter)
             except RefreshTokenStoreError:
                 continue
         raise RefreshTokenStoreError("manifest chunks are invalid")
@@ -312,6 +313,42 @@ class WindowsKeyringRefreshTokenStore:
                 pass
             self._delete_v1_chunks_best_effort(target_prefix)
             raise RefreshTokenStoreError("keyring save failed") from None
+
+    def load_readonly(self) -> str | None:
+        """Read a validated saved session without migration or legacy cleanup.
+
+        Separate consented DEV operators must not mutate the owner's native
+        credential store merely to collect an existing refresh session.
+        """
+        self._assert_native_backend()
+        native = self._backend
+        get_password = getattr(native, "get_password", None)
+        if not callable(get_password):
+            raise RefreshTokenStoreError("native keyring read is unavailable")
+        def get(account):
+            self._assert_native_backend()
+            if self._backend is not native:
+                raise RefreshTokenStoreError("native keyring backend changed")
+            try:
+                value = get_password(self.SERVICE, account)
+            except Exception:
+                raise RefreshTokenStoreError("keyring read failed") from None
+            self._assert_native_backend()
+            if self._backend is not native:
+                raise RefreshTokenStoreError("native keyring backend changed")
+            if value is not None and (not isinstance(value, str) or not value):
+                raise RefreshTokenStoreError("keyring entry is invalid")
+            return value
+        manifest = get(self.MANIFEST_ACCOUNT)
+        if manifest is not None:
+            return self._load_v1(manifest, getter=get)
+        values = self._read_all_chunks(self.CHUNK_ACCOUNT_PREFIX, getter=get) + self._read_all_chunks(self.ALTERNATE_CHUNK_ACCOUNT_PREFIX, getter=get)
+        if any(value is not None for value in values):
+            raise RefreshTokenStoreError("stale chunks without manifest")
+        legacy = get(self.ACCOUNT)
+        if legacy is not None:
+            self._split_token(legacy)
+        return legacy
 
     def load(self) -> str | None:
         self._assert_native_backend()

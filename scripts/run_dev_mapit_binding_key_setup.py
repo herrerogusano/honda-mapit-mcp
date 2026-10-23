@@ -262,11 +262,25 @@ def _validate_key_clients(clients):
 
 
 def _verify_current_bootstrap_resources(clients, authority, state, plan, receipt_digest, counter, started, deadline, monotonic):
-    """Exact retained resources and empty binding document, not SSM absence.
+    """Historical pre-enrollment contract; binding document must be absent."""
+    def require_empty(item):
+        if set(item) != {"ResponseMetadata"}:
+            raise ValueError
+    return _verify_retained_namespace_resources(clients, authority, state, plan,
+        receipt_digest, counter, started, deadline, monotonic,
+        binding_document_check=require_empty)
 
-    Kept separate so a later published-config verifier can reuse the unchanged
-    resource checks without pretending that an accepted config is absent.
+
+def _verify_retained_namespace_resources(clients, authority, state, plan, receipt_digest,
+        counter, started, deadline, monotonic, *, binding_document_check):
+    """Shared retained resource invariants with an explicit document observer.
+
+    The caller must separately validate its expected document state. This helper
+    does not accept enrollment, publish anything or execute historical authority.
+    The historical wrapper always supplies its unchanged absence predicate.
     """
+    if not callable(binding_document_check):
+        raise ValueError
     current = {"authority_sha256": authority._binding_sha256,
                "intent": state["intent"], "readback_receipt": state["readback_receipt"],
                "template_sha256": plan.template_sha256}
@@ -371,8 +385,7 @@ def _verify_current_bootstrap_resources(clients, authority, state, plan, receipt
     item = call("dynamodb", "get_item", TableName=table_arn,
                 Key={"key": {"S": "identity-bindings-v1"}}, ConsistentRead=True,
                 ReturnConsumedCapacity="NONE")
-    if set(item) != {"ResponseMetadata"}:
-        raise ValueError
+    binding_document_check(item)
     # Exact operator trust, permissions boundary and runtime read policy.
     role = call("iam", "get_role", RoleName=OPERATOR_ROLE_NAME).get("Role")
     role_props = plan.template["Resources"]["IdentityEnrollerRole"]["Properties"]

@@ -33,6 +33,8 @@ class EnrollmentAwsClients:
 def create_enrollment_clients(*, access_key: str, secret_key: str,
                               session_token: str, deadline: float,
                               include_dynamodb: bool = False,
+                              direct_only: bool = False,
+                              expected_role_arn: str | None = None,
                               monotonic: Callable[[], float] = time.monotonic) -> EnrollmentAwsClients:
     """Build an explicitly credentialed eu-west-1 pair, without any I/O.
 
@@ -44,6 +46,9 @@ def create_enrollment_clients(*, access_key: str, secret_key: str,
                 or any(ord(char) < 33 or ord(char) == 127 for char in value)
                 for value in (access_key, secret_key, session_token))
             or type(include_dynamodb) is not bool
+            or type(direct_only) is not bool
+            or (expected_role_arn is not None and (type(expected_role_arn) is not str
+                or re.fullmatch(r"arn:aws:iam::[0-9]{12}:role/honda-mapit-mcp-dev-mapit-enroller", expected_role_arn) is None))
             or not callable(monotonic) or type(deadline) not in (int, float)
             or not math.isfinite(deadline)):
             raise ValueError
@@ -53,7 +58,8 @@ def create_enrollment_clients(*, access_key: str, secret_key: str,
         import boto3
         from botocore.config import Config
         config = Config(region_name="eu-west-1", connect_timeout=2, read_timeout=2,
-                        retries={"total_max_attempts": 1, "mode": "standard"})
+                        retries={"total_max_attempts": 1, "mode": "standard"},
+                        **({"proxies": {}, "signature_version": "v4"} if direct_only else {}))
         # Explicit arguments prevent botocore's credential provider chain.
         kwargs = dict(aws_access_key_id=access_key, aws_secret_access_key=secret_key,
                       aws_session_token=session_token, config=config,
@@ -67,15 +73,16 @@ def create_enrollment_clients(*, access_key: str, secret_key: str,
         dynamodb = session.client("dynamodb", endpoint_url="https://dynamodb.eu-west-1.amazonaws.com", **kwargs) if include_dynamodb else None
     except Exception:
         raise EnrollmentClientError() from None
-    pair = _bind_pair(ssm, sts, deadline=deadline, monotonic=monotonic, initial_clock=float(now))
+    pair = _bind_pair(ssm, sts, deadline=deadline, monotonic=monotonic, initial_clock=float(now), expected_role_arn=expected_role_arn)
     if dynamodb is None:
         return pair
-    ddb_pair = _bind_pair(dynamodb, sts, deadline=deadline, monotonic=monotonic, initial_clock=float(now))
+    ddb_pair = _bind_pair(dynamodb, sts, deadline=deadline, monotonic=monotonic, initial_clock=float(now), expected_role_arn=expected_role_arn)
     return EnrollmentAwsClients(pair.ssm, pair.account_verifier, dynamodb, ddb_pair.account_verifier)
 
 
 def _bind_pair(ssm: Any, sts: Any, *, deadline: float,
-               monotonic: Callable[[], float], initial_clock: float) -> EnrollmentAwsClients:
+               monotonic: Callable[[], float], initial_clock: float,
+               expected_role_arn: str | None = None) -> EnrollmentAwsClients:
     """Internal seam; only the explicit factory creates a trusted pair."""
     lock = threading.Lock()
     used = False
@@ -108,13 +115,18 @@ def _bind_pair(ssm: Any, sts: Any, *, deadline: float,
                 return False
             metadata = response.get("ResponseMetadata")
             arn = response.get("Arn")
+            expected_assumed = (None if expected_role_arn is None else
+                "arn:aws:sts::" + expected_role_arn.split(":")[4]
+                + ":assumed-role/honda-mapit-mcp-dev-mapit-enroller/")
             return (isinstance(metadata, Mapping)
                     and type(metadata.get("HTTPStatusCode")) is int and metadata["HTTPStatusCode"] == 200
                     and response.get("Account") == account
                     and type(response.get("UserId")) is str and bool(response["UserId"])
                     and type(arn) is str
                     and re.fullmatch(r"arn:aws:(?:iam|sts)::" + re.escape(account) + r":[A-Za-z0-9_+=,.@:/-]+", arn) is not None
-                    and not arn.endswith(":root"))
+                    and not arn.endswith(":root")
+                    and (expected_assumed is None or re.fullmatch(re.escape(expected_assumed)
+                        + r"[A-Za-z0-9_+=,.@-]{2,64}", arn) is not None))
 
     return EnrollmentAwsClients(ssm=ssm, account_verifier=verify)
 

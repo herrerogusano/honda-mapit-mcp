@@ -22,6 +22,7 @@ import time
 from dataclasses import asdict
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Callable
 
 from scripts.dev_owner_enrolled_delivery import (
@@ -193,7 +194,11 @@ def _status(value: Any) -> bool:
 
 class _ReadBudget:
     def __init__(self, *, authority: Mapping[str, Any], clock, monotonic, max_calls: int,
-                 observation_window: Mapping[str, Any] | None = None):
+                 observation_window: Mapping[str, Any] | None = None,
+                 before_sdk_read: Callable[[], Any] | None = None):
+        if before_sdk_read is not None and not callable(before_sdk_read):
+            _fail("current_state_unverified")
+        self.before_sdk_read = before_sdk_read
         self.authority = authority
         self.observation_window = observation_window
         self.clock, self.monotonic = clock, monotonic
@@ -232,6 +237,9 @@ class _ReadBudget:
             _fail("current_state_unverified")
         if self.calls >= self.max_calls:
             _fail("read_budget_exhausted")
+        if self.before_sdk_read is not None:
+            self.before_sdk_read()
+            self.check()
         self.calls += 1
         try:
             result = getattr(self.clients[service], method)(**kwargs)
@@ -287,6 +295,29 @@ class _ClientsView:
 
     def __getitem__(self, service):
         return self._views[service]
+
+
+class _CountedConstructorReadClient:
+    """Opt-in aggregate admission for readonly owning-parser SDK calls.
+
+    Metadata stays pinned to the registered client's actual endpoint. The
+    underlying registered bundle is never modified or replaced.
+    """
+    def __init__(self, client, service, before_sdk_read):
+        self._client, self._service, self._before_sdk_read = client, service, before_sdk_read
+
+    def __getattr__(self, name):
+        if name in {"meta", "_endpoint", "_request_signer"}:
+            return getattr(self._client, name)
+        allowed = _OPS.get(self._service, {}).get(name)
+        if allowed is None:
+            _fail("current_state_unverified")
+        def read(**kwargs):
+            if not set(kwargs) <= allowed:
+                _fail("current_state_unverified")
+            self._before_sdk_read()
+            return getattr(self._client, name)(**kwargs)
+        return read
 
 
 def _json_document(value: Any) -> dict[str, Any] | None:
@@ -884,6 +915,7 @@ class OwnerEnrolledCurrentState:
                  accepted_runtime_evidence_sha256: str | None = None,
                  observation_source_check: Callable[[Mapping[str, Any]], Any] | None = None,
                  observation_protection_check: Callable[[Mapping[str, Any]], Any] | None = None,
+                 before_sdk_read: Callable[[], Any] | None = None,
                  acl_checker: Callable[[Path], bool] | None = None,
                  clock: Callable[[], float] = time.time,
                  monotonic: Callable[[], float] = time.monotonic):
@@ -897,7 +929,8 @@ class OwnerEnrolledCurrentState:
                         mapit_bootstrap_authority_path, mapit_bootstrap_state_dir,
                         mapit_publication_state_dir, mapit_evidence_path,
                         synthetic_binding_path, synthetic_authorization_path, synthetic_state_dir))
-                    or (acl_checker is not None and not callable(acl_checker))):
+                    or (acl_checker is not None and not callable(acl_checker))
+                    or (before_sdk_read is not None and not callable(before_sdk_read))):
                 raise ValueError
             if (owner_oauth_context.account != self.authority["account_id"]
                     or owner_oauth_context.operator != self.authority["operator_arn"]
@@ -909,6 +942,10 @@ class OwnerEnrolledCurrentState:
                 raise ValueError
             self.bundle, self.clients = client_bundle, client_bundle.clients
             _validate_clients(self.clients)
+            self._before_sdk_read = before_sdk_read
+            self._constructor_clients = (self.clients if before_sdk_read is None else
+                MappingProxyType({name: _CountedConstructorReadClient(client, name, before_sdk_read)
+                    for name, client in self.clients.items()}))
             self.prior = json.loads(_canonical(dict(prior_template)))
             prior_keys = [row["key"] for row in self.prior["Metadata"]["ManifestContract"]["tenants"]]
             prior_code = self.prior["Resources"]["McpHandler"]["Properties"]["Code"]
@@ -919,7 +956,7 @@ class OwnerEnrolledCurrentState:
             self.mapit_bootstrap_authority_path = Path(mapit_bootstrap_authority_path)
             self.mapit_bootstrap_state_dir = Path(mapit_bootstrap_state_dir)
             self.mapit_publication_state_dir = Path(mapit_publication_state_dir)
-            bootstrap_clients = {name: self.clients[name] for name in (
+            bootstrap_clients = {name: self._constructor_clients[name] for name in (
                 "sts", "cloudformation", "iam", "dynamodb", "ssm", "cognito",
                 "apigatewayv2", "lambda", "kms")}
             (self.bootstrap_authority, self.bootstrap_source, self.bootstrap_github,
@@ -1061,7 +1098,8 @@ class OwnerEnrolledCurrentState:
                     raise ValueError
             self._input_objects = (self.bundle, self.clients, self.context,
                 self.bootstrap_authority, self.clock, self.monotonic, self.pre_runtime_verifier,
-                self.acl_checker, self._observation_source_check, self._observation_protection_check)
+                self.acl_checker, self._observation_source_check, self._observation_protection_check,
+                self._before_sdk_read, self._constructor_clients)
             self._input_digest = self._fixed_input_digest()
             if self._accepted_capsule is None:
                 self._progress_digest = None
@@ -1211,7 +1249,8 @@ class OwnerEnrolledCurrentState:
     def _assert_integrity(self):
         objects = (self.bundle, self.clients, self.context, self.bootstrap_authority,
                    self.clock, self.monotonic, self.pre_runtime_verifier, self.acl_checker,
-                   self._observation_source_check, self._observation_protection_check)
+                   self._observation_source_check, self._observation_protection_check,
+                   self._before_sdk_read, self._constructor_clients)
         if (not _is_registered_client_bundle(self.bundle)
                 or self.clients is not self.bundle.clients
                 or _ACCEPTED_OWNER_CONTEXTS.get(id(self.context)) is not self.context
@@ -1222,7 +1261,7 @@ class OwnerEnrolledCurrentState:
             _fail("current_state_unverified")
 
     def _reload_bootstrap_lineage(self) -> None:
-        clients = {name: self.clients[name] for name in (
+        clients = {name: self._constructor_clients[name] for name in (
             "sts", "cloudformation", "iam", "dynamodb", "ssm", "cognito",
             "apigatewayv2", "lambda", "kms")}
         # This owning coordinator is instantiated solely to parse immutable
@@ -1261,7 +1300,8 @@ class OwnerEnrolledCurrentState:
             if publication != self.publication:
                 raise ValueError
             budget = _ReadBudget(authority=authority, clock=self.clock, monotonic=self.monotonic,
-                                 max_calls=_MAX_READS, observation_window=self._observation_window)
+                                 max_calls=_MAX_READS, observation_window=self._observation_window,
+                                 before_sdk_read=self._before_sdk_read)
             budget.clients = self.clients
             view = _ClientsView(budget, self.clients)
             identity = view["sts"].get_caller_identity()
@@ -1519,7 +1559,7 @@ class OwnerEnrolledCurrentState:
             if (runtime_binding.get("account_id") != self.bootstrap_authority.account_id
                     or runtime_binding.get("operator_user_arn") != self.bootstrap_authority.expected_caller_arn):
                 raise ValueError
-            clients = {name: self.clients[name] for name in (
+            clients = {name: self._constructor_clients[name] for name in (
                 "sts", "cloudformation", "iam", "dynamodb", "ssm", "cognito",
                 "apigatewayv2", "lambda", "kms")}
             policy = _validate_historical_mapit_bootstrap(
