@@ -300,6 +300,7 @@ def test_migration_budget_is_bounded(fakes):
 
 
 def test_sdk_timeouts_and_client_construction(monkeypatch):
+    pytest.importorskip("botocore")
     config = identity.sdk_config()
     assert config.connect_timeout == 0.5
     assert config.read_timeout == 1
