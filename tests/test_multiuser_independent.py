@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("botocore")  # mandatory in the pinned SDK CI job
+
 from mapit import multiuser_entrypoint as entry
 from mapit import multiuser_identity as identity
 from mapit.multiuser_common import STATUS_INVITED, session_parameter_name, table_name

@@ -4,6 +4,8 @@ import hashlib
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+pytest.importorskip("botocore")  # mandatory in the pinned SDK CI job
+
 from botocore.exceptions import ClientError
 
 from mapit.multiuser_common import MAX_USERS, MultiuserError

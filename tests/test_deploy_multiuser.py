@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
+pytest.importorskip("botocore")  # mandatory in the pinned SDK CI job
+
 from botocore.exceptions import ClientError
 
 from scripts import deploy_multiuser as deploy
