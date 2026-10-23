@@ -109,9 +109,14 @@ and parameter, set `status=accepted`).
 `GET /invitacion` shows what the service does, the privacy notice summary with a
 link to `/privacidad`, and a consent checkbox; it reveals nothing about whether
 the email exists. `POST /invitacion` (form-encoded `email`, `token`, `consent`)
-checks the token hash in constant time, expiry and status `invited|accepted`,
-sets `status=accepted`, `consent_at`, `consent_version`, and shows connection
-instructions: MCP URL, Claude client id, Codex command. Errors render one
+checks the token hash in constant time, expiry and status
+`invited|accepted|active`, sets `status=accepted` (an `active` user stays
+`active`), `consent_at`, `consent_version`, and shows connection instructions:
+MCP URL, Claude client id, Codex command. The client ids come from the
+stack-written String parameter `/honda-mapit-mcp/{env}/multiuser/public-config`
+(the pool triggers reference the identity Lambda, so its environment cannot
+reference the clients without a cycle). Expiry is enforced only here, not at
+sign-in, so relinked users can sign in again. Errors render one
 generic message. Pages: no scripts, inline CSS only, CSP `default-src 'none';
 style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none';
 base-uri 'none'`, `cache-control: no-store`, `referrer-policy: no-referrer`.
