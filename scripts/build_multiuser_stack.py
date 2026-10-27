@@ -39,7 +39,7 @@ import copy
 from typing import Any
 
 from mapit.multiuser_common import (
-    CLAUDE_CALLBACK_URL, REGION, artifacts_stack_name, stack_name, table_name,
+    CLAUDE_CALLBACK_URL, CLAUDE_CODE_CALLBACK_URL, REGION, artifacts_stack_name, stack_name, table_name,
     users_parameter_prefix, validate_environment,
 )
 
@@ -50,8 +50,10 @@ MCP_HANDLER = "mapit.multiuser_entrypoint.handler"
 IDENTITY_HANDLER = "mapit.multiuser_identity.handler"
 LOG_RETENTION_DAYS = 14
 BUDGET_USD = 5
-# Claude may redirect through either first-party domain.
-CLAUDE_CALLBACK_URLS = (CLAUDE_CALLBACK_URL, "https://claude.com/api/mcp/auth_callback")
+# Claude may redirect through either first-party domain; Claude Code uses a
+# fixed loopback port on the same public client.
+CLAUDE_CALLBACK_URLS = (
+    CLAUDE_CALLBACK_URL, "https://claude.com/api/mcp/auth_callback", CLAUDE_CODE_CALLBACK_URL)
 CODEX_CALLBACK_PATTERN = r"^http://(localhost|127\.0\.0\.1):[1-9][0-9]{0,4}/[A-Za-z0-9._~/-]{0,200}$"
 _RESOURCE_URL = {"Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/mcp"}
 _API_BASE_URL = {"Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"}

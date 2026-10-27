@@ -14,6 +14,10 @@ CONSENT_VERSION = "2026-10-23"
 TENANT_CLAIM = "mapit_tenant"
 TENANT_ATTRIBUTE = "custom:tenant_id"
 CLAUDE_CALLBACK_URL = "https://claude.ai/api/mcp/auth_callback"
+# Claude Code redirects to http://localhost:{port}/callback; a fixed port lets the
+# shared Claude client pre-register it (`claude mcp add --callback-port`).
+CLAUDE_CODE_CALLBACK_PORT = 8790
+CLAUDE_CODE_CALLBACK_URL = f"http://localhost:{CLAUDE_CODE_CALLBACK_PORT}/callback"
 
 INVITE_TTL_SECONDS = 14 * 24 * 3600
 MAX_FAILED_LOGINS = 5

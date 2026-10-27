@@ -130,7 +130,8 @@ def test_resources_and_core_properties(env):
     assert resources["UserPoolDomain"]["Properties"]["ManagedLoginVersion"] == 2
     assert resources["ResourceServer"]["Properties"]["Identifier"] == {
         "Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/mcp"}
-    claude_urls = [CLAUDE_CALLBACK_URL, "https://claude.com/api/mcp/auth_callback"]
+    claude_urls = [CLAUDE_CALLBACK_URL, "https://claude.com/api/mcp/auth_callback",
+                   "http://localhost:8790/callback"]
     for name, callbacks in (("ClaudeClient", claude_urls), ("CodexClient", [{"Ref": "CodexCallbackUrl"}])):
         client = resources[name]["Properties"]
         assert client["CallbackURLs"] == callbacks

@@ -798,6 +798,8 @@ def test_post_success_shows_instructions(fakes):
     assert RESOURCE_URL in body and CLAUDE_ID in body and CODEX_ID in body and "8789" in body
     assert f"codex mcp add honda-mapit --url {RESOURCE_URL} --oauth-client-id {CODEX_ID}" in body
     assert "codex mcp login honda-mapit" in body
+    assert (f"claude mcp add --transport http --scope user --client-id {CLAUDE_ID} "
+            f"--callback-port 8790 honda-mapit {RESOURCE_URL}") in body
     assert "Inicia sesión con tu email y contraseña de MAPIT" in body
     stored = dynamo.items[EMAIL]
     assert stored["status"] == {"S": "accepted"}

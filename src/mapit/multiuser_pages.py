@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from html import escape
 
-from .multiuser_common import CONSENT_VERSION
+from .multiuser_common import CLAUDE_CODE_CALLBACK_PORT, CONSENT_VERSION
 
 GENERIC_INVITATION_ERROR = "Enlace no válido o caducado. Pide uno nuevo al administrador."
 NOT_FOUND_MESSAGE = "Página no encontrada."
@@ -88,6 +88,11 @@ def render_success(
         "<li>En <strong>Configuración avanzada</strong> (<em>Advanced settings</em>), "
         f"ID de cliente OAuth: <code>{claude_id}</code>. Deja el secreto de cliente vacío.</li>"
         "<li>Pulsa <strong>Conectar</strong>.</li></ol>"
+        "<h2>Claude Code</h2><ol>"
+        "<li>Ejecuta:<pre>claude mcp add --transport http --scope user "
+        f"--client-id {claude_id} --callback-port {CLAUDE_CODE_CALLBACK_PORT} honda-mapit {url}</pre></li>"
+        "<li>Abre Claude Code, escribe <code>/mcp</code>, elige <code>honda-mapit</code> y "
+        "pulsa <strong>Authenticate</strong>.</li></ol>"
         "<h2>Codex</h2><ol>"
         f"<li>Ejecuta:<pre>codex mcp add honda-mapit --url {url} --oauth-client-id {codex_id}</pre></li>"
         "<li>Añade en <code>~/.codex/config.toml</code> el puerto de retorno fijo:"
