@@ -17,7 +17,21 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "application_draft", "shutdown_lambda_draft",
         "shutdown_control_draft", "cleanup_schedule_draft", "combined_control_draft",
         "closed_bootstrap_draft",
+        "dev_identity_binding_table_draft",
+        "dev_identity_binding_bootstrap",
+        "dev_identity_binding_sse_owned_target",
+        "dev_mapit_identity_binding_bootstrap",
+        "retained_dev_closed_bootstrap_draft",
+        "retained_dev_closed_runtime_draft",
+        "retained_dev_controls_draft", "retained_dev_artifacts_draft",
+        "retained_dev_oauth_draft",
+        "retained_dev_multiuser_setup", "retained_dev_multiuser_runtime",
+        "retained_dev_owner_enrolled_runtime",
+        "retained_dev_multiuser_roles_bootstrap", "retained_dev_multiuser_roles_recurrent",
+        "retained_dev_multiuser_roles_recurrent_existing_key",
+        "retained_dev_multiuser_timed_controls",
         "permanent_identity_draft",
+        "dev_owner_oauth_draft",
         "bootstrap_cleanup_draft", "bootstrap_control_draft",
         "runtime_artifact_bucket_draft", "runtime_artifact_candidate_draft",
         "closed_oauth_setup_draft",
@@ -30,6 +44,11 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         "cd_identity_legacy_draft", "cd_identity_immutable_draft",
         "cd_delivery_legacy_draft", "cd_delivery_immutable_draft",
         "cd_delivery_lambda_key_draft",
+        "cd_retained_dev_legacy_draft", "cd_retained_dev_immutable_draft",
+        "cd_retained_dev_lambda_key_draft",
+        "cd_retained_dev_readonly_proof_draft",
+        "multiuser_dev_artifacts", "multiuser_dev_stack",
+        "multiuser_prod_artifacts", "multiuser_prod_stack",
     }
     app = json.loads(documents["application_draft"])
     assert app["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
@@ -70,11 +89,32 @@ def test_fixed_documents_have_only_synthetic_disabled_targets():
         statement["Action"] if isinstance(statement.get("Action"), list) else [statement.get("Action")]
     )]
     assert not {"cognito-idp:DeleteUserPool", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:DescribeUserPoolDomain"} & set(shared_actions)
+    sse_target = json.loads(documents["dev_identity_binding_sse_owned_target"])
+    assert sse_target["Resources"]["MapitIdentityBindings"]["Properties"]["SSESpecification"] == {"SSEEnabled": False}
+    assert set(sse_target["Resources"]) == {
+        "MapitIdentityBindings", "IdentityEnrollerBoundary", "IdentityEnrollerRole",
+        "RuntimeIdentityBindingPolicy",
+    }
 
     prod_bootstrap = json.loads(documents["prod_bootstrap_draft"])
     assert prod_bootstrap["Resources"]["McpApi"]["Properties"]["DisableExecuteApiEndpoint"] is True
     assert prod_bootstrap["Resources"]["McpHandler"]["Properties"]["ReservedConcurrentExecutions"] == 0
     assert not any(item["Type"].startswith("AWS::Cognito") for item in prod_bootstrap["Resources"].values())
+
+
+def test_sse_target_schema_fixture_does_not_import_runtime_coordinator(monkeypatch):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def reject_runtime(name, *args, **kwargs):
+        if name == "scripts.aws_dev_identity_binding_sse_recovery":
+            raise AssertionError("schema checker crossed the runtime dependency boundary")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_runtime)
+    documents = checker.fixed_documents()
+    assert "dev_identity_binding_sse_owned_target" in documents
 
     prod_controls = json.loads(documents["prod_controls_draft"])
     assert prod_controls["Metadata"]["NoActivation"] is True

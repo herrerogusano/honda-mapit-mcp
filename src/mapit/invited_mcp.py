@@ -20,6 +20,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import ConfigDict, Field
 
 from .aws_prod_runtime import CognitoProdPolicy
+from .aws_dev_runtime import CognitoDevPolicy
 from .remote_http import _BoundedHTTPMiddleware
 from .tenant_router import (
     AuthenticatedTenant,
@@ -56,9 +57,10 @@ class InvitedAccessToken(AccessToken):
 class InvitedTokenVerifier(TokenVerifier):
     """Verify through the finite invite authority, then seal the SDK token."""
 
-    def __init__(self, authority: InvitedTenantAuthority, policy: CognitoProdPolicy):
+    def __init__(self, authority: InvitedTenantAuthority,
+                 policy: CognitoProdPolicy | CognitoDevPolicy):
         if (type(authority) is not InvitedTenantAuthority
-            or type(policy) is not CognitoProdPolicy
+            or type(policy) not in (CognitoProdPolicy, CognitoDevPolicy)
             or not authority.matches_token_policy(policy)):
             raise ValueError("invitation policy binding is invalid")
         self._authority = authority
@@ -188,7 +190,7 @@ class _TenantProviderProxy:
 def create_invited_mcp_app(
     authority: InvitedTenantAuthority,
     router: TenantServicesRouter,
-    policy: CognitoProdPolicy,
+    policy: CognitoProdPolicy | CognitoDevPolicy,
     *,
     geographic_queries: bool = False,
 ):
@@ -201,7 +203,7 @@ def create_invited_mcp_app(
     if (
         type(authority) is not InvitedTenantAuthority
         or type(router) is not TenantServicesRouter
-        or type(policy) is not CognitoProdPolicy
+        or type(policy) not in (CognitoProdPolicy, CognitoDevPolicy)
         or not router.is_bound_to(authority)
         or not authority.matches_token_policy(policy)
         or type(geographic_queries) is not bool

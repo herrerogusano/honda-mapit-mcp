@@ -9,10 +9,12 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Mapping
 
 from .config import MapitConfig
 from .http_transport import ResponseTooLargeError, open_direct, read_bounded
+if TYPE_CHECKING:
+    from .mapit_identity import MapitIdentityProof, MapitIdentityVerifier
 
 
 JsonTransport = Callable[[str, Mapping[str, str], Mapping[str, Any]], Mapping[str, Any]]
@@ -83,6 +85,7 @@ class MapitSession:
     token_expiration: datetime
     credentials: TemporaryCredentials = field(repr=False)
     _refresh_callback: Callable[["MapitSession"], None] | None = field(default=None, repr=False)
+    identity_proof: MapitIdentityProof | None = field(default=None, repr=False)
 
     def needs_refresh(self, *, now: datetime | None = None, skew_seconds: int = 60) -> bool:
         current = _utc(now) + timedelta(seconds=skew_seconds)
@@ -105,10 +108,16 @@ class CognitoAuthenticator:
         *,
         transport: JsonTransport | None = None,
         clock: Callable[[], datetime] | None = None,
+        identity_verifier: MapitIdentityVerifier | None = None,
     ) -> None:
         self.config = config
         self._transport = transport or self._default_transport
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        if identity_verifier is not None:
+            from .mapit_identity import MapitIdentityVerifier
+            if type(identity_verifier) is not MapitIdentityVerifier or identity_verifier.config is not config:
+                raise ValueError("identity verifier configuration is not bound to MapitConfig")
+        self._identity_verifier = identity_verifier
 
     @property
     def user_pool_endpoint(self) -> str:
@@ -136,10 +145,19 @@ class CognitoAuthenticator:
 
     login = authenticate
 
-    def authenticate_with_refresh_token(self, refresh_token: str) -> MapitSession:
+    def authenticate_with_refresh_token(
+        self,
+        refresh_token: str,
+        expected_identity_proof: MapitIdentityProof | None = None,
+    ) -> MapitSession:
         """Resume with REFRESH_TOKEN_AUTH, then exchange the new IdToken."""
         if not refresh_token:
             raise ValueError("refresh token is required")
+        if expected_identity_proof is not None and self._identity_verifier is None:
+            from .mapit_identity import MapitIdentityError
+            raise MapitIdentityError("identity_proof_invalid")
+        if self._identity_verifier is not None and expected_identity_proof is not None:
+            self._identity_verifier.validate_proof(expected_identity_proof)
         self._require_pool_config()
         response = self._call_user_pool("InitiateAuth", {
             "AuthFlow": "REFRESH_TOKEN_AUTH",
@@ -148,19 +166,52 @@ class CognitoAuthenticator:
             "ClientMetadata": {},
         })
         self._raise_if_challenge(response)
-        return self._session_from_auth(response.get("AuthenticationResult", {}), refresh_token_required=False, prior_refresh_token=refresh_token)
+        return self._session_from_auth(
+            response.get("AuthenticationResult", {}),
+            refresh_token_required=False,
+            prior_refresh_token=refresh_token,
+            expected_identity_proof=expected_identity_proof,
+        )
 
     def refresh_session(self, session: MapitSession) -> None:
         if not session.refresh_token:
             raise ValueError("session has no refresh token")
-        updated = self.authenticate_with_refresh_token(session.refresh_token)
+        expected_identity_proof = None
+        if self._identity_verifier is not None:
+            from .mapit_identity import MapitIdentityError
+            try:
+                if session.identity_proof is None:
+                    raise MapitIdentityError("identity_proof_invalid")
+                self._identity_verifier.validate_proof(session.identity_proof)
+                expected_identity_proof = session.identity_proof
+            except MapitIdentityError:
+                raise
+            except Exception:
+                raise MapitIdentityError("identity_proof_invalid") from None
+        if self._identity_verifier is None:
+            # Preserve the exact legacy one-positional-argument seam for
+            # callers/subclasses that inject this method.
+            updated = self.authenticate_with_refresh_token(session.refresh_token)
+        else:
+            updated = self.authenticate_with_refresh_token(
+                session.refresh_token,
+                expected_identity_proof=expected_identity_proof,
+            )
         session.id_token = updated.id_token
         session.access_token = updated.access_token
         session.refresh_token = updated.refresh_token
         session.token_expiration = updated.token_expiration
         session.credentials = updated.credentials
+        session.identity_proof = updated.identity_proof
 
-    def _session_from_auth(self, result: Mapping[str, Any], *, refresh_token_required: bool, prior_refresh_token: str | None = None) -> MapitSession:
+    def _session_from_auth(
+        self,
+        result: Mapping[str, Any],
+        *,
+        refresh_token_required: bool,
+        prior_refresh_token: str | None = None,
+        expected_identity_proof: MapitIdentityProof | None = None,
+    ) -> MapitSession:
         id_token = result.get("IdToken")
         if not id_token:
             raise ValueError("Cognito response did not contain IdToken")
@@ -168,9 +219,17 @@ class CognitoAuthenticator:
         refresh_token = result.get("RefreshToken") or prior_refresh_token
         if refresh_token_required and not refresh_token:
             raise ValueError("Cognito response did not contain RefreshToken")
+        identity_proof = None
+        if self._identity_verifier is not None:
+            identity_proof = self._identity_verifier.verify(id_token)
+            if expected_identity_proof is not None:
+                self._identity_verifier.ensure_continuity(expected_identity_proof, identity_proof)
         identity_id = self._get_identity_id(id_token)
         credentials = self._get_credentials(identity_id, id_token)
-        return MapitSession(id_token, result.get("AccessToken"), refresh_token, token_expiration, credentials, self.refresh_session)
+        return MapitSession(
+            id_token, result.get("AccessToken"), refresh_token, token_expiration,
+            credentials, self.refresh_session, identity_proof,
+        )
 
     def _require_pool_config(self) -> None:
         missing = [name for name, value in (("MAPIT_USER_POOL_ID", self.config.user_pool_id), ("MAPIT_USER_POOL_CLIENT_ID", self.config.user_pool_client_id), ("MAPIT_IDENTITY_POOL_ID", self.config.identity_pool_id)) if not value]

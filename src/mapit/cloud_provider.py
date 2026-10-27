@@ -19,6 +19,7 @@ from .client import MapitClient
 from .config import MapitConfig
 from .services import MapitServices
 from .cloud_transport import CloudTransportError, validate_cloud_config
+from .mapit_identity import MapitIdentityError, MapitIdentityProof, MapitIdentityVerifier
 
 _IDENTITY_RE = re.compile(r"^eu-west-1:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _MAX_TOKEN_BYTES = 8192
@@ -31,7 +32,8 @@ class CloudProviderError(RuntimeError):
     _CATEGORIES = frozenset({
         "configuration_invalid", "deadline_invalid", "deadline_expired", "clock_invalid",
         "clock_rollback", "provider_already_used", "secret_read_failed", "auth_failed",
-        "refresh_token_changed", "session_invalid",
+        "refresh_token_changed", "session_invalid", "identity_configuration_invalid",
+        "identity_proof_invalid", "identity_token_invalid", "identity_continuity_mismatch",
     })
 
     def __init__(self, category: str):
@@ -51,6 +53,8 @@ class CloudServicesProvider:
         *,
         deadline: float,
         monotonic: Callable[[], float] = time.monotonic,
+        identity_verifier: MapitIdentityVerifier | None = None,
+        expected_identity_proof: MapitIdentityProof | None = None,
     ) -> None:
         try:
             self._config = validate_cloud_config(config)
@@ -58,6 +62,21 @@ class CloudServicesProvider:
             raise CloudProviderError("configuration_invalid") from None
         if not callable(auth_transport) or not callable(mapit_transport) or not callable(monotonic):
             raise CloudProviderError("configuration_invalid")
+        if identity_verifier is not None or expected_identity_proof is not None:
+            if (
+                type(identity_verifier) is not MapitIdentityVerifier
+                or type(expected_identity_proof) is not MapitIdentityProof
+                or identity_verifier.config is not config
+            ):
+                raise CloudProviderError("identity_configuration_invalid")
+            try:
+                identity_verifier.validate_proof(expected_identity_proof)
+            except MapitIdentityError as exc:
+                raise CloudProviderError(exc.category) from None
+            except Exception:
+                raise CloudProviderError("identity_proof_invalid") from None
+        self._identity_verifier = identity_verifier
+        self._expected_identity_proof = expected_identity_proof
         try:
             reader_method = getattr(reader, "read_refresh_token", None)
         except Exception:
@@ -145,8 +164,23 @@ class CloudServicesProvider:
             def explicit_auth_transport(url: str, headers: Mapping[str, str], payload: Mapping[str, Any]) -> Mapping[str, Any]:
                 return self._auth_transport(url, headers, payload)
 
-            authenticator = CognitoAuthenticator(self._config, transport=explicit_auth_transport)
-            session = authenticator.authenticate_with_refresh_token(token)
+            if self._identity_verifier is None:
+                # Preserve the existing default construction and one-argument
+                # authentication call exactly when continuity is not opted in.
+                authenticator = CognitoAuthenticator(self._config, transport=explicit_auth_transport)
+                session = authenticator.authenticate_with_refresh_token(token)
+            else:
+                authenticator = CognitoAuthenticator(
+                    self._config,
+                    transport=explicit_auth_transport,
+                    identity_verifier=self._identity_verifier,
+                )
+                session = authenticator.authenticate_with_refresh_token(
+                    token,
+                    expected_identity_proof=self._expected_identity_proof,
+                )
+        except MapitIdentityError as exc:
+            raise CloudProviderError(exc.category) from None
         except Exception:
             raise CloudProviderError("auth_failed") from None
         self._check_deadline()
@@ -158,13 +192,34 @@ class CloudServicesProvider:
         refresh_callback = session._refresh_callback
         if not callable(refresh_callback):
             raise CloudProviderError("session_invalid")
+        bound_identity_proof = self._expected_identity_proof
+        if self._identity_verifier is not None:
+            try:
+                if session.identity_proof is None:
+                    raise MapitIdentityError("identity_proof_invalid")
+                self._identity_verifier.ensure_continuity(bound_identity_proof, session.identity_proof)
+            except MapitIdentityError as exc:
+                raise CloudProviderError(exc.category) from None
+            except Exception:
+                raise CloudProviderError("identity_proof_invalid") from None
 
         def guarded_refresh(current: MapitSession) -> None:
             self._check_deadline()
             if current.refresh_token != token:
                 raise CloudProviderError("refresh_token_changed")
+            if self._identity_verifier is not None:
+                try:
+                    if current.identity_proof is None:
+                        raise MapitIdentityError("identity_proof_invalid")
+                    self._identity_verifier.ensure_continuity(bound_identity_proof, current.identity_proof)
+                except MapitIdentityError as exc:
+                    raise CloudProviderError(exc.category) from None
+                except Exception:
+                    raise CloudProviderError("identity_proof_invalid") from None
             try:
                 refresh_callback(current)
+            except MapitIdentityError as exc:
+                raise CloudProviderError(exc.category) from None
             except CloudProviderError:
                 raise
             except Exception:
@@ -172,6 +227,15 @@ class CloudServicesProvider:
             self._check_deadline()
             if current.refresh_token != token:
                 raise CloudProviderError("refresh_token_changed")
+            if self._identity_verifier is not None:
+                try:
+                    if current.identity_proof is None:
+                        raise MapitIdentityError("identity_proof_invalid")
+                    self._identity_verifier.ensure_continuity(bound_identity_proof, current.identity_proof)
+                except MapitIdentityError as exc:
+                    raise CloudProviderError(exc.category) from None
+                except Exception:
+                    raise CloudProviderError("identity_proof_invalid") from None
 
         session._refresh_callback = guarded_refresh
         try:

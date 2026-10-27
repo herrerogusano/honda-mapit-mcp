@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+from copy import deepcopy
+
+import pytest
+
+from scripts.dev_multiuser_readback import verify_closed_setup
+
+ACCOUNT = "123456789012"
+STACK = f"arn:aws:cloudformation:eu-west-1:{ACCOUNT}:stack/honda-mapit-mcp-dev-retained/11111111-2222-4333-8444-555555555555"
+API = "abcdefghij"
+POOL = "eu-west-1_A1b2C3d4E"
+CLIENT = "SyntheticClient123"
+TABLE_ARN = f"arn:aws:dynamodb:eu-west-1:{ACCOUNT}:table/honda-mapit-mcp-dev-tenants"
+CALLBACK = "http://localhost:39031/callback"
+RUN_ID = 2026100601
+
+
+def _ok(**kwargs):
+    return {**kwargs, "ResponseMetadata": {"HTTPStatusCode": 200}}
+
+
+def _records():
+    types = {
+        "McpApi": "AWS::ApiGatewayV2::Api", "McpApiStage": "AWS::ApiGatewayV2::Stage", "McpHandlerRole": "AWS::IAM::Role", "McpHandlerLogGroup": "AWS::Logs::LogGroup", "McpHandler": "AWS::Lambda::Function", "McpUserPool": "AWS::Cognito::UserPool", "McpUserPoolDomain": "AWS::Cognito::UserPoolDomain", "McpResourceServer": "AWS::Cognito::UserPoolResourceServer", "McpUserPoolClient": "AWS::Cognito::UserPoolClient", "McpManagedLoginBranding": "AWS::Cognito::ManagedLoginBranding", "McpTenantsTable": "AWS::DynamoDB::Table",
+    }
+    physical = {"McpApi": API, "McpApiStage": "$default", "McpHandlerRole": "honda-mapit-mcp-dev-retained-handler-role", "McpHandlerLogGroup": "/aws/lambda/honda-mapit-mcp-dev-retained-handler", "McpHandler": "honda-mapit-mcp-dev-retained-handler", "McpUserPool": POOL, "McpUserPoolDomain": f"honda-mapit-mcp-dev-multiuser-{ACCOUNT}", "McpResourceServer": "https://abcdefghij.execute-api.eu-west-1.amazonaws.com/mcp", "McpUserPoolClient": CLIENT, "McpManagedLoginBranding": "11111111-2222-4333-8444-555555555555", "McpTenantsTable": "honda-mapit-mcp-dev-tenants"}
+    return [{"LogicalResourceId": name, "ResourceType": typ, "ResourceStatus": "CREATE_COMPLETE", "PhysicalResourceId": physical[name]} for name, typ in types.items()]
+
+
+class Cfn:
+    def describe_stacks(self, **kwargs): return _ok(Stacks=[{"StackId": STACK, "StackName": "honda-mapit-mcp-dev-retained", "StackStatus": "CREATE_COMPLETE", "Tags": [{"Key": "Project", "Value": "honda-mapit-mcp"}, {"Key": "Environment", "Value": "dev"}, {"Key": "Purpose", "Value": "retained-dev"}, {"Key": "OperatorRunId", "Value": str(RUN_ID)}]}])
+    def describe_stack_resources(self, **kwargs): return _ok(StackResources=_records())
+
+
+class Api:
+    def get_api(self, **kwargs): return _ok(ApiId=API, Name="honda-mapit-mcp-dev-retained-api", DisableExecuteApiEndpoint=True)
+    def get_routes(self, **kwargs): return _ok(Items=[], NextToken=None)
+
+
+class Cognito:
+    def describe_user_pool(self, **kwargs): return _ok(UserPool={"Id": POOL, "Name": "honda-mapit-mcp-dev-multiuser", "UserPoolTier": "ESSENTIALS", "MfaConfiguration": "OFF", "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": True, "UnusedAccountValidityDays": 7}, "EmailConfiguration": {"EmailSendingAccount": "COGNITO_DEFAULT"}, "UserPoolTags": {"Project": "honda-mapit-mcp", "Environment": "dev", "Purpose": "retained-dev", "OperatorRunId": str(RUN_ID), "aws:cloudformation:stack-id": STACK, "aws:cloudformation:stack-name": "honda-mapit-mcp-dev-retained", "aws:cloudformation:logical-id": "McpUserPool"}})
+    def describe_user_pool_client(self, **kwargs): return _ok(UserPoolClient={"UserPoolId": POOL, "ClientId": CLIENT, "AllowedOAuthFlowsUserPoolClient": True, "AllowedOAuthFlows": ["code"], "AllowedOAuthScopes": [f"https://{API}.execute-api.eu-west-1.amazonaws.com/mcp/use"], "CallbackURLs": [CALLBACK], "DefaultRedirectURI": CALLBACK, "SupportedIdentityProviders": ["COGNITO"], "EnableTokenRevocation": True, "PreventUserExistenceErrors": "ENABLED", "AccessTokenValidity": 60, "IdTokenValidity": 60, "RefreshTokenValidity": 30, "TokenValidityUnits": {"AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "days"}})
+    def describe_resource_server(self, **kwargs): return _ok(ResourceServer={"UserPoolId": POOL, "Identifier": f"https://{API}.execute-api.eu-west-1.amazonaws.com/mcp", "Scopes": [{"ScopeName": "use", "ScopeDescription": "Read-only MCP access."}]})
+    def describe_user_pool_domain(self, **kwargs): return _ok(DomainDescription={"Domain": f"honda-mapit-mcp-dev-multiuser-{ACCOUNT}", "UserPoolId": POOL, "AWSAccountId": ACCOUNT, "Status": "ACTIVE", "ManagedLoginVersion": 2, "CustomDomainConfig": None})
+    def describe_managed_login_branding_by_client(self, **kwargs): return _ok(ManagedLoginBranding={"UserPoolId": POOL, "ManagedLoginBrandingId": "11111111-2222-4333-8444-555555555555", "UseCognitoProvidedValues": True})
+
+
+class Ddb:
+    def describe_table(self, **kwargs): return _ok(Table={"TableName": "honda-mapit-mcp-dev-tenants", "TableArn": TABLE_ARN, "TableStatus": "ACTIVE", "BillingModeSummary": {"BillingMode": "PAY_PER_REQUEST"}, "OnDemandThroughput": {"MaxReadRequestUnits": 10, "MaxWriteRequestUnits": 1}, "KeySchema": [{"AttributeName": "key", "KeyType": "HASH"}], "AttributeDefinitions": [{"AttributeName": "key", "AttributeType": "S"}]})
+    def list_tags_of_resource(self, **kwargs): return _ok(Tags=[{"Key": key, "Value": value} for key, value in {"Project": "honda-mapit-mcp", "Environment": "dev", "Purpose": "multiuser-authorization", "OperatorRunId": str(RUN_ID)}.items()])
+    def describe_time_to_live(self, **kwargs): return _ok(TimeToLiveDescription={"TimeToLiveStatus": "DISABLED"})
+    def describe_continuous_backups(self, **kwargs): return _ok(ContinuousBackupsDescription={"ContinuousBackupsStatus": "ENABLED", "PointInTimeRecoveryDescription": {"PointInTimeRecoveryStatus": "DISABLED"}})
+
+
+def _clients(): return {"cloudformation": Cfn(), "cognito": Cognito(), "apigateway": Api(), "dynamodb": Ddb()}
+
+
+def test_closed_setup_readback_is_exact_and_safe():
+    result = verify_closed_setup(_clients(), account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)
+    assert result == {"success": True, "category": "setup_readback_verified", "calls": 13, "resources_verified": True, "api_closed": True, "cognito_verified": True, "dynamodb_verified": True}
+
+
+def test_rollback_readback_is_explicit_opt_in_and_preserves_other_checks():
+    clients = _clients()
+    original = clients["cloudformation"].describe_stacks
+    def rollback(**kwargs):
+        value = original(**kwargs)
+        value["Stacks"][0]["StackStatus"] = "UPDATE_ROLLBACK_COMPLETE"
+        return value
+    clients["cloudformation"].describe_stacks = rollback
+    args = dict(account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)
+    assert verify_closed_setup(clients, **args)["success"] is False
+    assert verify_closed_setup(clients, **args, verified_rollback=True)["success"] is True
+    assert verify_closed_setup(clients, **args, verified_rollback=1)["success"] is False
+    clients["apigateway"].get_api = lambda **kw: _ok(ApiId=API, DisableExecuteApiEndpoint=False)
+    assert verify_closed_setup(clients, **args, verified_rollback=True)["success"] is False
+
+
+def test_setup_rejects_wrong_cfn_resource_status_and_table_tags():
+    clients = _clients(); original = clients["cloudformation"].describe_stack_resources
+    def bad(**kwargs):
+        rows = original(**kwargs); rows["StackResources"][0]["ResourceStatus"] = "DELETE_COMPLETE"; return rows
+    clients["cloudformation"].describe_stack_resources = bad
+    assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["category"] == "setup_resources_mismatch"
+    clients = _clients(); original = clients["dynamodb"].list_tags_of_resource
+    def missing(**kwargs):
+        result = original(**kwargs); result["Tags"] = result["Tags"][:-1]; return result
+    clients["dynamodb"].list_tags_of_resource = missing
+    assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["category"] == "dynamodb_tags_mismatch"
+
+
+def test_accepted_runtime_mode_is_exactly_nineteen_resources_and_three_routes():
+    clients = _clients()
+    expected_types = {
+        **{row["LogicalResourceId"]: row["ResourceType"] for row in _records()},
+        "McpJwtAuthorizer": "AWS::ApiGatewayV2::Authorizer",
+        "McpLambdaIntegration": "AWS::ApiGatewayV2::Integration",
+        "McpPostRoute": "AWS::ApiGatewayV2::Route",
+        "McpProtectedResourceMetadataRoute": "AWS::ApiGatewayV2::Route",
+        "McpAuthorizationServerMetadataRoute": "AWS::ApiGatewayV2::Route",
+        "McpLambdaInvokePermission": "AWS::Lambda::Permission",
+        "McpProtectedResourceMetadataInvokePermission": "AWS::Lambda::Permission",
+        "McpAuthorizationServerMetadataInvokePermission": "AWS::Lambda::Permission",
+    }
+    template = {"Resources": {name: {"Type": value} for name, value in expected_types.items()}}
+    extra_ids = {
+        "McpJwtAuthorizer": "auth-123", "McpLambdaIntegration": "int-123",
+        "McpPostRoute": "post-123", "McpProtectedResourceMetadataRoute": "metadata-123",
+        "McpAuthorizationServerMetadataRoute": "server-metadata-123",
+        "McpLambdaInvokePermission": "permission-post",
+        "McpProtectedResourceMetadataInvokePermission": "permission-metadata",
+        "McpAuthorizationServerMetadataInvokePermission": "permission-server-metadata",
+    }
+    original_records = clients["cloudformation"].describe_stack_resources
+    clients["cloudformation"].describe_stack_resources = lambda **kwargs: _ok(
+        StackResources=original_records(**kwargs)["StackResources"] + [
+            {"LogicalResourceId": name, "ResourceType": expected_types[name],
+             "ResourceStatus": "UPDATE_COMPLETE", "PhysicalResourceId": value}
+            for name, value in extra_ids.items()
+        ]
+    )
+    clients["apigateway"].get_api = lambda **kwargs: _ok(ApiId=API, Name="honda-mapit-mcp-dev-retained-api", DisableExecuteApiEndpoint=True)
+    route_keys = (
+        "POST /mcp", "GET /.well-known/oauth-protected-resource/mcp",
+        "GET /.well-known/oauth-authorization-server",
+    )
+    clients["apigateway"].get_routes = lambda **kwargs: _ok(
+        Items=[{"RouteKey": key} for key in route_keys], NextToken=None,
+    )
+    args = dict(account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL,
+                client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)
+    result = verify_closed_setup(
+        clients, **args, expected_runtime_template=template,
+        expected_route_keys=route_keys,
+    )
+    assert result["success"] is True and result["resources_verified"] is True
+
+    bad = deepcopy(template)
+    bad["Resources"].pop("McpAuthorizationServerMetadataRoute")
+    rejected = verify_closed_setup(
+        _clients(), **args, expected_runtime_template=bad,
+        expected_route_keys=route_keys,
+    )
+    assert rejected["category"] == "binding_invalid"
+    bad_type = deepcopy(template)
+    bad_type["Resources"]["McpJwtAuthorizer"]["Type"] = "AWS::Lambda::Function"
+    rejected = verify_closed_setup(
+        _clients(), **args, expected_runtime_template=bad_type,
+        expected_route_keys=route_keys,
+    )
+    assert rejected["category"] == "binding_invalid"
+
+
+def test_pool_flags_require_essentials_and_no_addons_or_advanced_mode():
+    for mutation in (
+        lambda pool: pool.update(UserPoolTier="PLUS"),
+        lambda pool: pool.update(UserPoolAddOns={}),
+        lambda pool: pool.update(UserPoolAddOns=None),
+        lambda pool: pool.update(UserPoolAddOns={"AdvancedSecurityMode": "ENFORCED"}),
+        lambda pool: pool.update(UserPoolAddOns={"AdvancedSecurityMode": "OFF", "Unexpected": True}),
+    ):
+        clients = _clients()
+        original = clients["cognito"].describe_user_pool
+        def changed(*args, _original=original, _mutation=mutation, **kwargs):
+            reply = _original(*args, **kwargs)
+            _mutation(reply["UserPool"])
+            return reply
+        clients["cognito"].describe_user_pool = changed
+        assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["category"] == "cognito_pool_mismatch"
+
+    clients = _clients()
+    original = clients["cognito"].describe_user_pool
+    def explicit_off(*args, _original=original, **kwargs):
+        reply = _original(*args, **kwargs)
+        reply["UserPool"]["UserPoolAddOns"] = {"AdvancedSecurityMode": "OFF"}
+        return reply
+    clients["cognito"].describe_user_pool = explicit_off
+    assert verify_closed_setup(clients, account=ACCOUNT, stack_arn=STACK, api_id=API, user_pool_id=POOL, client_id=CLIENT, callback_url=CALLBACK, original_creation_run_id=RUN_ID)["success"] is True
+
+
+def test_botocore_models_and_stubber_cover_actual_read_methods_without_network():
+    boto3 = pytest.importorskip("boto3")
+    from botocore.config import Config
+    from botocore.stub import Stubber
+
+    kwargs = {"region_name": "eu-west-1", "aws_access_key_id": "synthetic", "aws_secret_access_key": "synthetic", "aws_session_token": "synthetic", "config": Config(proxies={})}
+    ddb = boto3.client("dynamodb", **kwargs)
+    cognito = boto3.client("cognito-idp", **kwargs)
+    assert ddb.meta.method_to_api_mapping["describe_time_to_live"] == "DescribeTimeToLive"
+    assert ddb.meta.method_to_api_mapping["describe_continuous_backups"] == "DescribeContinuousBackups"
+    assert cognito.meta.method_to_api_mapping["describe_managed_login_branding_by_client"] == "DescribeManagedLoginBrandingByClient"
+    with Stubber(ddb) as ddb_stub, Stubber(cognito) as cognito_stub:
+        ddb_stub.add_response("describe_time_to_live", {"TimeToLiveDescription": {"TimeToLiveStatus": "DISABLED"}}, {"TableName": "honda-mapit-mcp-dev-tenants"})
+        ddb_stub.add_response("describe_continuous_backups", {"ContinuousBackupsDescription": {"ContinuousBackupsStatus": "ENABLED", "PointInTimeRecoveryDescription": {"PointInTimeRecoveryStatus": "DISABLED"}}}, {"TableName": "honda-mapit-mcp-dev-tenants"})
+        cognito_stub.add_response("describe_managed_login_branding_by_client", {"ManagedLoginBranding": {"UserPoolId": POOL, "ManagedLoginBrandingId": "11111111-2222-4333-8444-555555555555", "UseCognitoProvidedValues": True}}, {"UserPoolId": POOL, "ClientId": CLIENT})
+        assert ddb.describe_time_to_live(TableName="honda-mapit-mcp-dev-tenants")["TimeToLiveDescription"]["TimeToLiveStatus"] == "DISABLED"
+        assert ddb.describe_continuous_backups(TableName="honda-mapit-mcp-dev-tenants")["ContinuousBackupsDescription"]["PointInTimeRecoveryDescription"]["PointInTimeRecoveryStatus"] == "DISABLED"
+        assert cognito.describe_managed_login_branding_by_client(UserPoolId=POOL, ClientId=CLIENT)["ManagedLoginBranding"]["UseCognitoProvidedValues"] is True

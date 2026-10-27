@@ -67,7 +67,7 @@ jobs:
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test]" -r infra/aws/schema-requirements.txt
       - name: Test static-check guards
-        run: python -m pytest -q tests/test_check_aws_templates.py tests/test_aws_infrastructure_draft.py
+        run: python -m pytest -q tests/test_check_aws_templates.py tests/test_aws_infrastructure_draft.py tests/test_owner_enrolled_template_checker_independent.py
       - name: Validate fixed synthetic templates (Python networking denied)
         run: python scripts/check_aws_templates.py
   shutdown-sdk:
@@ -95,18 +95,70 @@ jobs:
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test]" "pip-audit==2.10.1"
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+      - name: Require pinned Botocore models
+        run: python -c "from botocore.session import get_session; s=get_session(); assert s.get_service_model('lambda').operation_model('ListTags').output_shape.members['Tags'].type_name == 'map'; assert s.get_service_model('iam').operation_model('ListRoleTags').output_shape.members['Tags'].type_name == 'list'"
       - name: Test real SDK shapes with offline stubs
-        run: python -m pytest -q tests/test_aws_dev_shutdown_sdk.py tests/test_aws_dev_shutdown_entrypoint.py tests/test_aws_dev_shutdown_entrypoint_independent.py tests/test_aws_dev_shutdown_template_independent.py tests/test_build_aws_dev_shutdown.py tests/test_build_aws_dev_shutdown_independent.py tests/test_aws_closed_rehearsal_independent.py tests/test_aws_dev_runtime_artifact.py tests/test_aws_dev_runtime_artifact_retirement.py tests/test_aws_dev_oauth_setup_readback.py tests/test_aws_dev_oauth_setup_coordinator.py tests/test_aws_dev_oauth_setup_coordinator_independent.py tests/test_aws_dev_oauth_setup_cleanup_readback.py tests/test_aws_dev_oauth_setup_cleanup_readback_independent.py tests/test_aws_dev_runtime_readback.py tests/test_aws_identity_template.py tests/test_aws_shared_identity_dev.py tests/test_aws_dev_activation.py tests/test_aws_cd_identity_bootstrap.py tests/test_aws_cd_identity_bootstrap_independent.py
+        run: python -m pytest -q tests/test_aws_dev_shutdown_sdk.py tests/test_aws_dev_shutdown_entrypoint.py tests/test_aws_dev_shutdown_entrypoint_independent.py tests/test_aws_dev_shutdown_template_independent.py tests/test_build_aws_dev_shutdown.py tests/test_build_aws_dev_shutdown_independent.py tests/test_aws_closed_rehearsal_independent.py tests/test_aws_dev_runtime_artifact.py tests/test_aws_dev_runtime_artifact_retirement.py tests/test_aws_dev_oauth_setup_readback.py tests/test_aws_dev_oauth_setup_coordinator.py tests/test_aws_dev_oauth_setup_coordinator_independent.py tests/test_aws_dev_oauth_setup_cleanup_readback.py tests/test_aws_dev_oauth_setup_cleanup_readback_independent.py tests/test_aws_dev_runtime_readback.py tests/test_aws_identity_template.py tests/test_aws_shared_identity_dev.py tests/test_aws_dev_activation.py tests/test_aws_cd_identity_bootstrap.py tests/test_aws_cd_identity_bootstrap_independent.py tests/test_aws_retained_dev_delivery_preflight.py tests/test_aws_retained_dev_delivery_preflight_independent.py tests/test_aws_retained_dev_delivery_preflight_adversarial.py tests/test_aws_retained_dev_delivery_preflight_sdk_happy.py tests/test_aws_retained_dev_journal_phase_validators.py
       - name: Test bounded identity boundary compatibility with offline fixtures
         run: python -m pytest -q tests/test_aws_cd_identity_bootstrap_boundary_independent.py
       - name: Test identity-only STS core and real SDK factories offline
         run: python -m pytest -q tests/test_github_sts_identity.py tests/test_github_sts_identity_independent.py tests/test_run_github_sts_identity.py
+      - name: Test invitation-only multiuser operator scripts offline
+        run: python -m pytest -q tests/test_deploy_multiuser.py tests/test_mcp_users.py tests/test_multiuser_independent.py tests/test_multiuser_identity.py tests/test_multiuser_runtime.py
+      - name: Test opt-in onboarding and real SSM SDK models offline
+        run: python -m pytest -q tests/test_identity_binding.py tests/test_identity_binding_independent.py tests/test_enrolled_provider.py tests/test_aws_identity_binding_publisher.py tests/test_aws_identity_binding.py tests/test_aws_enrollment_clients.py tests/test_private_enrollment.py tests/test_private_enrollment_independent.py tests/test_aws_identity_binding_infra.py tests/test_cloud_enrollment.py tests/test_cloud_enrollment_independent.py
+      - name: Test protected enrollment key handoff with offline SDK fixtures
+        run: python -m pytest -q tests/test_aws_binding_keys.py tests/test_aws_binding_keys_independent.py tests/test_dev_identity_binding_key_setup.py
+      - name: Test separate MAPIT key publication and same-credential clients offline
+        run: python -m pytest -q tests/test_dev_mapit_binding_key_setup.py tests/test_dev_mapit_binding_key_setup_independent.py tests/test_dev_mapit_key_clients.py
+      - name: Test fresh MAPIT key operator and historical receipt fencing offline
+        run: python -m pytest -q tests/test_run_dev_mapit_binding_key_setup.py tests/test_run_dev_mapit_binding_key_setup_independent.py
+      - name: Test separate MAPIT bootstrap intent contract offline
+        run: python -m pytest -q tests/test_dev_mapit_bootstrap_contract.py tests/test_dev_mapit_bootstrap_contract_independent.py
+      - name: Test closed owner-enrolled runtime profile offline
+        run: python -m pytest -q tests/test_dev_owner_enrolled_runtime.py tests/test_dev_owner_enrolled_runtime_independent.py
+      - name: Test one-shot closed owner delivery and post-update login lineage offline
+        run: python -m pytest -q tests/test_dev_owner_enrolled_delivery.py tests/test_dev_owner_enrolled_delivery_independent.py tests/test_dev_owner_enrolled_delivery_changes_independent.py tests/test_dev_owner_enrolled_login_lineage.py tests/test_dev_owner_enrolled_login_lineage_independent.py
+      - name: Test explicit owner delivery SDK and published namespace readback offline
+        run: python -m pytest -q tests/test_dev_owner_enrolled_delivery_sdk.py tests/test_dev_owner_enrolled_delivery_sdk_independent.py tests/test_dev_owner_enrolled_namespace_readback.py tests/test_dev_owner_enrolled_namespace_readback_independent.py
+      - name: Test accepted owner manifest inputs without network or keys
+        run: python -m pytest -q tests/test_dev_owner_enrolled_inputs.py tests/test_dev_owner_enrolled_inputs_independent.py tests/test_dev_owner_enrolled_preparation.py
+      - name: Test bounded owner runtime PRE and POST readback offline
+        run: python -m pytest -q tests/test_dev_owner_enrolled_runtime_readback.py tests/test_dev_owner_enrolled_runtime_readback_independent.py tests/test_dev_owner_enrolled_runtime_readback_budget_independent.py tests/test_dev_owner_enrolled_runtime_readback_integrity_independent.py tests/test_dev_owner_enrolled_runtime_readback_api_independent.py tests/test_dev_owner_enrolled_runtime_readback_models.py tests/test_dev_owner_enrolled_runtime_readback_ordered_mapping_independent.py
+      - name: Test immutable owner private input provenance offline
+        run: python -m pytest -q tests/test_dev_owner_enrolled_private_inputs.py tests/test_dev_owner_enrolled_private_inputs_independent.py
+      - name: Test one-shot closed owner delivery operator offline
+        run: python -m pytest -q tests/test_run_dev_owner_enrolled_delivery.py tests/test_run_dev_owner_enrolled_delivery_independent.py
+      - name: Test accepted delivery restart and fresh owner login boundaries offline
+        run: python -m pytest -q tests/test_dev_owner_enrolled_observation.py tests/test_dev_owner_enrolled_observation_independent.py tests/test_dev_owner_enrolled_accepted_inputs.py tests/test_run_dev_owner_enrolled_login.py tests/test_run_dev_owner_enrolled_login_independent.py
+      - name: Test closed owner MAPIT enrollment and post-enrollment readback offline
+        run: python -m pytest -q tests/test_run_dev_owner_mapit_enrollment.py tests/test_owner_mapit_operator_independent.py tests/test_dev_owner_mapit_enrollment_readback.py tests/test_dev_owner_mapit_private_baseline.py tests/test_owner_mapit_saved_session.py
+      - name: Test separate MAPIT bootstrap one-shot coordinator offline
+        run: python -m pytest -q tests/test_dev_mapit_bootstrap_coordinator.py tests/test_dev_mapit_bootstrap_coordinator_independent.py
+      - name: Test complete readonly MAPIT runtime evidence and private operator offline
+        run: python -m pytest -q tests/test_dev_mapit_runtime_evidence.py tests/test_dev_mapit_runtime_evidence_independent.py tests/test_run_dev_mapit_bootstrap_independent.py tests/test_prepare_dev_mapit_bootstrap_private_independent.py
+      - name: Import isolated runtime source inventories without repository fallback
+        run: python -m pytest -q tests/test_runtime_source_import_closure.py
+      - name: Test isolated enrollment bootstrap and immutable closure evidence offline
+        run: python -m pytest -q tests/test_aws_dev_identity_binding_bootstrap.py tests/test_aws_dev_identity_binding_bootstrap_independent.py tests/test_aws_dev_identity_binding_kms_independent.py tests/test_dev_identity_binding_bootstrap_readback_independent.py tests/test_run_aws_dev_identity_binding_bootstrap.py tests/test_dev_identity_binding_runtime_evidence_independent.py tests/test_prepare_dev_identity_binding_private_independent.py
+      - name: Test synthetic cloud storage proof without deployment or credentials
+        run: python -m pytest -q tests/test_run_dev_identity_binding_storage_probe.py tests/test_run_dev_identity_binding_storage_probe_independent.py
+      - name: Test enrolled DEV runtime composition without deployment or credentials
+        run: python -m pytest -q tests/test_dev_contextual_provider.py tests/test_dev_mapit_binding_namespace.py tests/test_dev_enrolled_runtime.py tests/test_dev_enrolled_runtime_independent.py tests/test_dev_enrolled_manifest.py tests/test_aws_dev_enrolled_entrypoint.py tests/test_build_aws_dev_enrolled_archive.py tests/test_aws_dev_mapit_binding_bootstrap.py tests/test_probe_aws_dev_enrolled_arm.py tests/test_probe_aws_dev_enrolled_arm_independent.py
+      - name: Test isolated owner OAuth bootstrap offline
+        run: python -m pytest -q tests/test_aws_dev_owner_oauth.py tests/test_dev_owner_oauth_independent.py tests/test_dev_owner_oauth_bootstrap.py tests/test_dev_owner_oauth_sdk.py tests/test_run_aws_dev_owner_oauth_bootstrap.py tests/test_dev_owner_oauth_runner_independent.py
+      - name: Test assisted owner login without credentials or network
+        run: python -m pytest -q tests/test_dev_owner_assisted_login.py tests/test_dev_owner_assisted_login_independent.py tests/test_dev_owner_login_context.py tests/test_run_dev_owner_assisted_login.py
+      - name: Test one-shot owner invitation and frozen SDK credentials offline
+        run: python -m pytest -q tests/test_run_dev_owner_invitation.py tests/test_run_dev_owner_invitation_independent.py tests/test_dev_owner_invitation_bootstrap_reads.py tests/test_dev_owner_invitation_bootstrap_reads_independent.py
+      - name: Test private public-config key-publication preparation offline
+        run: python -m pytest -q tests/test_prepare_dev_mapit_key_private.py tests/test_prepare_dev_mapit_key_private_independent.py tests/test_run_dev_owner_assisted_login.py
       - name: Audit pinned SDK dependencies (networked advisory lookup only)
         run: python -m pip_audit --strict --no-deps --disable-pip -r infra/aws/shutdown-requirements.txt --progress-spinner off --timeout 20 --desc off
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 20 || 10 }}
     strategy:
       fail-fast: false
       matrix:
@@ -137,6 +189,14 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 "pip>=26.2,<27"
           python -m pip install --disable-pip-version-check --retries 0 --timeout 20 ".[test,agent,realtime,windows-auth]"
+
+      - name: Install pinned SDK for native Windows enrollment composition
+        if: runner.os == 'Windows'
+        run: python -m pip install --disable-pip-version-check --retries 0 --timeout 20 --no-deps -r infra/aws/shutdown-requirements.txt
+
+      - name: Require native Windows enrollment prerequisites
+        if: runner.os == 'Windows'
+        run: python -c "import ctypes, tkinter, boto3; from botocore.session import get_session; assert get_session().get_service_model('ssm').operation_model('PutParameter').input_shape.members['Overwrite'].type_name == 'boolean'"
 
       - name: Compile
         run: python -m compileall -q src tests scripts

@@ -1,6 +1,1132 @@
 # Project Agent Workflow
 
+Consumed owner delivery checkpoint, 2026-10-09: PR #104 merged normally at
+develop cbe749b after eight source checks (37980389712); all eight integrated
+checks passed (37981159745). Frozen suite: 4,587 passed/twelve skips, compilation
+and model-free evaluation 12/12. A new closed delivery stopped at
+artifact_write_unknown: artifact journal intent, update journal ready. Never
+resume/replay it or infer permission from an absent object. Seven independent
+readonly reconciliation calls confirmed exact identity, closed API, reserve zero,
+UPDATE_COMPLETE, nineteen resources, unchanged prior template and exact object
+HEAD 404. No accepted publication, runtime update, opening or login followed.
+Independent offline reproductions show the SDK's constructor-anchored 30-second
+deadline can expire during coordinator readbacks, yielding the same unknown
+category before any SDK dispatch. This is an established composition defect,
+not proof of the live attempt's dispatch count or provider failure. Review a
+per-operation 30-second deadline with unchanged exclusive authority cutoff,
+rollback checks, aggregate call cap and sticky one-shot/concurrent fences.
+No historical journal/schema/receipt may change. A separate fresh owner decision,
+source CI/protections and reviewed private authority precede any new live attempt.
+The offline correction starts a separate 30-second budget at each validated
+SDK write operation, retains a session monotonic cap bounded by remaining
+authority lifetime, and preserves the shared 48-call cap and registered bundle.
+Sticky callback-start flags plus a nonblocking operation lock fence repeats and
+concurrent/reentrant calls even before dispatch. Focused SDK/core/runner tests
+pass 46 cases, including a real coordinator with long preflight and inter-step
+idle. Independent review/full frozen source verification remain required.
+Production/MFA/MAPIT/Telegram/quota ten remain unchanged. Remove owned temporary
+wakefulness before handoff.
+
+Readonly follow-up after PR #103, 2026-10-09: normally merged develop c072f5d,
+source CI 37979094204 eight green; 4,568 local tests/twelve skips and evaluation
+12/12 passed. Actual current-state construction now passes, but the readonly
+preflight stopped after five reads at the authorization-table comparison. A
+separate three-read predicate diagnostic isolated only the hardcoded expectation
+DeletionProtectionEnabled=True: the accepted original table template omits that
+property (documented effective default false). The fixture had invented true.
+Require strict bool actual and template-effective expected values with exact
+equality, not a table update or accepting missing/malformed SDK values. The
+predicate-only diagnostic's generic trailing label is not full preflight evidence.
+Thirty-three explicit SDK reads are known across this diagnostic block; no AWS
+write, fresh authority, publication, update or opening followed. Preserve all
+historical inputs and the unused local archive. Fresh review/CI and successful
+real readonly preflight still precede a new closed delivery.
+
+Real owner delivery preparation checkpoint, 2026-10-09: PR #102 merged normally
+to develop bb601f9 after eight source checks (37975506967); all eight integrated
+checks passed (37975988155). Frozen suite: 4,564 passed/twelve skips, compilation
+and model-free evaluation 12/12, fifty official offline schemas passed.
+One actual invocation stopped at private_inputs_unverified during pure metadata
+assembly. It retained only local public manifest/JWKS/archive/summary preparation;
+authorization.json and both intent journals were never created. No artifact PUT,
+UpdateStack, API opening, MAPIT session or human login followed. Preserve that
+preparation; do not resume it or infer write permission from empty cloud reads.
+Readonly diagnosis isolated the same incompatible predicate in two consumers
+(metadata assembly and current-runtime construction): the original
+MAPIT bootstrap preparer excluded its two storage keys, whereas the assembler
+incorrectly required the hosted app's separate pair inside the same historical
+list. Independent review accepts preserving storage coverage and directly
+checking the new owner is disjoint from both historical pairs, with authentic
+preparer-shaped positive and four collision negatives (39 focused tests).
+The second constructor failure was isolated read-only before its SDK calls.
+Its genuine PRE/POST fixture now also uses the producer's storage-only list;
+independent preparation/readback/SDK-model review passed 48 focused tests.
+One actual readonly check passed the private loader, corrected pure assembly and
+constructor-only archive/target validation with two bounded SDK reads and public
+JWKS fetches; historical authority/files remained unchanged. This does not run
+delivery methods, publish the retained archive or establish cloud acceptance.
+Do not rewrite/rebind historical authority, rotate keys or replay consumed work.
+Fresh source/CI/protections and a new private run still precede any owner delivery.
+The first directory-date filter mixed UTC/local DateTime semantics; an unfiltered
+bounded inventory corrected the observation. Absence under an unverified time
+filter is not absence of preparation or replay authority. Production/MFA/quota
+ten remain unchanged. Remove owned temporary wakefulness before final handoff.
+
+Accepted delivery restart preparation, 2026-10-09: PR #101 merged normally at
+develop 3d3e6a7 after eight green source checks (37972505452); all eight integrated
+checks passed (37973283671). Frozen prior suite: 4,526 passed/twelve skips.
+The follow-up privately persists the exact prior template and builder summary
+before publication, and an exclusive receipt-bound observation capsule inside
+the accepted current-state callback before the update journal becomes accepted.
+Capsule persistence failure holds the acknowledged update; never replay it.
+The v2 accepted evidence binds stable resource/TableId/full-row/policy baselines,
+using only fixed logical A/B slots for row hashes. A separate accepted-input
+loader reconstructs original metadata with owning parsers and constructor-only
+archive/target validation; it never renews or executes historical authority.
+Accepted-only observation requires the exact terminal update receipt, fresh
+source/CI/protections/window, registered same-credential clients and current
+provider reads. Post-update human login uses this path, not the old pre-update
+verifier. Tokens are discarded in memory; no enrollment or endpoint opening.
+Source review/CI/promotion and fresh private authority still precede the one
+actual closed owner delivery. No owner runtime update, actual human login or
+MAPIT account E2E follows from synthetic tests. Production/MFA/quota ten remain
+unchanged. Maintain owned temporary wakefulness while working and remove it
+before final handoff.
+
+One-process owner delivery runner accepted independently offline, 2026-10-09:
+26 focused tests pass, including genuine private parsers/current-state SDK
+readback/core/writer composition through one synthetic conditional publication,
+one exact stack update and accepted closed readback. Broader focused suite: 74
+passed. The runner-local schema-1 delivery_state envelope adapts the core's
+exact triple to unchanged FileJournal durability; malformed envelopes and
+persisted intent replay fail closed. No consumed historical journal is migrated.
+Fresh unique private roots, source/protection checks, pinned ARM readiness,
+exact prior lineage, bounded closed polling and exclusive deadlines remain
+mandatory. Interrupted or uncertain runs are held, never resumed or retried.
+PR #100 merged normally to develop bdc64dd after eight source checks
+(37971401874), 4,500 local tests/twelve skips, compilation/evaluation 12/12;
+all eight integrated checks passed (37971917670). The new operator still needs its
+own source CI/promotion and fresh private authority before one live delivery.
+There has been no owner runtime update, API opening, MAPIT session or real E2E.
+Production/MFA/quota ten remain unchanged. Remove owned temporary wakefulness
+before final handoff.
+
+SDK JSON compatibility correction accepted independently offline, 2026-10-09:
+84 focused readback tests pass, including an actual verifier composition with
+recursively nested OrderedDict matching Botocore GetTemplate output. Normalize
+all JSON objects before the unchanged exact template validator; reject duplicate
+or non-string keys, non-JSON types/non-finite numbers, excessive depth/nodes,
+and aggregate canonical size above 64 KiB before final allocation. Bounded real
+read-only diagnostics confirmed the original template digest and nineteen
+resources; the earlier top-only conversion rejected nested Metadata. No AWS
+write, private key/session decryption or owner runtime delivery followed.
+One subsequent actual private-loader check passed with two SDK reads and two
+fixed public JWKS GETs, immutable receipts unchanged and zero writes; it loaded
+no key bytes or MAPIT sessions. Source CI/promotion and the separately reviewed one-shot operator remain
+required before any delivery. Historical consumed authority is not replayable.
+Keep owned temporary wakefulness active and remove it before final handoff.
+
+Private provenance integration checkpoint, 2026-10-09: PR #99 merged normally
+to develop 3bed243 after eight green source checks (37968202910); all eight
+integrated checks passed (37968785588). Frozen local suite: 4,485 passed,
+twelve environment skips; compilation and deterministic evaluation 12/12.
+PR #98 integrated checks also passed (37967747790). The one-process closed
+owner delivery operator remains under independent synthetic composition review;
+these parser/readback acceptances do not authorize replay of consumed journals
+or establish an actual owner runtime deployment, login or MAPIT business E2E.
+Production, owner MFA and quota ten are unchanged. Maintain owned temporary
+wakefulness while working and remove it before final handoff.
+
+Owner private-input loader accepted independently offline, 2026-10-09: twenty-one
+focused tests pass. Owning ACL-private receipt parsers bind the original owner
+OAuth state directory, complete MAPIT runtime evidence digest, accepted bootstrap,
+invitation and version-one publication. Two fixed issuer public JWKS GETs are
+bounded; tests inject them without network. Only the validated factory registers
+the redacted result, with registry-held immutable file/content baselines and
+exact accepted context/bootstrap identities. Copies, forged construction,
+private-file drift, ACL relaxation and monotonic rollback fail closed. No AWS
+SDK call, session/key decryption, write or historical authority renewal follows.
+PR #98 merged normally to develop f2e5249 after eight source checks
+(37967221307); final frozen suite passed 4,464 tests/twelve skips, compilation,
+evaluation 12/12 and all fifty offline official schemas. Integrated CI is pending
+at this checkpoint. The one-shot live delivery operator is still being prepared;
+no owner runtime deployment, MAPIT session or business E2E is accepted. Remove
+owned temporary wakefulness before final handoff.
+
+Owner runtime readback accepted independently offline, 2026-10-09: the actual
+private-loader composition passes synthetic PRE and accepted POST phases with
+69 focused tests, including real coordinator preflight/publication/update/
+acceptance composition with synthetic write adapters. It preserves historical hosted A revoked/B active, exact
+physical resources and table identity, and full four-policy IAM inventory before
+the frozen legacy three-policy projection. PRE pins the technical issuer/prior
+ZIP; POST pins the owner issuer/new ZIP and one exact completion event. Shared
+read/time budgets, SDK model checks, duplicate JSON/tag rejection and final
+closed API/reserve-zero/STS checks remain mandatory. This is not an actual owner
+runtime update, MAPIT session or business E2E. Private input/operator preparation
+and fresh exact source/CI/protection evidence remain prerequisites. Historical
+invitation/key-publication intents remain consumed. PR #97 is integrated on
+develop 1f4e87c after eight green checks (37962433939); its frozen suite passed
+4,395 tests with twelve environment skips. Remove owned temporary wakefulness
+before handoff and preserve original power settings.
+
+Owner delivery metadata preparation accepted offline, 2026-10-09: 4,395 tests
+passed with twelve environment skips, compilation and model-free evaluation
+12/12. The assembler validates accepted receipt projections and distinct hosted
+and storage-proof tenant keys; it reads only the fixed public repository
+scaffold. Caller-supplied runtime metadata still requires owning private
+provenance loaders and current AWS verification, not trust by assembly alone.
+PR #95 and #96 both passed eight integrated checks; develop c9548d2 is the
+latest accepted source. A fresh metadata-only namespace verification passed
+21 bounded readonly SDK calls: stable table/config version one, empty binding,
+absent sessions, closed API and reserve zero. No keys were decrypted.
+The complete current-runtime PRE/POST verifier remains under development;
+no owner runtime delivery, API opening or MAPIT session follows. Historical
+invitation/publication intents remain consumed. Remove owned temporary
+wakefulness before handoff; preserve the original power scheme.
+
+Enrolled-handler ARM readiness passed locally, 2026-10-09: the pinned Lambda
+ARM image ran the actual packaged enrolled handler with networking disabled,
+256 MiB memory and all 28 hash-locked wheels. Nine predicates passed: import,
+manifest, independent public JWKS, handler load, exact ten tools, anonymous
+denial, missing-session denial, revocation denial and exclusive window expiry.
+The session loader deliberately fails; this is not MAPIT business acceptance.
+Independent review caught duplicate JSON output keys; recursive rejection and
+eleven offline probe tests now pass. Frozen suite excluding the in-progress
+current-runtime verifier: 4,375 passed, twelve environment skips; compilation
+and model-free evaluation 12/12 passed. Actual accepted private receipts also
+assembled a 1,305-byte owner manifest only in memory, with two bounded public
+JWKS GETs, zero AWS SDK calls and zero writes. No secret/session was loaded.
+PR #95 merged normally to develop 58a0ebe after eight green source checks
+(37959132411); its first source CI failed because SDK-dependent fixture tests
+lacked an optional import skip in generic jobs. They remain mandatory in the
+pinned SDK job. Integrated CI is pending at this checkpoint. Complete real
+loader/runtime PRE/POST verification still blocks any owner runtime delivery.
+No production/MFA/MAPIT/Telegram/quota operation follows. Remove owned temporary
+wakefulness before handoff and retain original power settings.
+
+Offline owner delivery SDK and input preparation, 2026-10-09: independent
+review accepted explicit frozen-credential SDK clients, one-attempt artifact
+and closed-runtime update adapters, published namespace metadata readback and
+filesystem-free owner manifest assembly. Full suite: 4,364 passed, twelve
+environment skips; compilation and model-free evaluation 12/12 passed.
+The existing invitation path guard and historical bootstrap parsers remain
+unchanged in meaning. Config metadata readback never decrypts config keys.
+PR #94 is integrated on develop b0b7dee after eight green source and eight
+green integrated checks (37956827934). These new adapters are not a complete
+live operator: current runtime verification, private authority composition,
+ARM probe and owner login still require reviewed integration. No runtime
+deployment, API opening, MAPIT session or human login follows from offline
+acceptance. Accepted invitation/key publication intents remain consumed.
+Temporary wakefulness is owned and must be removed before final handoff.
+
+Separate MAPIT key publication accepted, 2026-10-09: on clean develop ca94c92
+and exact eight-green integrated CI 37955083936, one fresh private publication
+authority completed key_publication_verified with 72 SDK calls and 27 bounded
+source/protection command calls. The separate Standard SecureString is version
+one; its intent is consumed. Never regenerate, overwrite, rotate, republish or
+replay these accepted keys. Key bytes/hashes were not persisted in Git, vault,
+environments or journals. Ten independent bounded readonly AWS calls confirmed
+exact caller, owner active/revision one, config metadata version one, same
+accepted TableId, AWS-owned table encryption, unchanged nineteen app resources,
+four namespace resources, UPDATE_COMPLETE, closed API and Lambda reserve zero.
+Two diagnostic preparation errors occurred before SDK construction: an unused
+wrong import and use of the CAS-envelope parser for a legacy direct journal;
+the final check uses the owning FileJournal. No writes were retried. Production,
+owner MFA, MAPIT sessions/business data, Telegram and quota ten are unchanged.
+
+Offline owner-enrolled delivery and post-update lineage are independently
+accepted: 4,304 tests passed with twelve environment skips (SDK adapter work
+excluded), compilation and 74 focused holdouts passed. The core binds exact
+embedded manifest/JWKS ZIP bytes, strict integer receipt versions, separate
+one-shot publication/update journals and distinct new accepted context/runtime
+digests, including repeat-readback receipt integrity. The historical owner
+context verifier is unchanged. The new lineage seam requires registered
+original context, exact accepted delivery and matching fresh paired projections
+with one shared process-local credential capability. Injected projections are
+not AWS proof. Full current-state adapters, private manifest/authority assembly,
+ARM owner-enrolled probe and human login integration remain pending; neither
+this core nor its fake-adapter tests authorize deployment or prove real MAPIT.
+
+Owner invitation accepted in real DEV, 2026-10-09: PR #93 merged normally to
+develop ca94c92 after eight green source checks (37954532658) and eight green
+integrated checks (37955083936). One new private authority, distinct from the
+earlier stopped read-only attempt, completed with owner_invitation_accepted
+and 93 bounded SDK calls. Exactly one create-only owner authorization CAS and
+strong readback are accepted; its intent is consumed. Never replay or revoke/
+revive this owner row implicitly. The bootstrap-authorized owner key remains
+unchanged. A separate fresh key-publication authority has been prepared, but
+publication is not accepted at this checkpoint. No handler update, API opening,
+MAPIT session, human login or business E2E occurred. Historical synthetic state,
+production/MFA/Telegram and regional Lambda quota ten remain unchanged.
+
+Offline invitation-read correction and private key metadata preparation,
+2026-10-09: independent review accepted the exact second readonly table/key
+pair without changing the singleton authorization writer. Real bootstrap
+readback composition and malformed request holdouts passed. The frozen full
+suite passed 4,253 tests with twelve environment skips; six subsequently added
+independent guard cases are included in 63 focused passing tests. Compilation,
+model-free evaluation 12/12 and all 50 pinned network-denied official template
+schemas passed. The private preparer selects only validated public config from
+one ACL-private original release snapshot, retains partial exclusive output,
+and generates no binding keys or sessions. Source CI/promotion and fresh private
+authorities remain required before new invitation or key-publication operations.
+The separate injected delivery coordinator is excluded from this acceptance;
+its review found strict integer receipt checks needing correction. No additional
+AWS write, owner invitation, key publication or real MAPIT acceptance follows.
+
+Owner invitation checkpoint, 2026-10-09: PR #92 merged normally to develop
+b7be46f after eight green source checks (37952297624) and eight integrated
+checks (37952729987). The initial generic CI exposed an optional Botocore test
+import; the SDK-specific proof is now mandatory in the existing pinned SDK job,
+not required where that optional SDK is absent. A fresh private owner invitation
+authority was prepared. Its run stopped at bootstrap_readback after 28 SDK
+reads, before durable intent, CAS or any row write; the journal is absent.
+The narrow local GetItem guard allowed only the original owner authorization
+row, but the owning current-bootstrap verifier also requires a strong read of
+exact key identity-bindings-v1 in the new MAPIT binding table. Preserve the
+failed envelope. Correct only that second readonly table/key pair; retain the
+original authorization-table-only singleton writer. Test the actual bootstrap
+readback through the guard, not a mocked adapter, and obtain fresh source CI,
+protections and a new private authority before another run. No owner invitation
+or key publication is accepted by this stopped attempt.
+
+Latest separate real-MAPIT DEV namespace checkpoint, 2026-10-09: PR #91 merged
+normally to develop 0f11fee after eight green source checks (37950083226) and
+eight integrated checks (37950476922). A new private bootstrap authority passed
+preflight with 52 SDK reads; the sole creation was acknowledged with 54 calls,
+and exact readback passed with 63 calls. This create intent is consumed: never
+replay it or regenerate the bootstrap-authorized owner tenant key. The new
+retained namespace has exactly four accepted resources and AWS-owned default
+table encryption. Nine separate bounded readonly checks confirmed exact caller,
+CREATE_COMPLETE, four namespace resources, unchanged nineteen app resources,
+same accepted TableId, closed API, reserve zero and absent MAPIT config metadata.
+No new binding keys, owner authorization row, MAPIT session, human login or
+business E2E has followed. The original synthetic state and production/MFA/
+Telegram/quota ten are unchanged. Owner invitation must use the original
+authorization table, not the separate MACed identity-binding table, and precede
+key publication while current bootstrap readback still requires absent paths.
+Fresh independently reviewed source/CI/private authority is required for each
+subsequent operator. Preserve the earlier failed read-only envelope unchanged.
+The separate owner invitation runner passed independent review, 4,233 tests
+with twelve environment skips, compilation and evaluation 12/12. It uses one
+explicit frozen credential tuple across all clients, the original authorization
+table and exact owner key, strict repeat protections/runtime proof, historical
+path disjointness and one-dispatch CAS fencing. Source CI is pending; no live
+invitation or key publication is accepted by these offline tests.
+
+PR #90 merged normally to develop bc90430 with eight green source checks
+(37947840560) and eight integrated checks (37948299259). The owner profile
+passed 4,202 local tests, twelve environment skips, compilation, model-free
+evaluation 12/12 and all 50 pinned network-denied schemas. A fresh separate
+MAPIT bootstrap preflight then stopped at runtime_unverified after 35 SDK
+reads, before any create intent or AWS write. A bounded readonly diagnostic
+identified TypeError at the full resource-summary JSON digest: native SDK
+datetime timestamps are not JSON serializable. Preserve this unused/failed
+private envelope; do not extend its window or infer runtime acceptance.
+Correct only the native structured comparison, preserving every row field,
+then require independent SDK-shaped holdouts, fresh source CI/protections and
+new private authority before another preflight/create. Production and prior
+synthetic journals remain unchanged; no new keys or invitation were published.
+The narrow comparison repair passed independent review and five SDK-shaped
+positive/drift holdouts, 33 focused tests and the complete frozen repair suite:
+4,207 passed, twelve environment skips; compilation and evaluation 12/12.
+The separate unfinished invitation runner/tests were excluded from this repair
+checkpoint and are not part of its acceptance. Fresh source CI is still pending.
+
+PR #89 merged normally to develop c005772 after eight green source checks
+(37945444220). At this preparation checkpoint GitHub has not emitted the
+integrated push CI run; do not substitute the PR run or weaken source gates.
+The clean cloud checkout is pinned to that merge, and no live bootstrap or key
+publication has followed. The next owner-enrolled runtime profile is accepted
+offline: exact prior/namespace reconstruction, same bootstrap-authorized owner
+key, nineteen resources, API disabled and reservation zero; no alternate
+authorizer, synthetic-account reset, row mutation or cloud call. Its manifest
+owner pool/client/subject still needs binding to accepted OAuth/original owner
+receipts by the live operator. Single-issuer owner mode preserves historical
+A/B resources but not their authentication through that mode. Fresh CI, actual
+invitation, artifact/update/readbacks and bounded E2E remain separate work.
+Frozen owner-profile follow-up: 4,202 tests passed with twelve environment
+skips; compilation, model-free evaluation 12/12 and all 50 pinned official
+network-denied schemas passed. W2001 was corrected by retaining the existing
+ObservedApiId Ref, not by suppressing the rule or removing its parameter.
+Both static inventory tests include the new component and retain their guards.
+Independent review accepted the Ref correction and public-only schema fixture.
+
+Fresh MAPIT key-publication operator preparation, 2026-10-09: the separate
+runner binds a new source/CI/protection authorization and journal to exact
+current four-resource bootstrap and nineteen-resource closed runtime readbacks.
+Historical accepted bootstrap state is parsed only; its expired authority is
+never executed or renewed. Only the explicitly assumed enroller's SSM proxy
+allows the create-only PUT; base clients and assumed STS do not. Independent
+review found and corrected both an expired-constructor clock issue and the
+missing proxy PUT capability before any cloud use. Exact callback proof shape
+is shared with the coordinator, and failed dispatched calls count. Fresh CI,
+accepted real namespace bootstrap and separate publication intent remain
+required. No keys, real MAPIT session, invitation or endpoint opening follows
+from these offline tests.
+Frozen follow-up verification: 4,182 tests passed with twelve environment
+skips, 39 focused operator/runtime tests passed, compilation and model-free
+evaluation 12/12 passed, and all 49 pinned network-denied official schemas
+passed. Independent operator holdouts accepted historical expiry and scoped
+PUT capability. These source results do not substitute for fresh CI or live
+bootstrap/key-publication receipts.
+
+PR #88 merged normally to develop dd7e27d after eight green source checks
+(37942447565) and eight green integrated checks (37942830553). Its local full
+suite passed 4,169 tests with twelve skips before the final added SDK-failure
+counter holdout; the final focused independent units passed nineteen tests,
+including that extra holdout. Compilation and model-free evaluation 12/12
+passed. No cloud creation or key publication followed. Before any live use,
+independent review additionally required explicit exclusion of the retained
+hosted A/B LeadingKeys, not only the two separate storage-proof keys. The
+follow-up verifier checks the exact baseline tenant-read condition after the
+full actual IAM snapshot; three callback-level holdouts reject overlap and
+malformed/duplicate keys before the legacy verifier or closure reads. Nineteen
+focused wrapper tests pass. Fresh source CI is required for this correction.
+
+PR #87 merged normally to develop d6b0768 after eight green source checks
+(37940783332) and eight green integrated checks (37941174116). Frozen source:
+4,139 tests passed with twelve environment skips; compilation and model-free
+evaluation 12/12 passed. Separate real-MAPIT runtime/private-operator preparation
+now preserves the frozen synthetic verifier by first validating the full actual
+three/four-policy inventory, projecting only verified legacy policies, and
+rereading the complete IAM inventory and closure afterward. An offline check
+against the original actual private bootstrap receipt passed its strict parser
+with zero AWS calls and unchanged historical bytes. This is provenance evidence,
+not a new cloud preflight or bootstrap acceptance. Fresh authority/source CI,
+protections, private runtime evidence and one-shot journals remain required.
+No real-MAPIT namespace, binding keys or sessions have been published.
+
+PR #86 merged normally to develop 457c75b after eight green source checks
+(37940251010). Frozen packaging source passed 4,122 tests with twelve
+environment skips, compilation and model-free evaluation 12/12. The isolated
+legacy-auth test still imports only its three required files; a stale assertion
+about the complete production inventory was removed, not its import check.
+
+Separate real-MAPIT bootstrap coordinator preparation, 2026-10-09: independent
+offline review accepted the injected preflight/create/readback orchestration.
+The durable one-shot intent fences ambiguous writes; exact root/token readback
+can reconcile a committed request without repeating creation. Source, protection,
+identity, closure, exact template/resource/IAM/table metadata and pagination are
+validated within exclusive time and read budgets. This is not deploy-ready:
+trusted source/protection/current-runtime adapters and a fresh private runner
+still require integration and review. No live stack, keys or MAPIT session have
+been created by this coordinator. Historical synthetic receipts remain immutable.
+
+Runtime packaging repair preparation, 2026-10-09: local synthetic ARM readiness
+failed at runtime import because the production and synthetic multiuser source
+inventories omitted the new unconditional cloud_provider dependency
+mapit_identity.py. Only those two source lists were extended; legacy base
+inventory and deployed artifacts remain unchanged. Independent review accepted
+isolated source import tests with no repository/editable fallback and deliberate
+missing-module negatives. After the fix, the unchanged synthetic multiuser ARM
+probe passed all nine checks with 28 pinned wheels, networking disabled and
+pull=never. The production-profile ARM probe with geography passed all 22 checks
+with 30 pinned wheels and simulated services; no production service was called.
+This is local synthetic evidence, not a new hosted runtime acceptance
+or MAPIT onboarding. Production/MFA/Telegram and quota ten remain untouched.
+
+Fresh real-MAPIT bootstrap contract source preparation, 2026-10-09: independent
+offline review accepted exact field/digest/template validation, distinct intent
+kind, historically disjoint tenant paths and a sticky exclusive time guard.
+Forty-eight focused contract/independent/factory tests passed. Evidence hashes
+and frozen source validation passed 4,110 tests with twelve environment skips;
+compilation and model-free evaluation 12/12 passed. The hashes
+are references, not fresh CI or cloud evidence. The pure contract performs no
+I/O, grants no deployment authority and does not replace a reviewed live
+coordinator/runtime verifier. Synthetic receipts and consumed journals remain
+unchanged. Owner login/MAPIT onboarding and production promotion are not accepted.
+
+PR #84 merged normally to develop 7c74bb4 after eight green source checks
+(37935800337) and eight integrated checks (37936126885).
+A separate fresh readonly OAuth context check passed 22 AWS reads
+with exact accepted owner pool, DEV client and three-resource stack/readback.
+No listener, human login, cloud write or MAPIT access followed that check.
+
+Separate real-MAPIT key publisher source preparation, 2026-10-09: the injected
+core and paired-client factory passed independent offline review and 24 focused
+tests. Frozen full suite: 4,081 passed with twelve environment skips;
+compilation and model-free evaluation 12/12 passed. No live publication occurred.
+The
+schema-2 DEV core uses a distinct journal and create-only SecureString version
+one, exact role checks and bounded metadata/decrypted readback. Explicit STS/SSM
+client construction uses the same temporary in-memory credentials, never ambient
+discovery. This source is not live publication authority or an accepted real
+namespace bootstrap. Preserve historical synthetic keys/journals and all
+production/MFA/MAPIT/Telegram settings; quota remains ten. No cloud write follows
+without the separate reviewed bootstrap, private envelope and fresh CI gates.
+
+PR #83 merged normally to develop 8eca000 after eight green source checks
+(37934189579); all eight integrated checks passed (37934531539). Frozen local
+login suite passed 4,057 tests with twelve environment skips. Linux CI exposed
+only a test readiness race, corrected by waiting for the bound-listener event
+before the first HTTP request; independent review accepted the test-only fix.
+This is source acceptance, not a human login or real MAPIT onboarding receipt.
+
+Assisted owner DEV login source checkpoint, 2026-10-09: independent offline
+review accepted the single-use loopback code/PKCE flow and consumed-receipt
+read-only composition; 89 focused tests passed. Owner identity comes from the
+accepted private original production release receipt, never the candidate JWT.
+Parser-only context identity registration rejects copied/replaced subjects
+before SDK access. Fresh clean-develop CI/protections and exact unchanged
+pool/app plus three-resource OAuth readback precede listening on registered
+127.0.0.1:8787. Readiness follows binding, callback completion precedes return,
+and the fifteen-second exchange lease starts only after the human callback.
+Only exact signed DEV resource/client/owner/scope and sufficient remaining
+lifetime reach the explicit in-memory consumer. No token/code/verifier is
+persisted or printed, and no personal password/MFA is automated. The explicit
+CLI is an authentication smoke, not an invitation, real MAPIT enrollment or
+runtime deployment. No cloud operation or human login occurred in this source
+checkpoint; source CI/live acceptance remain separate. Preserve every consumed
+creation/storage/user intent, production/MFA/MAPIT/Telegram and quota ten.
+Temporary wakefulness must be removed before handoff.
+
+Owner OAuth DEV cloud checkpoint, 2026-10-09: PR #81 merged normally to develop
+2118d9b after eight green PR checks (CI 37922442130); all eight integrated checks
+passed (CI 37922805228). Independent offline review accepted the three-resource
+factory, SDK readback and private one-shot runner. Frozen local suite: 3,968
+passed, twelve environment skips; 73 focused checks, compilation, model-free
+evaluation 12/12 and all 49 pinned network-denied schemas passed. One fresh
+private authority passed preparation (16 reads), preflight (18 calls), a single
+acknowledged CreateStack (33 calls) and exact acceptance (23 calls).
+Independent receipt review and 22 further bounded metadata reads accepted the
+same context, exact three resources and candidate readback digest.
+The retained DEV owner OAuth stack is CREATE_COMPLETE with three resources;
+its create intent is consumed. Never replay it or use a fresh journal to repeat creation. Owner
+pool/domain/MFA and every prior client read back unchanged; the original
+nineteen-resource DEV app remains closed with Lambda reserve zero. Production,
+MAPIT, Telegram, historical synthetic storage/users/keys and quota ten are
+unchanged. The exact assisted loopback callback is registered, not a running
+listener or observed Codex registration. This is OAuth infrastructure acceptance,
+not an owner login, real MAPIT enrollment, hosted real-account E2E or production
+multiuser promotion. Real-namespace bootstrap/key publication, fresh invitation
+authorization and closed enrolled-runtime delivery still need reviewed operators
+and new exact private authority. Remove owned temporary wakefulness before final
+handoff; no persistent display settings are changed.
+
+Real-account DEV preparation, 2026-10-09: the owner approved a separate real
+MAPIT namespace with independent keys/secrets and minimal DEV read permissions,
+within the existing gross USD 1/month target (not a hard billing cap). Exact
+scope/cost review precedes live provisioning. New opt-in source composes the
+existing verified invitation/durable snapshot with a readonly enrolled provider,
+private manifest, distinct invitation/MAPIT public JWKS and a five-minute window.
+The namespace uses its own mapit table/config and schema-two key envelope; legacy
+synthetic schema-one bytes, tables, keys and consumed journals remain immutable.
+A new pure four-resource bootstrap preserves exact KMS context in handler,
+operator and identical boundary policies. Its initial IAM subset allows at most
+eight exact fresh tenant paths; registry capacity remains sixteen. New source
+is not a deployment, real-login receipt or permission to replay historical ops.
+Fresh review/CI, exact runtime/manifest/private authorities and bounded closure
+are still required. A DEV-only OAuth client in the definitive owner identity
+provider was separately approved by the owner: reuse the existing user/MFA with
+only a new DEV resource server, public code/PKCE client and managed-login
+branding. Preserve every existing client and the pool/domain/MFA. Offline
+preparation is not a cloud receipt; reviewed source CI and fresh one-shot
+private authority must precede its creation. No endpoint opening is implied.
+Do not reset historical technical users, change owner MFA/production/Telegram,
+raise quota ten or use paid models. See docs/multiuser-onboarding.md. Temporary
+owned wakefulness must be removed before handoff.
+
+Latest accepted cloud storage checkpoint, 2026-10-07: PR #78 merged normally
+to develop at 4169fa4 after eight green PR checks; all eight integrated checks
+passed (CI 37646210883). Full local suite: 3,842 passed, twelve environment skips;
+model-free evaluation 12/12, compilation and all 47 pinned network-denied
+CloudFormation schemas passed. A fresh private authorization bound the original
+bootstrap/probe/key journals, TableId/creation time, original KMS key and observed
+CFN policy physical ID. Preflight passed with 46 reads. The single SSE-only
+update was acknowledged (47 calls) and accepted by exact readback (47 calls):
+same table and four resources, AWS-owned default encryption, unchanged IAM and
+original config SecureString version one. That update intent is consumed.
+One separate fresh synthetic storage proof passed with 132 calls: A/B enrollment,
+isolated results, terminal A revocation and unaffected B. Final verification
+passed with 58 calls: durable A revoked/B active and both tenant parameters still
+version one. This proof intent is consumed; never replay, reset historical users,
+rotate or republish the accepted keys, delete/recreate resources, or relax guards.
+Independent receipt review accepted unchanged historical digests and distinct
+update/proof journals. Nine independent bounded final AWS reads confirmed exact
+identity, closed API, Lambda reserve zero, original nineteen app resources,
+UPDATE_COMPLETE binding stack, same TableId, owned encryption, config version
+one and regional Lambda quota ten. Production/MFA/MAPIT/Telegram are unchanged.
+This accepts actual cloud SDK storage with synthetic identities/business data,
+not hosted MAPIT guest onboarding or a multiuser production promotion. The prior
+hosted synthetic HTTP DEV acceptance remains separate. Future deployment/onboarding
+needs its own reviewed manifest/runtime/secret authority; no consumed envelope
+is replayable. Temporary wakefulness must be removed before final handoff.
+
+The owner subsequently approved the exact existing empty DEV binding table's
+one-property transition to AWS-owned default encryption, without IAM expansion,
+resource replacement or key republication, followed by one fresh synthetic A/B
+storage proof. This supersedes the decision request below, not its consumed
+operation records. Require independent review, fresh source CI/protections,
+immutable historical bootstrap/probe/key digests, stable TableId/creation time,
+and separate fresh update/proof journals. The accepted SecureString config must
+remain version one; load its keys only in memory. No historical user reset,
+production/MFA/MAPIT/Telegram change, paid model or quota increase is authorized.
+Keep temporary wakefulness active while working and remove it before handoff.
+This is authorization, not evidence of a completed update or storage acceptance.
+
+Latest live binding checkpoint, 2026-10-07: PRs #74/#75/#76 merged normally;
+develop d375e4e passed all eight integrated checks (CI 37637055555). Full local
+suite passed 3,786 tests with twelve environment skips. A fresh private authority
+passed bootstrap preflight (42 calls), one acknowledged creation (43 calls),
+and exact acceptance (47 calls). The dedicated four-resource identity-binding
+stack is now retained and accepted; never replay its creation. The original
+nineteen-resource app remained closed and unchanged except for its separately
+owned read-only policy attachment. One fresh storage probe passed preflight,
+published/verifiably read the Standard SecureString config keys at version one,
+and stopped at storage_exercise_unverified. Its probe intent is consumed;
+the keys journal is accepted, not permission to regenerate or overwrite keys.
+Read-only reconciliation found no binding item and neither tenant parameter.
+The assumed enroller's real GetItem is denied by KMS Decrypt, not DynamoDB IAM:
+DescribeTable and DescribeKey bind the table to existing alias/aws/dynamodb,
+while the enroller deliberately permits only the SSM key. IAM simulation of
+GetItem alone being allowed does not cover this dependent KMS call.
+No cloud A/B storage acceptance follows. A new owner decision is requested for
+an independently reviewed, one-intent update of only this empty table to the
+AWS-owned encryption default (still encrypted), preserving IAM/config keys,
+followed by separately bound fresh proof journals. Do not replay this probe,
+delete/recreate resources, relax KMS denies, reset historical users, touch
+production/MFA/MAPIT/Telegram or increase quota ten. Empty immediate reads do
+not justify replay. Fresh source/CI/protection and exact old/new template,
+resource and consumed-key provenance are required for any recovery.
+
+On 2026-10-07 the owner explicitly approved the separate DEV identity-binding
+table and minimum enrollment/runtime permissions for synthetic onboarding,
+within the existing gross USD 1/month DEV target (not a hard cap). The reviewed
+additive factory owns four resources: retained dedicated table, exact-operator
+enrollment role/boundary, and a read-only handler policy attachment. It does not
+update the accepted nineteen-resource app or give enrollment powers to CD/proof
+roles. Use two fresh synthetic keys, excluding both historical A/B keys. The
+third exact Standard SecureString config path holds stable independent MAC/proof
+keys; no key bytes or key hashes belong in Git, archives, environments, journals
+or the vault. No historical account reset/revival, production/MFA/MAPIT/Telegram,
+paid model or quota-ten change follows. Fresh reviewed source/CI/protections and
+new private authority/intents precede live writes; never replay consumed ones.
+The new readonly current-runtime verifier passed actual AWS with 28 bounded
+reads: accepted target template/code, original nineteen resources, exact role
+policies, API closed and reserve zero. Its config resolver handles only reviewed
+CFN refs, including ObservedApiId bound to the verified physical API. The pinned
+network-denied official schema checker passed all 46 templates. These are not
+new-stack or cloud-enrollment acceptance receipts. Maintain owned temporary
+wakefulness while working and remove it before final handoff.
+
+Shared onboarding preparation on 2026-10-07 is independently accepted offline:
+dedicated DynamoDB sixteen-record document CAS, strong reads, terminal records,
+exact table/account/environment-bound v2 row/document MACs, short deadlines,
+fresh same-credential STS before mutations and sticky unknown-write fencing.
+The lazy DEV-only cloud composition and assisted single-use loopback form pass
+signed two-tenant enrollment, create-only SSM publication, provider isolation
+and adverse account/ambiguous-write holdouts. Pure dedicated DEV table and
+exact-resource permission drafts pass the pinned network-denied schema checker
+(45 templates). Full suite: 3,653 passed, twelve environment skips; compilation
+and deterministic evaluation 12/12. Review/source CI precede promotion.
+This is not a cloud onboarding deployment or hosted guest/password OAuth flow.
+No new AWS resources/IAM, MAPIT session/data, owner MFA, Telegram, production,
+regional quota or paid-model operation occurred. Existing hosted intents remain
+consumed; A remains terminally revoked and DEV closed. Actual dedicated-table,
+role/boundary, private key lifecycle and manifest/runtime integration require
+new exact reviewed authority and bounded readback/closure; do not treat these
+pure factories as write permission or an absent item as ambiguous-write replay
+authority. Expected account/role comes from pinned private operator authority.
+See docs/multiuser-onboarding.md. Remove owned temporary wakefulness before
+final handoff; no persistent power settings are changed.
+
+Offline onboarding preparation on 2026-10-07 is independently accepted: new
+explicit SQLite identity registry, context/key-sealed persistent MAPIT proof
+envelope, pending one-shot intent before authentication/publication, strict
+create-only SSM adapter, and enrolled provider with binding checks around
+secret/business/cached access. Two signed synthetic MCP/MAPIT identities pass
+status/distance isolation, crossed session rejection, fresh verifier/database
+reopen and in-call/cached revocation. Independent holdouts cover capacity16
+including tombstones, two-connection single publication, and malformed tokens
+before intents. Final full suite: 3,593 passed, twelve environment skips;
+compilation and deterministic evaluation 12/12. CI adds offline tests to the
+existing pinned SDK job only.
+This is not deployed enrollment: SQLite is not shared Lambda persistence;
+cloud binding backend, private enrollment channel, real account verifier using
+fresh STS with the same credentials, pinned key lifecycle and exact IAM/CD
+integration are still separate gates. No live AWS/MAPIT, IAM, owner MFA,
+Telegram, production or quota change follows. Never replay a pending binding;
+retain any possibly published secret for separately reviewed reconciliation.
+See docs/multiuser-onboarding.md for the exact limitations and recovery contract.
+
+Offline follow-up on 2026-10-07: opt-in `CloudServicesProvider` now requires an
+explicit same-config verifier and a trusted expected MAPIT identity proof
+together. It validates the proof before secret access, checks refreshed signed
+ID-token continuity before Identity Pool exchange, and pins the original proof
+across refresh. Independent review accepted the default-preserving seam;
+3,549 tests passed with twelve environment skips, compilation and deterministic
+evaluation 12/12. This is not enrollment or a deployed change: proofs are
+verifier-instance-bound and need a separately reviewed durable identity-binding
+flow. No new cloud, MAPIT, MFA, Telegram, IAM or quota operation followed.
+
+Functional hosted multiuser DEV acceptance completed on 2026-10-07 on develop
+`f529fd0` (PR #69), after eight green PR checks and eight integrated CI checks
+(37606627964), independent review, 3,542 offline tests/twelve Windows skips,
+and exact immutable predecessor proof. One fresh private continuation published
+the artifact, accepted the closed nineteen-to-nineteen update and reset/logged
+in each same technical A/B once. The candidate ARM probe and real HTTP E2E
+passed all eleven predicates with exactly ten calls: A/B status and distance,
+cross-tenant and anonymous rejection, committed A revocation, rejection of A
+and continued B access. Mandatory closure and final runtime/inventory checks
+passed. Six independent bounded AWS reads confirmed exact identity, disabled
+API, reservation zero, UPDATE_COMPLETE, nineteen resources and accepted roles.
+This attempt and its publication/update/reset/tenant/window intents are consumed;
+never replay them. A remains terminally revoked and B retains its synthetic
+authorization behind the closed endpoint. Multiuser DEV is accepted, but real
+guest onboarding/per-user MAPIT session acceptance and production promotion are
+not included. Production, owner MFA, MAPIT, IAM and regional quota ten were
+unchanged. Preserve immutable evidence privately, not in public Git.
+
+On 2026-10-07 the owner authorized restarting only OneDrive to recover local
+readiness. Its approximately 41 GB process ended and OneDrive was restarted;
+no files/settings were deleted. Docker server 29.8.1 responded and the pinned
+synthetic ARM probe passed all nine checks with 28 wheels. This is local platform
+evidence, not hosted multiuser acceptance. The recurrent accepted-runtime
+increment passed independent offline review and actual immutable 70-to-54
+lineage/artifact/target validation with zero cloud calls or writes. Preserve
+both consumed runtimes and same A/B identities. Fresh source CI/protections and
+a new private envelope/journals remain required before another hosted attempt;
+production, MAPIT, owner MFA, IAM and quota ten stay unchanged.
+
+PR #68 merged normally to develop at `9421f8f`; all eight PR and integrated
+checks passed. A fresh continuation passed exact closed preflight, private code
+publication, the accepted nineteen-to-nineteen update, and one reset/login plus
+signed-token verification for each same technical A/B account. It stopped at
+`archive_failed`/`arm_probe`, before creating a window or tenant writes. Six
+independent bounded reads verified exact identity, disabled API, reserve zero,
+UPDATE_COMPLETE, nineteen resources and the unchanged accepted role stack.
+This publication/update/reset allowance is consumed. Docker's local daemon
+reports "Docker Desktop is unable to start"; a pure synthetic ARM probe and
+minimal container also failed. Do not repeat resets or infer HTTP acceptance.
+The new accepted runtime/reset/artifact are immutable evidence, not replayable
+authority. Any next continuation must explicitly validate this nineteen-resource
+runtime against its prior accepted runtime and reset digests, retain all A/B
+subjects/keys, and pass a local ARM readiness gate before new cloud writes.
+Production, MAPIT, owner MFA, IAM and quota ten remain unchanged.
+
+PR #67 merged normally to develop at `bf4176d` after eight green PR checks;
+all eight integrated develop checks also passed. One fresh accepted-runtime
+continuation stopped at preflight before artifact publication, resets, opening
+or tenant writes. Bounded read-only diagnostics identified the exact mismatch:
+AWS returns `AuthorizationScopes=[]` on both public NONE metadata routes, while
+the verifier expected an absent field. Route identities, authorization types,
+authorizer absence, integration targets and the protected POST scope matched.
+Accept only absent/None or an empty list on those two exact NONE routes;
+retain exact nonempty POST scopes and reject malformed/nonempty public scopes.
+Independent offline review, CI and a fresh immutable envelope precede another
+live continuation. Historical journals remain read-only; production is unchanged.
+
+On 2026-10-07 Europe/Madrid the owner authorized the necessary DEV gates until
+functional multiuser acceptance, not a production promotion. Continue from the
+accepted nineteen-resource runtime with a separately reviewed opt-in operator,
+fresh source/CI/protection checks, exact prior artifact/template/code/identity
+bindings and new immutable journals/windows. Same two technical users only;
+one explicitly journaled fresh reset/login per account within each reviewed
+attempt, passwords/tokens only in memory. No consumed intent replay, historical
+rollback-guard relaxation, IAM expansion, new authorizer, production/MFA/MAPIT
+operation, paid model or Lambda quota increase follows. Publish only a new
+content-addressed private code artifact and update the existing closed runtime
+with exact artifact/source/window differences, then test A/B isolation and
+revocation in the bounded opening with mandatory verified closure. Reuse the
+persistent implementer/reviewer roles. Maintain temporary wakefulness while
+working and remove it before final handoff. This scope supersedes the pending
+owner-decision sentence below, not the historical consumed-operation records.
+
+The accepted-runtime continuation is now independently accepted offline,
+including the complete synthetic orchestration and same-root replay fencing.
+It preserves the exact nineteen-resource factory and original A/B subjects/keys,
+reuses retained Cognito/DynamoDB readbacks, validates API/JWT/invoke bindings,
+and checks code/closure/inventory before and after the bounded test. A completion
+event may be on a capped first page carrying NextToken; never follow or persist
+that token. The accepted timestamp end is exclusive. Opening and CFN update
+writes recheck the immutable cutoff after durable intent. Positive HTTP
+acceptance requires all eleven flags and exactly ten calls, not deployment alone.
+Fresh source CI/protection checks and a newly prepared private authorization
+remain required before the one new live attempt; no consumed journal is resumed.
+
+Superseding consumed attempt (2026-10-07 Europe/Madrid): the owner authorized
+one fresh same-A/B attempt after the selector correction. Exact develop
+`a566d28` had eight green checks and fresh branch/environment readbacks. A new
+immutable private authorization was prepared; neither the metadata repair nor
+orphan deletion was replayed. Both technical reset/logins completed, the ARM
+artifact was published and the closed nineteen-resource runtime update reached
+accepted/UPDATE_COMPLETE. The runner then stopped with runner_failed before
+creating a window or tenant journals. Six bounded read-only checks confirmed
+exact identity, API disabled, Lambda reservation zero, nineteen app resources
+and the accepted role stack; three further metadata reads confirmed the active
+expected handler and exact ARN tag read. Independent offline review identified
+the post-update ListTags request incorrectly using a function name instead of
+the already validated handler ARN. Correct this offline with a strict request
+regression; no IAM/template expansion is required. This reset/deployment
+allowance is consumed. Do not replay it, repeat resets, delete the now-owned
+authorizer or infer hosted E2E acceptance from the successful deployment.
+Production/MFA/MAPIT/quota ten remain unchanged; a separately reviewed bounded
+continuation is required before opening dev or repeating authentication.
+The exact-ARN correction passed independent review, 63 focused tests and
+compilation and is saved in PR #66. Temporary wakefulness was removed and the
+original HP power scheme verified before handoff. Passwords/tokens were not
+persisted: do not propose login without a newly authorized reset or pretend
+the earlier in-memory credentials remain available. Any accepted-runtime
+continuation requires a new offline recovery contract, not relaxed historical
+rollback guards or an automatic third recurring reset.
+
+Final offline handoff checkpoint (2026-10-07 Europe/Madrid): PR #65 merged
+normally to develop `a566d28` after eight green source checks. This fixes only
+the second-recurring reset preparer's selection of immutable B-creation
+provenance; it does not consume a new hosted attempt. The separate owner
+decision for one fresh same-A/B attempt is still pending. The temporary owned
+wakefulness helper was removed and the original HP power scheme verified;
+no persistent display settings were changed. Never replay the accepted metadata
+repair, orphan deletion or stopped hosted journals. Multiuser DEV is not yet
+accepted as functional, and production remains unchanged.
+
+Superseding live checkpoint (2026-10-07 Europe/Madrid): PRs #63/#64 and final
+develop `6b09eb2` passed eight checks. The exact-key/account DescribeKey CFN
+role/boundary update was acknowledged and fully read back; its new fifteen-field
+private binding is accepted. Crypto conditions and executor remain unchanged.
+The first metadata preflight stopped locally before any intent because its lock
+path exceeded the effective Windows path limit; an empty standard short journal
+passed preflight and was used instead. Keep the unused long-path envelope.
+The exact new orphan deletion completed with HTTP 204/empty readback (14 calls).
+These write allowances are consumed and must never be replayed. The hosted
+attempt then stopped at user_preflight_failed: second-recurring preparation
+selected the latest pair instead of the first B-creation pair. Offline readback
+confirms the real historical chain is valid and all new users/reset/recovery/
+artifact/runtime/window/tenant journals are absent: no password reset/login,
+publication, runtime update, endpoint opening or E2E followed. DEV remains
+closed and multiuser is not yet functional. Correct the runner selector and
+positive composition regression offline; a new one-attempt owner decision is
+requested before another hosted execution. No new IAM or orphan cleanup is
+needed. Preserve production/MFA/MAPIT/quota ten and all historical journals.
+The selector correction and actual preparer regression are independently
+accepted offline: original B-creation provenance succeeds with two reads and
+zero writes; the wrong recent window fails with no fresh state. Full suite
+passed 3,482 tests with twelve environment skips, compilation and model-free
+evaluation 12/12. Six final read-only AWS checks confirmed exact identity,
+closed API/Lambda, original eleven app resources and the completed metadata
+role stack. New hosted execution still requires the pending owner decision;
+do not repeat the role repair or authorizer deletion.
+
+Latest consumed DEV attempt (2026-10-07 Europe/Madrid): PRs #61/#62 merged
+normally to develop `0221545`; all eight develop checks passed. Exact orphan
+cleanup completed with HTTP 204 and empty readback (14 calls). One fresh reset
+and real signed-token login per same A/B account succeeded. The private ARM
+artifact was published, but the acknowledged runtime update rolled back fully:
+the exact CFN assumed role was denied `kms:DescribeKey` on the already bound
+AWS-managed Lambda key. DEV API/Lambda remain closed with the original eleven
+resources; no E2E, tenant publication or production/MFA/MAPIT operation occurred.
+This allowance is consumed, including both resets. One new unused authorizer
+was retained by this failed update; its exact create/delete-skipped lineage is
+separate from the authorizer already deleted. Never replay prior journals.
+The owner now approves only the separate exact-key CFN metadata permission and
+boundary repair, deletion of that new exact orphan, and one new same A/B attempt
+after independent review and fresh CI. Keep crypto-context restrictions and
+executor permissions unchanged. `DescribeKey` has no encryption context;
+metadata permission must be separate. Second recurring-reset provenance must
+bind both prior reset journals, original A and first B creation. This new
+allowance has not been executed. Temporary wakefulness is currently active and
+must be removed before handoff.
+
+On 2026-10-07 Europe/Madrid the owner approved deletion of only the exact unused
+retained DEV JWT authorizer and one fresh bounded deployment/E2E attempt with
+one reset/login of each same confirmed A/B technical account. Implement and
+independently review exact closure/lineage/intent/readback guards and terminal
+PAIR-reset provenance before executing. Do not replay any prior operation,
+relax KMS context, expand IAM, touch production/MFA/MAPIT or raise quota ten.
+Use fresh source CI/private immutable authority; stop on any ambiguous write
+or failed attempt without another automatic reset/retry. This allowance is
+not yet consumed at this historical preparation checkpoint (consumed above). Temporary wakefulness must
+be removed before handoff.
+
+Latest live checkpoint (2026-10-06 UTC): PR #60 merged normally to develop
+at `5b6c379`, with eight green checks on source and develop. The exact-key KMS
+CFN-role repair passed real readback; executor permissions remained unchanged.
+One reset/login per same confirmed technical A/B account and both signed-token
+checks succeeded. These allowances are consumed. The private ARM artifact was
+published; the runtime update was acknowledged then rolled back completely:
+JWT authorizer creation failed with AlreadyExists. Read-only evidence matched
+the retained authorizer to the prior create and DELETE_SKIPPED events; exact
+audience/issuer matched, with zero route references. Dev is closed (API disabled,
+Lambda reserve zero), with its original eleven-resource stack. No hosted E2E,
+tenant publication, production/MFA/MAPIT operation or quota change occurred.
+Deletion of that exact orphan and a fresh bounded pair-reset/deployment attempt
+were requested, not authorized or executed at this checkpoint. Never replay
+consumed writes. The latest terminal reset journal is PAIR-kind, not accepted
+by the older A-only rollback validator; retain original B-creation provenance.
+The strict KMS context remains untested. DEV multiuser is not yet functional.
+See docs/dev-multiuser-hosted-contract.md.
+Offline API-child prevention passed independent review and 3,442 full tests
+(twelve environment skips), compilation and model-free evaluation 12/12. The
+owned temporary wakefulness helper was stopped before handoff; original power
+scheme was unchanged. No persistent display setting was modified.
+
+Latest DEV checkpoint on 2026-10-06 supersedes the first-password gate below:
+develop 86e58bf passed eight checks and the separately bound read-only recovery.
+A's first permanent password was acknowledged and journaled, then Managed
+Login failed before token exchange; B remains pending. A's creation and first
+password allowances are consumed. Do not rerun the original recovery, reset
+the password implicitly or create another A. DEV remains closed; no artifact,
+runtime delivery, tenant authorization or endpoint opening occurred. Bounded
+existing audit projections matched login/authorize but no token event and do
+not identify the cause. Add safe diagnostics offline; a fresh explicit bounded
+same-user reset/login allowance and independently reviewed recovery are required
+before another live attempt. See docs/dev-multiuser-hosted-contract.md.
+The owner subsequently approved one new bounded password reset/login for the
+same technical A, then B and DEV E2E. This is a new reset intent, not replay of
+the first-password write. Require separate reset provenance, exact historical
+journal/sub/account/pool binding, fresh source checks and independent recovery
+review; stop on an ambiguous write or failed login. No production approval is
+included. That new allowance was subsequently consumed on develop 064e231
+after eight green checks and fresh protections/readbacks. A's reset was
+acknowledged and confirmed, then login failed at login_post with cookie_invalid.
+B remains pending; no artifact/runtime/table/opening step followed. Four bounded
+read-only account/app/API/Lambda checks confirmed the original eleven-resource
+setup, API disabled and reservation zero. Never replay this reset journal.
+Further work may diagnose/repair standards-based cookie handling offline; a
+subsequent same-user reset/login allowance was explicitly granted: one new
+attempt only after standards-based cookie repair, independent review and fresh
+CI. Use the latest consumed attempt's confirmed-user journal as provenance,
+preserve every historical reset journal, and stop on any unknown write/login.
+That subsequent allowance was consumed on develop 545b7fd after eight checks,
+fresh protections and the reviewed native-cookie increment. A's reset was
+confirmed; its login reached the token endpoint and failed at token_post with
+token_invalid. B remained pending; no publication/runtime/table/opening step
+followed. The reset journal is terminal, not a replay candidate. The integrated
+local suite passed 3,358 tests with twelve environment skips (two unrelated
+packaging-fixture read failures in an earlier run passed isolated and on the
+complete rerun). The native token parser incorrectly requires response-body
+scope, absent in official Cognito examples; this is a documented incompatibility,
+not confirmation of the exact failed live field. The owner granted one new
+same-A reset/login allowance after this correction, independent review and
+fresh CI; JWT-signed scope verification must remain mandatory and unchanged.
+That new allowance was subsequently consumed on develop a7bbd0a, after eight
+green source checks and fresh protections. Both technical users authenticated;
+signed JWTs, pinned ARM package and private artifact publication passed. The
+recurrent IAM narrowing was accepted, but the runtime update was acknowledged
+then rolled back: McpHandler failed with kms:Encrypt denied explicitly by its
+permissions boundary. B is now confirmed; neither user's write allowance may
+be replayed. No endpoint opening, tenant publication or HTTP E2E occurred.
+Read-only checks confirmed UPDATE_ROLLBACK_COMPLETE, original eleven resources,
+API disabled and reservation zero. Preserve all consumed journals and the
+verified private artifact. Further KMS permission repair/update and renewed
+authentication require a separately reviewed bounded recovery; do not silently
+reset either user or replay the acknowledged runtime update.
+The correction passed independent review,
+3,374 offline tests with twelve skips, compilation and model-free evaluation
+12/12. Body scope omission preserves unknown metadata; real RSA/JWKS tests
+confirm that signed JWT scope and signature remain mandatory. Fresh source CI
+is still required before the single new live attempt.
+Temporary wake helper PID 49340 (start 2026-10-06T21:03:09Z) was verified and
+removed before this gated handoff; no persistent power settings changed, and
+the original HP Recommended active scheme was reverified. A future continuation
+must explicitly renew temporary wakefulness rather than assume this helper runs.
+
+The owner then approved the exact existing AWS-managed-key DEV repair and one
+fresh reset/login per same confirmed technical A/B, followed only on success
+by bounded hosted E2E. This does not authorize user creation, customer keys,
+unlisted IAM permissions, production/main, owner MFA, quota or MAPIT changes.
+Read-only key/event projections match the alias key to the failed handler event
+and the prior request token to the completed rollback root. Audit parameters
+were absent and do not prove encryption context. The KMS factory and separate
+two-confirmed-user recovery passed initial independent offline review; integration,
+fresh source CI and live proof are pending. The optional KMS CFN role retains
+its boundary/key/service/context denies; the unlisted-action explicit deny is
+in its sole inline policy to respect distinct IAM size limits. Executor unchanged.
+No historical write/window is replayable. New temporary wake helper PID 27508,
+start 2026-10-06T21:25:22Z, has a two-hour automatic cutoff and must be removed
+before handoff; persistent display/power settings remain unchanged.
+
+The integrated recovery is now accepted offline: 3,424 tests passed with twelve
+environment skips, compilation and deterministic evaluation 12/12. Independent
+review accepted strict completed-reset/original/latest-pair provenance and the
+one-intent KMS repair CLI, including pending IAM update readbacks and exclusive
+private accepted-binding publication. HTTP checks now pace at least 1.1 seconds
+and fail immediately on invalid initialization/discovery. A fresh read verified
+the exact current app CFN role and termination protection. The bounded original
+setup-window Encrypt lookup returned zero events; environment-encryption context
+is still unconfirmed, not established by ZIP/filter documentation. Keep the
+approved exact FunctionArn condition fail-closed. Source CI/promotion and the
+new live allowances remain pending and unconsumed at this offline checkpoint.
+
+On 2026-10-06 the owner authorized retained isolated DEV multi-user acceptance:
+two technical users, an exclusive test Cognito pool with MFA off only there,
+and a durable authorization table. Shared Lambda quota remains 10, no real
+MAPIT credentials/data or paid inference, and production/owner MFA are unchanged.
+The compacted role update, closed eleven-resource setup and timed controls
+passed actual AWS readbacks on develop 4d1db49 after eight green checks. Their
+acknowledged intents are consumed; never replay them. Hosted acceptance then
+stopped at read-only bucket compatibility preflight before technical-user
+creation or any runtime/publication/opening operation. Preserve the closed DEV
+state; resource creation is not functional acceptance. A fresh source envelope
+and independently accepted SDK-shape compatibility are required to continue.
+The subsequent SDK/form compatibility passed independent review and eight
+checks on develop 6bf4ce8. Actual hosted acceptance then created only technical
+A and stopped on a local RFC subject restriction before password assignment.
+Read-only reconciliation found A enabled in FORCE_CHANGE_PASSWORD with a
+Cognito lowercase hexadecimal subject that has non-RFC version/variant bits.
+Keep A's creation intent consumed and the original user journal immutable;
+never create an alternative A, replay its creation, or extend its 300-second
+window. A separately bound recovery may perform A's first password assignment
+and B's original-name creation/password only after fresh source/readback gates.
+No runtime publication/update/opening, real MAPIT or production operation occurred.
+
+Latest hosted DEV checkpoint, 2026-10-06: PRs 50–52 merged normally to
+develop; all eight source checks passed on 79ad52e. The independently reviewed
+operators passed 3,273 offline tests (12 environment skips), compilation and
+model-free evaluation 12/12. SDK mapping and durable-journal integration defects
+were fixed before any AWS write. One fresh roles update was acknowledged, then
+AWS rejected the CloudFormation boundary policy size and rolled back completely.
+A subsequent exact 14-read verifier accepted the original roles/boundaries.
+No pool, table, technical users, runtime artifact or opening has been created.
+The consumed acknowledged intent must never be repeated. Policy compaction
+must preserve permissions, fit the 6,144-character managed-policy limit, pass
+independent review/source CI, and use a new private envelope/journal. Stable
+rollback status is not enough: require exact prior template, closed runtime and
+original role readback before a new intent. Production, owner MFA, Telegram and
+regional quota ten remain unchanged; hosted DEV E2E is still pending.
+
+The 2026-10-06 isolated multi-user DEV scope is owner-approved: retained test
+pool with MFA off only there, two technical users, authorization table, bounded
+opening, unchanged regional Lambda quota ten and no real MAPIT/paid models.
+PR 49 merged to develop at 242411d after eight green checks; source push CI
+37512182212 passed. Actual role preflight stopped before write intent because
+IAM returned exactly the four matching application tags, without CloudFormation
+system tags. Bounded read-only diagnostics confirmed that shape. The strict
+four-tag verifier correction is local pending fresh source CI; no AWS resource
+update, user creation, opening or hosted acceptance has occurred at this point.
+Production/main, owner MFA and Telegram remain unchanged. A separate clean
+deployment worktree prevents in-progress tooling from contaminating source gates.
+
+On 2026-10-06 the owner explicitly approved updating the existing retained DEV
+with an isolated admin-only Cognito test pool (MFA OFF only there), two technical
+users, and a retained DynamoDB authorization table. Keep production/main,
+definitive owner/MFA, owner-only Telegram and regional Lambda quota 10 unchanged.
+Use synthetic business data only, no MAPIT credentials/history or paid models.
+The incremental small-test estimate is about USD 0.03/month plus variable
+storage/logs, within the existing USD 1/month gross DEV target, not a hard cap.
+Open DEV only during bounded tests with independently armed closure. The user
+requires hosted functional multi-user DEV acceptance before notification for a
+separate production deployment; offline components are not that acceptance.
+The current opt-in identity proof, DynamoDB reader/CAS, durable DEV Lambda
+composition and manifest-bound synthetic entrypoint passed independent offline
+review. The new closed setup preserves the five original runtime resources and
+adds only six identity/table resources; subsequent closed runtime has nineteen.
+Do not weaken or replay historical bootstrap/updater journals for these phases.
+Two fresh read-only AWS checks confirmed the original non-root DEV operator and
+ready retained stack; its CloudFormation service-role association is absent.
+No AWS mutation or hosted E2E acceptance has occurred in this increment yet.
+
+On 2026-10-06 the user requested continuing multi-user MCP development.
+The opt-in local durable authorization increment is independently reviewed:
+explicit SQLite connection/schema, opaque tenant key/status/revision only,
+transactional CAS, 16-record capacity including terminal revoked tombstones,
+authority-bound sealed snapshots and fresh checks surrounding provider/business
+access. Synthetic ASGI tests verify A/B isolation, suppression after in-call
+revocation and rejection after database reopen. The default no-guard router
+behavior, deployed single-owner builders and owner-only Telegram are unchanged.
+This is not hosted multi-user acceptance: verified MAPIT account identity and
+refresh continuity, onboarding, shared durable cloud state, exact tenant secret
+publication/IAM and separately reviewed deployment remain pending. No AWS,
+MAPIT, Telegram or paid model operation follows from this offline increment.
+
+The separate retained-dev readonly-proof factory, private bootstrap/CAS runner,
+identity-only OIDC runner and initial-code direct-TLS downloader are accepted
+offline after independent review (102 focused tests). The factory is included
+in the network-denied official schema checker (38 templates). This is not live
+role creation, STS acceptance, code download/publication or complete dev CD.
+The preflight/update/S3-journal integration remains unaccepted preparation.
+Keep production/main and historical consumed intents unchanged.
+
+The retained-dev readonly-proof bootstrap subsequently passed fresh source CI
+and dev/develop protections on ee0cfec (CI 37485087411). Five preflight reads,
+one acknowledged CreateStack and eleven final readback calls accepted the exact
+two-resource role/boundary stack. The create intent is consumed; never replay
+it or alter its original private source/window/token. This is configuration
+acceptance, not an STS exchange, GitHub secret binding or runtime deployment.
+The shared provider, production, owner/MFA, MAPIT and quota 10 are unchanged.
+
 ## Scope
+
+On 2026-10-06 the owner approved permanent retained dev, with an additional
+gross USD 1/month target (not a hard billing cap), synthetic owner-access-only
+runtime and independent closure outside bounded tests. Preserve eu-west-1,
+regional Lambda quota 10, working single-owner prod, definitive owner/MFA and
+MAPIT data/session. No paid models, real guests or Telegram expansion follows.
+The new five-resource honda-mapit-mcp-dev-retained stack was created once from
+5d6e31a and accepted with 15 exact readbacks. It is closed: disabled API,
+reserve-zero inline Lambda, no routes/invocation permission/OAuth/environment
+or business/secret path. Its private original creation source/window/token/
+journal is immutable and consumed; never replay it or write a new verifier
+source into the original creation binding.
+PR #36 subsequently merged the independently reviewed exact retained-dev
+executor/service-role drafts, deterministic private bucket, closed synthetic
+runtime and read-only CloudFormation resource-binding helper to develop at
+befbb9f. Eight PR CI checks passed; local acceptance is 2,654 passed, eleven
+environment skips, compilation, model-free evaluation 12/12 and 37 pinned
+synthetic schema fixtures. The fixture client now validates against the real
+CognitoDevPolicy, not only CloudFormation shape. Runtime resource bindings
+alone do not prove current closure or out-of-band drift absence. No dev CD
+roles, S3/control resources, runtime update, activation or multiuser hosting
+were created by this increment; full dev CD remains IN PROGRESS. Production
+main remains unchanged. Subsequent artifact bootstrap work is preparation only
+until fresh source/CI/authorization/intents/readbacks are independently accepted.
+PR #37 and its eight develop checks then accepted the one-shot artifact
+bootstrap at b8e5a23 (CI 37469969070). A fresh private authorization fenced its
+two-read preflight and one acknowledged CreateStack. That write is consumed;
+never replay it. The stack reached CREATE_COMPLETE, but exact acceptance is
+pending SDK readback compatibility. PR #38 passed eight checks and merged at
+88eb2b7 (develop CI 37471949535): optional exact NOT_CHECKED resource metadata
+and the actual S3 encryption Rules/ApplyServerSideEncryptionByDefault shape.
+A separate read-only verification preserved the creation binding and stopped
+at S3's optional SSE-C blocking field. Bounded diagnostics confirmed every
+remaining bucket control without raw/private output. The narrow optional
+BlockedEncryptionTypes acceptance still requires fresh full readback;
+diagnostics are not an acceptance receipt. See the artifact status document.
+The injected four-resource IAM bootstrap is independently accepted offline
+with 29 focused tests, exact separate IAM/application stack bindings, strict
+provider host/audience, policy parsing, tags, pagination, boundary metadata,
+token-event ownership and immutable journal state. Parent checkpoint excluding
+the separate unaccepted controls draft: 2,725 passed, eleven environment skips;
+compilation/model-free evaluation 12/12 and actual network-denied SDK client
+construction passed. No IAM role or service-role association, runtime ZIP,
+controls stack, dev delivery workflow or hosted multiuser activation follows
+from this acceptance; full dev CD remains in progress. Main/prod is unchanged.
+Subsequently, eight develop checks on 4ae5408 (CI 37473406548) passed.
+The artifact verifier completed fourteen exact readbacks with read-only client
+facades, preserving the original creation binding and storing its verification
+source separately. Its private receipt is accepted; no runtime ZIP was uploaded.
+After fresh GitHub controls and four application resource-binding reads, a new
+immutable IAM authorization fenced seven preflight reads, one acknowledged
+CreateStack and seventeen complete readback calls. The separate retained-dev
+four-resource CD role stack is accepted. That creation write is consumed and
+must never replay. Shared provider/identity-only roles, prod, owner/MFA and
+quota 10 are unchanged. No web-identity exchange, GitHub secret, application
+CFN-role association, controls stack or delivery activation occurred. The
+separate controls and closed-delivery drafts still require independent/source
+acceptance and fresh live gates; full dev CD remains IN PROGRESS.
+The separate controls coordinator/runner is subsequently independently
+accepted offline with 36 focused tests, strict resolved IAM/EventBridge
+comparisons and named-IAM acknowledgement validation. No controls AWS write
+has occurred; this does not accept the separate delivery preflight prototype.
+Before any controls write, offline SDK inspection identified lowercase
+Step Functions tags. A separate narrow repair is independently accepted with
+40 focused tests; it also binds the entire initial app template. No controls
+write has occurred; fresh repaired-source CI is required before creation.
+The separate actual retained-dev ZIP builder, sealed build receipt, conditional
+CAS publisher and initial byte-exact prior-code capture are independently
+accepted offline (34 focused tests). Historical builders/publishers and prod
+are unchanged. No object was published, prior ZIP downloaded, CFN service-role
+associated, runtime updated or workflow activated. The delivery preflight,
+proof-role factory and update prototypes remain separate pending acceptance.
+The repaired controls source 201c07d subsequently passed eight develop checks
+(37479419359) and fresh repository/dev protections. One fresh immutable private
+authorization fenced nine preflight calls, one acknowledged controls creation,
+two pending readbacks and a complete 27-read acceptance. Its five resources
+are accepted; never replay the consumed create token or alter its window/source.
+Dev remains endpoint-disabled/reserve-zero; prod, owner/MFA and quota 10 are
+unchanged. No runtime update, invocation, artifact publication or workflow
+activation followed. Full retained-dev CD remains IN PROGRESS.
 
 On 2026-10-05 the user explicitly authorized PR promotion to develop then main
 and preparation/creation of the narrowly scoped AWS OIDC connection for CD in
@@ -765,3 +1891,21 @@ incrementally, especially:
 
 Distinguish confirmed facts, evidence found in frontend/code, hypotheses, and
 open questions. Do not invent capabilities or brute-force endpoints.
+
+On 2026-10-06 the owner decided that the dev source gate follows the existing
+production enforcement boundary. `validate_source_gate` therefore reads only
+the fixed repository, `develop` ref, bound CI run/workflow/jobs, and clean
+local source; it does not request branch-protection, environment, or
+administrator-bypass routes. Those controls remain enforced by GitHub and are
+not silently reimplemented by the gate. The normal source transport rejects
+administration routes; the separate diagnostic probe retains an explicit
+diagnostic-only adapter for capability checks. The gate remains credential-free
+apart from its injected temporary read token, uses direct TLS and bounded
+reads, and performs no writes, workflow activation, deployment, AWS operation,
+or production change. Foreign workflow-run repository projections are
+rejected. This is a source-gate parity increment, not a claim that continuous
+delivery is complete.
+The obsolete automatic protection-permission diagnostic workflow was removed;
+its historical results and separately callable read-only code remain in Git.
+The previous proposed GitHub App gate is superseded; do not create/install an
+App or upload a personal token as part of this dev source gate.

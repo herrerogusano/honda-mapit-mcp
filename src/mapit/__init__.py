@@ -8,6 +8,7 @@ from .auth import (
     TemporaryCredentials,
     UnsupportedCognitoChallenge,
 )
+from .mapit_identity import MapitIdentityError, MapitIdentityProof, MapitIdentityVerifier
 from .agent import AgentAdapterError, AgentAnswer, AgentRunOutcome, run_agent_once
 from .codex_cli_backend import (
     CodexCliBackend,
@@ -91,6 +92,9 @@ __all__ = [
     "RuntimeConfig",
     "TemporaryCredentials",
     "UnsupportedCognitoChallenge",
+    "MapitIdentityError",
+    "MapitIdentityProof",
+    "MapitIdentityVerifier",
     "ManagedSession",
     "RefreshTokenStore",
     "SessionManager",
