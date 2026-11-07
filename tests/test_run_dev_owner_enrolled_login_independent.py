@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import run_dev_owner_enrolled_login as runner
+from scripts.dev_owner_oauth_sdk import OwnerOAuthSdkBindings
 
 
 ACCOUNT = "123456789012"
@@ -77,8 +78,9 @@ def _runner(monkeypatch, *, events, evidence=None, clock=None, observer_call=Non
         return observer_factory(kwargs, Observer()) if observer_factory else Observer()
 
     class Channel:
-        def __init__(self, _policy, _keys, consume):
+        def __init__(self, _policy, _keys, consume, **kwargs):
             self.consume = consume
+            captured["channel_options"] = kwargs
 
         def serve(self, *, ready_callback=None):
             events.append("serve")
@@ -87,9 +89,9 @@ def _runner(monkeypatch, *, events, evidence=None, clock=None, observer_call=Non
             self.consume("opaque-verified-token")
             return "verified"
 
-    def make_channel(policy, keys, consume):
+    def make_channel(policy, keys, consume, **kwargs):
         events.append("channel_factory")
-        return channel_factory(policy, keys, consume) if channel_factory else Channel(policy, keys, consume)
+        return channel_factory(policy, keys, consume, **kwargs) if channel_factory else Channel(policy, keys, consume, **kwargs)
 
     monkeypatch.setattr(runner, "validate_owner_enrolled_login_lineage",
                         lambda **_kwargs: SimpleNamespace(policy=object()))
@@ -176,3 +178,95 @@ def test_window_expiry_during_final_protection_gate_prevents_listener(monkeypatc
     assert result == {"ok": False, "category": "owner_enrolled_login_unverified", "calls": 6}
     assert "channel_factory" not in events
     assert "serve" not in events
+
+
+@pytest.mark.parametrize("now", [1000.0, 1000.125, 1000.999999])
+def test_observation_window_constructs_real_oauth_sdk_with_fractional_clock(monkeypatch, now):
+    events = []
+
+    def real_sdk_constructor(kwargs, observer):
+        window = kwargs["observation_window"]
+        sdk = OwnerOAuthSdkBindings(
+            {}, account_id=ACCOUNT, operator_user_arn=OPERATOR,
+            until_epoch=window["authorized_until_epoch"],
+            wall_clock=kwargs["clock"], monotonic=kwargs["monotonic"],
+        )
+        assert sdk.calls == 0
+        return observer
+
+    result, events, captured, _ = _runner(
+        monkeypatch, events=events, clock=lambda: now,
+        observer_factory=real_sdk_constructor,
+    )
+
+    assert result["ok"] is True, events
+    window = captured["observation_window"]
+    start, end = window["authorized_from_epoch"], window["authorized_until_epoch"]
+    assert type(start) is type(end) is int
+    assert start < now < end <= now + 599
+    assert end - start == 600
+    assert "serve" in events
+
+
+@pytest.mark.parametrize("later, expected_ok", [(1598.999, True), (1599.0, False), (1599.5, False)])
+def test_fractional_initial_clock_keeps_integer_cutoff_exclusive(monkeypatch, later, expected_ok):
+    events = []
+    clock_value = [1000.75]
+
+    def advance_during_jwks(_policy):
+        events.append("jwks")
+        clock_value[0] = later
+        return b"jwks"
+
+    result, events, _, _ = _runner(
+        monkeypatch, events=events, clock=lambda: clock_value[0],
+        jwks_fetcher=advance_during_jwks,
+    )
+
+    assert result["ok"] is expected_ok
+    assert ("serve" in events) is expected_ok
+
+
+def test_channel_shares_original_observation_cutoff_and_runner_clocks(monkeypatch):
+    result, _, captured, _ = _runner(monkeypatch, events=[])
+    assert result["ok"] is True
+    options = captured["channel_options"]
+    assert options["consumer_seconds"] == 90.0
+    assert options["absolute_until_epoch"] == captured["observation_window"]["authorized_until_epoch"]
+    assert options["wall_clock"] is captured["clock"]
+    assert options["monotonic"] is captured["monotonic"]
+
+
+def test_expiry_during_consumer_gates_prevents_acceptance(monkeypatch):
+    events = []
+    clock_value = [1000.0]
+    protection_reads = 0
+
+    def protections(**_kwargs):
+        nonlocal protection_reads
+        protection_reads += 1
+        if protection_reads == 5:
+            clock_value[0] = 1599.0
+        return 7, 8
+
+    result, _, _, _ = _runner(monkeypatch, events=events,
+        clock=lambda: clock_value[0], protection_reader=protections)
+    assert result["ok"] is False
+
+
+@pytest.mark.parametrize("outcome, expected", [
+    ("token_invalid", "token_invalid"), ("window_expired", "window_expired"),
+    ("secret-provider-message", "login_failed"), ({"token": "secret"}, "login_failed"),
+])
+def test_unverified_channel_outcome_is_whitelisted(monkeypatch, outcome, expected):
+    class FailedChannel:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def serve(self, **_kwargs):
+            return outcome
+
+    result, _, _, _ = _runner(monkeypatch, events=[], channel_factory=FailedChannel)
+    assert result == {"ok": False, "category": "owner_enrolled_login_unverified",
+                      "calls": 6, "login_outcome": expected}
+    assert "secret" not in repr(result)

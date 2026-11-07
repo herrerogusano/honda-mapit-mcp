@@ -32,6 +32,8 @@ def _bare_current_state(authority, template, bundle, clients):
     current.synthetic_state_dir = "private/state"
     current.acl_checker = lambda _path: True
     current.clients = clients
+    current._constructor_clients = clients
+    current._before_sdk_read = None
     return current
 
 
@@ -272,6 +274,8 @@ def test_bootstrap_lineage_is_reloaded_and_cannot_be_rebound_between_phases(monk
     current.clients = {name: object() for name in (
         "sts", "cloudformation", "iam", "dynamodb", "ssm", "cognito",
         "apigatewayv2", "lambda", "kms")}
+    current._constructor_clients = current.clients
+    current._before_sdk_read = None
     current.mapit_bootstrap_authority_path = Path("private/bootstrap/authority.json")
     current.mapit_bootstrap_state_dir = Path("private/bootstrap/state")
     current.acl_checker = lambda _path: True
@@ -595,6 +599,32 @@ def test_owner_enrolled_current_state_constructor_runs_real_pre_and_accepted_pha
     assert accepted["authorization_row_revision"] == 1
     assert accepted["leading_keys"] == [*fixture["delivery"].auth["historical_tenant_keys"],
         fixture["delivery"].auth["owner_tenant_key"]]
+
+
+@pytest.mark.parametrize("cap", [0, 1, 5])
+def test_opt_in_shared_admission_caps_constructor_and_phase_dispatches(tmp_path, monkeypatch, cap):
+    fixture = _build_owner_enrolled_current_state_fixture(tmp_path)
+    old, scenario = fixture["current"], fixture["scenario"]
+    import scripts.dev_identity_binding_runtime_evidence as legacy_evidence
+    monkeypatch.setattr(legacy_evidence, "validate_private_location", lambda path: Path(path))
+    scenario.calls.clear()
+    admitted = []
+    def admit():
+        if len(admitted) >= cap:
+            raise ValueError("synthetic aggregate cap")
+        admitted.append(True)
+    kwargs = {name: getattr(old, name) for name in (
+        "authority", "accepted", "manifest_raw", "invitation_jwks", "mapit_jwks",
+        "mapit_bootstrap_authority_path", "mapit_bootstrap_state_dir",
+        "mapit_publication_state_dir", "mapit_evidence_path", "synthetic_binding_path",
+        "synthetic_authorization_path", "synthetic_state_dir", "clock", "monotonic", "acl_checker")}
+    kwargs.update(client_bundle=old.bundle, prior_template=old.prior, archive_bytes=old.archive,
+        archive_size=len(old.archive), owner_oauth_context=old.context, before_sdk_read=admit)
+    with pytest.raises(readback.OwnerEnrolledReadbackError):
+        current = readback.OwnerEnrolledCurrentState(**kwargs)
+        current("pre_update", fixture["delivery_binding"])
+    assert len(admitted) == cap
+    assert len(scenario.calls) == cap
 
 
 @pytest.mark.parametrize(

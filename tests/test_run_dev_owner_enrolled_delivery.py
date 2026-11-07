@@ -564,9 +564,13 @@ def test_full_private_loader_to_pre_publish_update_and_accepted_readback(
         return raw_inputs["jwks_fetcher"](policy.issuer_url + "/.well-known/jwks.json")
 
     class SyntheticChannel:
-        def __init__(self, _policy, _keys, consume):
+        def __init__(self, _policy, _keys, consume, **kwargs):
             login_stages.append("channel")
             self.consume = consume
+            assert kwargs["consumer_seconds"] == 90.0
+            assert type(kwargs["absolute_until_epoch"]) is int
+            assert kwargs["wall_clock"] is clock
+            assert kwargs["monotonic"] == clock.monotonic
 
         def serve(self, *, ready_callback=None):
             login_stages.append("serve")
