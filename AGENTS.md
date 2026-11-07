@@ -4,6 +4,9 @@ Read-only MAPIT (Honda) client and MCP server: local MCP core, route analytics,
 realtime, Codex agent adapter, private Telegram interface, opt-in distance
 ledger, geographic queries, a retained private single-owner production service
 and a retained closed DEV environment for multi-user work (AWS eu-west-1).
+Since 2026-10-27 an invitation-only multiuser production stack
+(`honda-mapit-mcp-prod-multiuser`, design in `docs/multiuser-production.md`)
+also runs, with its own multiuser DEV stack.
 
 Full chronological history and past authorizations: `docs/agent-history.md`
 (verbatim pre-split AGENTS.md) — consult it before any operation that might
@@ -11,7 +14,17 @@ repeat past work. Every rule below traces to that file; dates are decision dates
 
 ## Current state
 
-- Newest checkpoint (2026-10-09): PR #104 merged at develop cbe749b; a closed
+- 2026-11-07 (owner decisions, recorded in the vault decision log D-060 to
+  D-066): multiuser production is deployed from `main` (PR #113, 176d6b9);
+  the owner is its only user and no third party is invited. The durable
+  authorization used for that rollout is fulfilled: any new AWS write or change
+  to `main` needs its own fresh approval. The old single-owner production stays
+  up until the owner orders its retirement, after a read-only AWS review.
+- Delivery of the multiuser stacks is `scripts/deploy_multiuser.py` run locally
+  (change set reviewed, executed only with `--execute`). The owner wants CD for
+  the new production; it is planned, not implemented. `cd-release.yml` still
+  targets the old single-owner production and runs after every green `main` CI.
+- Earlier checkpoint (2026-10-09): PR #104 merged at develop cbe749b; a closed
   owner delivery then stopped at `artifact_write_unknown` and must never be
   resumed or replayed. The offline per-operation 30-second deadline correction
   still needed independent review and full frozen source verification (git:
@@ -53,6 +66,20 @@ General rules (all dates):
 - No historical journal/schema/receipt may change; consumed journals are not
   migrated. Do not relax historical rollback guards, KMS denies or validators.
 - Never follow or persist a CloudFormation event `NextToken`.
+
+Invitation-only multiuser (2026-10-23 to 2026-10-27, all under the now
+fulfilled durable authorization):
+- Merges of PRs #110, #111, #112 and #113; creation of the multiuser DEV stack
+  and its two callback updates; artifacts and prod stacks and the prod Codex
+  callback update; the owner's DEV invitation (later removed by
+  `borrar_mis_datos`) and prod invitation (accepted). None of these is
+  permission to repeat or extend them.
+- Old production release run 40498142012 was cancelled on purpose: never
+  relaunch, re-run or approve it, or any later old-production release, without
+  an explicit owner order.
+- Owner MAPIT enrollment operator (PR #110, D-048 in the vault log): integrated
+  offline, never executed, and superseded by the multiuser design on
+  2026-11-07. Do not execute it.
 
 Owner delivery / real-MAPIT DEV (2026-10-09):
 - Owner delivery after PR #104 (cbe749b) stopped at `artifact_write_unknown`.
@@ -132,14 +159,24 @@ Geography, Phase 6-8 and production (2026-09-30 to 2026-10-03):
 - Region eu-west-1; regional Lambda concurrency quota stays 10 (user chose to
   keep 10, 2026-10-02; unchanged through 2026-10-09). No quota increase.
 - Retained DEV gross target USD 1/month, not a hard billing cap (2026-10-06;
-  real-MAPIT namespace within it, 2026-10-09). Production target USD 1/month
-  gross, no hard cap (2026-10-03). Budget notification and cost-allocation tag
-  activation are unapproved; do not claim a hard cap or measured monthly cost.
-- Production is the permanent private single-owner service with its permanent
-  Codex connection (2026-10-03). No production multi-user promotion is
-  accepted; hosted multi-user DEV acceptance precedes notification for a
-  separate production deployment (2026-10-06). Present the exact
-  artifact/change and recovery before any production update (2026-10-05).
+  real-MAPIT namespace within it, 2026-10-09). Old production target USD 1/month
+  gross, no hard cap (2026-10-03). For the old stacks, Budget notification and
+  cost-allocation tag activation are unapproved; do not claim a hard cap or
+  measured monthly cost.
+- Old production is the private single-owner service with its Codex
+  connection (2026-10-03). It stays up, unchanged, until the owner orders its
+  retirement (2026-11-07); retiring it or any client connection needs that
+  order. Present the exact artifact/change and recovery before any production
+  update (2026-10-05).
+- Multiuser production (2026-10-27): invitation only, at most 10 users, gross
+  target about USD 5/month with a Budget alert (not a hard cap). Stop and ask
+  the owner before inviting any third party; a first guest test with a friend
+  is approved only when the owner names the person (2026-11-07). Guests sign in
+  only with their MAPIT credentials; we never persist their password.
+- Multiuser DEV stays deployed and reachable (2026-11-07): nobody can enter
+  without an invitation, so it is not closed between tests. This replaces the
+  "closed outside tests" rule for the multiuser DEV only; the old retained DEV
+  stays closed and needs its own gate to open.
 - Definitive owner Cognito identity/MFA (2026-10-02): never reset or delete the
   retained user, pool, domain or enrollment client; do not automate the
   personal password/MFA. The DEV-only OAuth client in that provider (2026-10-09)
@@ -167,6 +204,10 @@ Geography, Phase 6-8 and production (2026-09-30 to 2026-10-03):
 - Reuse the existing GitHub OIDC provider without mutation. Approval of a
   protected run never extends to later production updates or other runs.
 - Retained DEV CD remains in progress: do not call partial components complete.
+- CD for multiuser production is wanted but not built (2026-11-07). Until it
+  exists and is accepted, the local deploy script is the delivery path. The old
+  production release workflow is retired together with the old production, not
+  before, and only on owner order.
 - Do not modify other projects (for example `aws-remote-mcp`) or other MCP
   servers/global Codex configuration.
 - Out of scope unless separately approved: agent UI, frontend, webhook
