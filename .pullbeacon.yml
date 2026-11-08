@@ -1,0 +1,34 @@
+# PullBeacon configuration (https://github.com/herrerogusano/pullbeacon).
+# Read from the PR's base branch, never from the PR itself.
+version: 1
+
+# Review only on demand: comment "@pullbeacon review" on a pull request.
+automatic_review: false
+
+model:
+  provider: anthropic
+  name: anthropic/claude-sonnet-5-5
+  temperature: 0
+  timeout_seconds: 180
+
+limits:
+  max_changed_files: 40
+  max_changed_lines: 2500
+  max_context_chars: 80000
+  max_file_bytes: 200000
+  max_output_tokens: 8192
+  # Preventive per-run estimate, not an accounting cap. The real monthly cap (5 USD) is the
+  # spend limit of the Anthropic workspace that owns this repository's key.
+  max_estimated_cost_usd: 0.50
+  max_inline_comments: 15
+  max_batches: 4
+
+policy:
+  # Python source and tests, scripts, CloudFormation/IaC and design documents.
+  include: ["src/**/*.py", "tests/**/*.py", "scripts/**/*.py", "infra/**/*.yaml", "infra/**/*.yml", "infra/**/*.json", "**/*.md"]
+  exclude: ["tests/fixtures/**", "samples/**", "**/*.lock"]
+  # AGENTS.md (17 KB) is left out on purpose: it would be resent with every batch. Add it if the
+  # reviews miss project rules and the cost allows it.
+  context_files: []
+  # Review only: PullBeacon never commits to this repository.
+  apply_enabled: false
