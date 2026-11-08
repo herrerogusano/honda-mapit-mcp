@@ -1,0 +1,48 @@
+# PullBeacon review on demand: comment "@pullbeacon review" on a pull request,
+# or run this workflow by hand with a pull request number.
+# Review only (no apply job), pinned to PullBeacon v0.3.0 by full commit SHA.
+# No automatic run on pull_request events: a review costs money, so a person asks for it.
+#
+# Security model (see the PullBeacon SECURITY.md):
+# - issue_comment and workflow_dispatch run the workflow from the default branch, never from the PR.
+# - Nothing from the PR is checked out, installed, built or executed.
+# - Commands require write access, verified through the GitHub API before any LLM call.
+# - The workflow's only secret is ANTHROPIC_API_KEY, a key that belongs to this repository alone.
+name: PullBeacon
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: >-
+    pullbeacon-${{ github.event_name == 'issue_comment'
+    && format('comment-{0}', github.event.comment.id)
+    || format('pr-{0}', inputs.pr_number) }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@pullbeacon') &&
+       github.event.comment.user.type != 'Bot' &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: herrerogusano/pullbeacon@2e7a19478220ca19f28157b64be5775b5cf8a3d2 # pullbeacon v0.3.0
+        with:
+          mode: review
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
