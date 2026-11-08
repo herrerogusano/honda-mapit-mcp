@@ -165,7 +165,7 @@ jobs:
             exit 1
           fi
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.13"
       - name: Install local probe runtime
@@ -228,7 +228,7 @@ jobs:
             exit 1
           fi
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.13"
       - name: Install fixed build/runtime tools and download hash-locked ARM wheels
@@ -295,7 +295,7 @@ jobs:
             exit 1
           fi
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.13"
       - name: Install fixed identity SDK
