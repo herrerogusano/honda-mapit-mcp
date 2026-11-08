@@ -1,0 +1,39 @@
+# Dependabot version updates: weekly, grouped, with a cap on open pull requests.
+# Python (pyproject.toml) and the GitHub Actions used by the workflows.
+# This file is only read by Dependabot once it is on the default branch (main). Updates are
+# proposed against `develop`, the integration branch, never straight against `main`
+# (a push to `main` starts the production code-only release workflow).
+# Nothing is merged automatically.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "07:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 3
+    groups:
+      python-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "07:30"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(deps)"
