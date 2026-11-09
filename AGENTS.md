@@ -23,7 +23,9 @@ repeat past work. Every rule below traces to that file; dates are decision dates
 - Delivery of the multiuser stacks is `scripts/deploy_multiuser.py` run locally
   (change set reviewed, executed only with `--execute`). The owner wants CD for
   the new production; it is planned, not implemented. `cd-release.yml` still
-  targets the old single-owner production and runs after every green `main` CI.
+  targets the old single-owner production; it is disabled in GitHub since
+  2026-11-08 (as is `cd-recovery.yml`), so a green `main` CI no longer starts
+  it. Re-enable either only on owner order.
 - Earlier checkpoint (2026-10-09): PR #104 merged at develop cbe749b; a closed
   owner delivery then stopped at `artifact_write_unknown` and must never be
   resumed or replayed. The offline per-operation 30-second deadline correction
@@ -177,6 +179,15 @@ Geography, Phase 6-8 and production (2026-09-30 to 2026-10-03):
   without an invitation, so it is not closed between tests. This replaces the
   "closed outside tests" rule for the multiuser DEV only; the old retained DEV
   stays closed and needs its own gate to open.
+- Web client (vault decision D-078, 2026-11-09): the static web "Honda Ride
+  Log" is an approved client of the multiuser stack, like Claude and Codex
+  (public PKCE client and CORS, opt-in by private config;
+  `docs/multiuser-production.md`). Its frontend lives in a separate repository
+  (`honda-ride-log`), not here. With the web each user reads their own history
+  from their own browser (about 7 MAPIT reads per page load and 1 per opened
+  route); this is the only exception to the history-read rule in "MAPIT
+  safety" and does not cover agents. Deploying the web client to DEV or prod
+  needs its own owner approval.
 - Definitive owner Cognito identity/MFA (2026-10-02): never reset or delete the
   retained user, pool, domain or enrollment client; do not automate the
   personal password/MFA. The DEV-only OAuth client in that provider (2026-10-09)

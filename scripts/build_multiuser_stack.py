@@ -31,6 +31,18 @@ functions (and is duplicated in the public-config JSON for convenience).
 The MCP function is not referenced by the pool, so it receives the client ids
 directly (``MULTIUSER_CLIENT_IDS``). ``tests/test_build_multiuser_stack.py``
 checks the whole template for reference cycles.
+
+Web client (Honda Ride Log, vault decision D-078)
+-------------------------------------------------
+The static web is a third public PKCE client. It is off by default: it exists
+only when ``WebCallbackUrl`` (HTTPS, production) and/or ``WebDevCallbackUrl``
+(``http://localhost``, local development) is set. Those URLs are both the
+sign-in callbacks and the sign-out URLs. Their origins (derived in the
+template, so they cannot drift from the callbacks) are the only origins in the
+API's CORS configuration and in ``MULTIUSER_WEB_ORIGINS``, which the MCP Lambda
+adds to its own Origin allow-list. The public-config parameter is unchanged on
+purpose: the deployed identity Lambda rejects unknown fields in it, and the
+invitation page does not show the web client.
 """
 
 from __future__ import annotations
@@ -59,6 +71,16 @@ _RESOURCE_URL = {"Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazo
 _API_BASE_URL = {"Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"}
 _SCOPE = {"Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/mcp/use"}
 _ISSUER = {"Fn::Sub": "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"}
+# Web client: exact HTTPS URL (lowercase host, no port/query/fragment), and an
+# exact http://localhost URL for local development. Empty means "not configured".
+WEB_CALLBACK_PATTERN = r"^$|^https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?/[A-Za-z0-9._~/-]{0,200}$"
+WEB_DEV_CALLBACK_PATTERN = r"^$|^http://localhost:[1-9][0-9]{3,4}/[A-Za-z0-9._~/-]{0,200}$"
+# What a browser fetch() to POST /mcp needs beyond the CORS-safelisted headers
+# ("accept" is safelisted). The server is stateless JSON: it returns no
+# mcp-session-id, so nothing has to be exposed.
+CORS_ALLOW_METHODS = ("POST",)
+CORS_ALLOW_HEADERS = ("authorization", "content-type", "mcp-protocol-version")
+CORS_MAX_AGE_SECONDS = 7200
 
 
 def artifacts_export_name(env: str) -> str:
@@ -187,6 +209,18 @@ def _parameters(env: str) -> dict[str, Any]:
             "Description": "Enable the opt-in geographic tools.",
         },
     }
+    params["WebCallbackUrl"] = {
+        "Type": "String",
+        "Default": "",
+        "AllowedPattern": WEB_CALLBACK_PATTERN,
+        "Description": "Exact HTTPS URL of the static web client (sign-in and sign-out). Empty: none.",
+    }
+    params["WebDevCallbackUrl"] = {
+        "Type": "String",
+        "Default": "",
+        "AllowedPattern": WEB_DEV_CALLBACK_PATTERN,
+        "Description": "Exact http://localhost URL of the web client in local development. Empty: none.",
+    }
     if env == "prod":
         params["BudgetEmail"] = {
             "Type": "String",
@@ -258,7 +292,30 @@ def _role(env: str, statements: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _client(name: str, callbacks: list[Any], env: str) -> dict[str, Any]:
+def _origin(parameter: str) -> dict[str, Any]:
+    """Origin of an exact callback URL parameter: "scheme://host[:port]"."""
+    def part(index: int) -> dict[str, Any]:
+        return {"Fn::Select": [index, {"Fn::Split": ["/", {"Ref": parameter}]}]}
+
+    return {"Fn::Join": ["//", [part(0), part(2)]]}
+
+
+def _web_choice(both: Any, web_only: Any, dev_only: Any) -> dict[str, Any]:
+    """Pick by which web callbacks are configured (only used where one is)."""
+    return {"Fn::If": ["HasWebCallback", {"Fn::If": ["HasWebDevCallback", both, web_only]}, dev_only]}
+
+
+def _web_urls() -> dict[str, Any]:
+    return _web_choice([{"Ref": "WebCallbackUrl"}, {"Ref": "WebDevCallbackUrl"}],
+                       [{"Ref": "WebCallbackUrl"}], [{"Ref": "WebDevCallbackUrl"}])
+
+
+def _web_origins() -> dict[str, Any]:
+    return _web_choice([_origin("WebCallbackUrl"), _origin("WebDevCallbackUrl")],
+                       [_origin("WebCallbackUrl")], [_origin("WebDevCallbackUrl")])
+
+
+def _client(name: str, callbacks: Any, env: str) -> dict[str, Any]:
     return {
         "Type": "AWS::Cognito::UserPoolClient",
         "Condition": "SupportedDeployment",
@@ -380,6 +437,10 @@ def build_multiuser_template(env: str) -> dict[str, Any]:
     identity_name = identity_function_name(env)
     public_config = public_config_parameter_name(env)
 
+    web_client = _client("web", _web_urls(), env)
+    web_client["Condition"] = "WebEnabled"
+    web_client["Properties"]["LogoutURLs"] = _web_urls()
+
     resources: dict[str, Any] = {
         "UserPool": {
             "Type": "AWS::Cognito::UserPool",
@@ -446,6 +507,8 @@ def build_multiuser_template(env: str) -> dict[str, Any]:
         "CodexClient": _client("codex", [{"Ref": "CodexCallbackUrl"}], env),
         "ClaudeManagedLoginBranding": _branding("ClaudeClient"),
         "CodexManagedLoginBranding": _branding("CodexClient"),
+        "WebClient": web_client,
+        "WebManagedLoginBranding": {**_branding("WebClient"), "Condition": "WebEnabled"},
         "IdentityCognitoInvokePermission": {
             "Type": "AWS::Lambda::Permission",
             "Condition": "SupportedDeployment",
@@ -493,6 +556,15 @@ def build_multiuser_template(env: str) -> dict[str, Any]:
             "Properties": {
                 "Name": f"{PROJECT}-{env}-multiuser",
                 "ProtocolType": "HTTP",
+                # Only the web client's own origins, never "*". With no OPTIONS,
+                # ANY or $default route, API Gateway answers the preflight itself,
+                # before the JWT authorizer and without invoking a Lambda.
+                "CorsConfiguration": {"Fn::If": ["WebEnabled", {
+                    "AllowOrigins": _web_origins(),
+                    "AllowMethods": list(CORS_ALLOW_METHODS),
+                    "AllowHeaders": list(CORS_ALLOW_HEADERS),
+                    "MaxAge": CORS_MAX_AGE_SECONDS,
+                }, {"Ref": "AWS::NoValue"}]},
                 "Tags": {"Project": PROJECT, "Environment": env},
             },
         },
@@ -561,7 +633,19 @@ def build_multiuser_template(env: str) -> dict[str, Any]:
             "MAPIT_MCP_ENV": env,
             "MULTIUSER_ISSUER_URL": _ISSUER,
             "MULTIUSER_RESOURCE_URL": _RESOURCE_URL,
-            "MULTIUSER_CLIENT_IDS": {"Fn::Join": [",", [{"Ref": "ClaudeClient"}, {"Ref": "CodexClient"}]]},
+            "MULTIUSER_CLIENT_IDS": {"Fn::If": [
+                "WebEnabled",
+                {"Fn::Join": [",", [{"Ref": "ClaudeClient"}, {"Ref": "CodexClient"}, {"Ref": "WebClient"}]]},
+                {"Fn::Join": [",", [{"Ref": "ClaudeClient"}, {"Ref": "CodexClient"}]]},
+            ]},
+            # Same origins as the API's CORS configuration; empty when there is no web client.
+            "MULTIUSER_WEB_ORIGINS": {"Fn::If": [
+                "HasWebCallback",
+                {"Fn::If": ["HasWebDevCallback",
+                            {"Fn::Join": [",", [_origin("WebCallbackUrl"), _origin("WebDevCallbackUrl")]]},
+                            _origin("WebCallbackUrl")]},
+                {"Fn::If": ["HasWebDevCallback", _origin("WebDevCallbackUrl"), ""]},
+            ]},
             "MULTIUSER_USER_POOL_ID": {"Ref": "UserPool"},
             "MULTIUSER_TABLE": {"Ref": "InvitationsTable"},
             "MAPIT_CONFIG_JSON": {"Ref": "MapitConfigJson"},
@@ -608,9 +692,18 @@ def build_multiuser_template(env: str) -> dict[str, Any]:
         "AWSTemplateFormatVersion": "2010-09-09",
         "Description": f"Invitation-only multiuser Honda MAPIT MCP ({env}); see docs/multiuser-production.md.",
         "Parameters": _parameters(env),
-        "Conditions": {"SupportedDeployment": _condition(stack_name(env))},
+        "Conditions": {
+            "SupportedDeployment": _condition(stack_name(env)),
+            "HasWebCallback": {"Fn::Not": [{"Fn::Equals": [{"Ref": "WebCallbackUrl"}, ""]}]},
+            "HasWebDevCallback": {"Fn::Not": [{"Fn::Equals": [{"Ref": "WebDevCallbackUrl"}, ""]}]},
+            "WebEnabled": {"Fn::And": [
+                {"Condition": "SupportedDeployment"},
+                {"Fn::Or": [{"Condition": "HasWebCallback"}, {"Condition": "HasWebDevCallback"}]},
+            ]},
+        },
         "Resources": resources,
         "Outputs": {
+            "WebClientId": {"Condition": "WebEnabled", "Value": {"Ref": "WebClient"}},
             "McpUrl": output(_RESOURCE_URL),
             "ApiBaseUrl": output(_API_BASE_URL),
             "UserPoolId": output({"Ref": "UserPool"}),
@@ -624,7 +717,8 @@ def build_multiuser_template(env: str) -> dict[str, Any]:
 
 
 __all__ = [
-    "CLAUDE_CALLBACK_URLS", "CODEX_CALLBACK_PATTERN", "IDENTITY_HANDLER", "MCP_HANDLER", "artifacts_export_name",
+    "CLAUDE_CALLBACK_URLS", "CODEX_CALLBACK_PATTERN", "CORS_ALLOW_HEADERS", "CORS_ALLOW_METHODS",
+    "IDENTITY_HANDLER", "MCP_HANDLER", "WEB_CALLBACK_PATTERN", "WEB_DEV_CALLBACK_PATTERN", "artifacts_export_name",
     "build_artifacts_template", "build_multiuser_template", "identity_function_name",
     "mcp_function_name", "public_config_parameter_name",
 ]

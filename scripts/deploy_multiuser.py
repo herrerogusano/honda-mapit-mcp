@@ -11,6 +11,11 @@ The private config is a JSON object with ``domain_prefix``,
 ``privacy_contact``, optional ``geography`` (bool) and, for prod,
 ``budget_email``. ``MapitConfigJson``, the privacy contact and the budget
 email are never printed.
+
+The static web client is opt-in: optional ``web_callback_url`` (exact HTTPS
+URL of the published site) and ``web_dev_callback_url`` (exact
+``http://localhost:PORT/...`` URL of a local development server). With neither,
+the stack has no web client and no CORS.
 """
 
 from __future__ import annotations
@@ -31,7 +36,8 @@ from urllib.parse import urlsplit
 
 from mapit.multiuser_common import REGION, artifacts_stack_name, stack_name, validate_environment
 from scripts.build_multiuser_stack import (
-    CODEX_CALLBACK_PATTERN, build_artifacts_template, build_multiuser_template,
+    CODEX_CALLBACK_PATTERN, WEB_CALLBACK_PATTERN, WEB_DEV_CALLBACK_PATTERN, build_artifacts_template,
+    build_multiuser_template,
 )
 
 MAX_CONFIG_BYTES = 16 * 1024
@@ -59,6 +65,8 @@ class PrivateConfig:
     privacy_contact: str
     geography: bool
     budget_email: str | None
+    web_callback_url: str = ""
+    web_dev_callback_url: str = ""
 
     def __repr__(self) -> str:  # never leak private values
         return "PrivateConfig(<redacted>)"
@@ -77,7 +85,7 @@ def load_private_config(path: Path, env: str) -> PrivateConfig:
     except (UnicodeError, json.JSONDecodeError):
         raise DeployError("private config is not valid JSON") from None
     required = {"domain_prefix", "codex_callback_url", "codex_callback_port", "mapit_config", "privacy_contact"}
-    allowed = required | {"geography", "budget_email"}
+    allowed = required | {"geography", "budget_email", "web_callback_url", "web_dev_callback_url"}
     if env == "prod":
         required = required | {"budget_email"}
     if not isinstance(value, dict) or not required <= set(value) or not set(value) <= allowed:
@@ -123,7 +131,17 @@ def load_private_config(path: Path, env: str) -> PrivateConfig:
         raise DeployError("budget_email invalid")
     if env == "dev":
         budget = None
-    return PrivateConfig(domain, callback, port, mapit_json, contact, geography, budget)
+    # Optional web client. A present field must be a real URL: "off" is the absent field.
+    web = value.get("web_callback_url", "")
+    if "web_callback_url" in value and (
+            type(web) is not str or not web or not re.fullmatch(WEB_CALLBACK_PATTERN, web)):
+        raise DeployError("web_callback_url invalid (exact https URL, no port, query or fragment)")
+    web_dev = value.get("web_dev_callback_url", "")
+    if "web_dev_callback_url" in value and (
+            type(web_dev) is not str or not web_dev or not re.fullmatch(WEB_DEV_CALLBACK_PATTERN, web_dev)
+            or not 1024 <= int(web_dev.split("/")[2].rsplit(":", 1)[1]) <= 65535):
+        raise DeployError("web_dev_callback_url invalid (exact http://localhost:PORT/ URL)")
+    return PrivateConfig(domain, callback, port, mapit_json, contact, geography, budget, web, web_dev)
 
 
 def mask_account(account: str) -> str:
@@ -292,6 +310,8 @@ def stack_parameters(env: str, config: PrivateConfig, artifact_key: str) -> list
         "MapitConfigJson": config.mapit_config_json,
         "PrivacyContact": config.privacy_contact,
         "Geography": "1" if config.geography else "0",
+        "WebCallbackUrl": config.web_callback_url,
+        "WebDevCallbackUrl": config.web_dev_callback_url,
     }
     if validate_environment(env) == "prod":
         params["BudgetEmail"] = str(config.budget_email)

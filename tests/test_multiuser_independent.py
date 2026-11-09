@@ -151,7 +151,7 @@ def test_tenant_attribute_immutable_and_not_client_writable():
     resources = _resources()
     schema = resources["UserPool"]["Properties"]["Schema"]
     assert [item["Mutable"] for item in schema if item["Name"] == "tenant_id"] == [False]
-    for name in ("ClaudeClient", "CodexClient"):
+    for name in ("ClaudeClient", "CodexClient", "WebClient"):
         assert "custom:tenant_id" not in resources[name]["Properties"]["WriteAttributes"]
     assert resources["UserPool"]["Properties"]["AdminCreateUserConfig"]["AllowAdminCreateUserOnly"] is True
 
@@ -184,5 +184,33 @@ def test_pool_password_policy_is_permissive_for_migrated_passwords():
 
 
 def test_clients_cannot_change_email():
-    for name in ("ClaudeClient", "CodexClient"):
+    for name in ("ClaudeClient", "CodexClient", "WebClient"):
         assert "email" not in _resources()[name]["Properties"]["WriteAttributes"]
+
+
+def test_every_pool_client_is_accepted_by_the_mcp_lambda_and_has_no_secret():
+    """A client the MCP Lambda does not list could sign in but never call /mcp."""
+    resources = _resources()
+    clients = {name for name, item in resources.items() if item["Type"] == "AWS::Cognito::UserPoolClient"}
+    assert clients == {"ClaudeClient", "CodexClient", "WebClient"}
+    accepted = json.dumps(resources["McpFunction"]["Properties"]["Environment"]["Variables"]["MULTIUSER_CLIENT_IDS"])
+    for name in clients:
+        assert json.dumps({"Ref": name}) in accepted
+        assert resources[name]["Properties"]["GenerateSecret"] is False
+    branded = {item["Properties"]["ClientId"]["Ref"] for item in resources.values()
+               if item["Type"] == "AWS::Cognito::ManagedLoginBranding"}
+    assert branded == clients
+
+
+def test_web_origins_in_the_lambda_match_the_api_cors_origins():
+    """CORS (API Gateway) and the runtime Origin check must admit exactly the same origins."""
+    resources = _resources()
+    cors = resources["HttpApi"]["Properties"]["CorsConfiguration"]
+    web_only = cors["Fn::If"][1]["AllowOrigins"]["Fn::If"][1]["Fn::If"][2]
+    assert len(web_only) == 1
+    variables = resources["McpFunction"]["Properties"]["Environment"]["Variables"]
+    assert variables["MULTIUSER_WEB_ORIGINS"]["Fn::If"][1]["Fn::If"][2] == web_only[0]
+    # The Lambda never sees a preflight: API Gateway has no OPTIONS route and the adapter serves POST only.
+    from mapit.lambda_adapter import _FORWARDED_HEADERS
+    assert {"authorization", "content-type", "mcp-protocol-version"} <= _FORWARDED_HEADERS
+    assert set(cors["Fn::If"][1]["AllowHeaders"]) <= _FORWARDED_HEADERS
