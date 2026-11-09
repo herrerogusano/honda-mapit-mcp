@@ -300,19 +300,20 @@ def _origin(parameter: str) -> dict[str, Any]:
     return {"Fn::Join": ["//", [part(0), part(2)]]}
 
 
-def _web_choice(both: Any, web_only: Any, dev_only: Any) -> dict[str, Any]:
-    """Pick by which web callbacks are configured (only used where one is)."""
-    return {"Fn::If": ["HasWebCallback", {"Fn::If": ["HasWebDevCallback", both, web_only]}, dev_only]}
+def _web_items(web: Any, dev: Any) -> list[Any]:
+    """One list item per configured web callback; the other item is removed."""
+    return [
+        {"Fn::If": ["HasWebCallback", web, {"Ref": "AWS::NoValue"}]},
+        {"Fn::If": ["HasWebDevCallback", dev, {"Ref": "AWS::NoValue"}]},
+    ]
 
 
-def _web_urls() -> dict[str, Any]:
-    return _web_choice([{"Ref": "WebCallbackUrl"}, {"Ref": "WebDevCallbackUrl"}],
-                       [{"Ref": "WebCallbackUrl"}], [{"Ref": "WebDevCallbackUrl"}])
+def _web_urls() -> list[Any]:
+    return _web_items({"Ref": "WebCallbackUrl"}, {"Ref": "WebDevCallbackUrl"})
 
 
-def _web_origins() -> dict[str, Any]:
-    return _web_choice([_origin("WebCallbackUrl"), _origin("WebDevCallbackUrl")],
-                       [_origin("WebCallbackUrl")], [_origin("WebDevCallbackUrl")])
+def _web_origins() -> list[Any]:
+    return _web_items(_origin("WebCallbackUrl"), _origin("WebDevCallbackUrl"))
 
 
 def _client(name: str, callbacks: Any, env: str) -> dict[str, Any]:

@@ -206,10 +206,14 @@ def test_web_origins_in_the_lambda_match_the_api_cors_origins():
     """CORS (API Gateway) and the runtime Origin check must admit exactly the same origins."""
     resources = _resources()
     cors = resources["HttpApi"]["Properties"]["CorsConfiguration"]
-    web_only = cors["Fn::If"][1]["AllowOrigins"]["Fn::If"][1]["Fn::If"][2]
-    assert len(web_only) == 1
-    variables = resources["McpFunction"]["Properties"]["Environment"]["Variables"]
-    assert variables["MULTIUSER_WEB_ORIGINS"]["Fn::If"][1]["Fn::If"][2] == web_only[0]
+    web, dev = (item["Fn::If"] for item in cors["Fn::If"][1]["AllowOrigins"])
+    assert (web[0], dev[0]) == ("HasWebCallback", "HasWebDevCallback")
+    assert web[2] == dev[2] == {"Ref": "AWS::NoValue"}
+    variable = resources["McpFunction"]["Properties"]["Environment"]["Variables"]["MULTIUSER_WEB_ORIGINS"]
+    with_web, without_web = variable["Fn::If"][1]["Fn::If"], variable["Fn::If"][2]["Fn::If"]
+    assert variable["Fn::If"][0] == "HasWebCallback" and with_web[0] == without_web[0] == "HasWebDevCallback"
+    assert with_web[1:] == [{"Fn::Join": [",", [web[1], dev[1]]]}, web[1]]
+    assert without_web[1:] == [dev[1], ""]
     # The Lambda never sees a preflight: API Gateway has no OPTIONS route and the adapter serves POST only.
     from mapit.lambda_adapter import _FORWARDED_HEADERS
     assert {"authorization", "content-type", "mcp-protocol-version"} <= _FORWARDED_HEADERS
