@@ -8,7 +8,7 @@ import pytest
 from mapit.multiuser_common import CLAUDE_CALLBACK_URL, MultiuserError
 from scripts import build_multiuser_stack as stack
 
-PSEUDO = {"AWS::Region", "AWS::AccountId", "AWS::Partition", "AWS::StackName", "AWS::URLSuffix"}
+PSEUDO = {"AWS::Region", "AWS::AccountId", "AWS::Partition", "AWS::StackName", "AWS::URLSuffix", "AWS::NoValue"}
 
 
 def _references(value, names: set[str]) -> set[str]:
@@ -89,7 +89,7 @@ def test_no_reference_cycles(env):
     assert _find_cycle(_graph(template)) is None
     graph = _graph(template)
     assert "IdentityFunction" in graph["UserPool"]
-    assert not {"ClaudeClient", "CodexClient", "UserPool"} & graph["IdentityFunction"]
+    assert not {"ClaudeClient", "CodexClient", "WebClient", "UserPool"} & graph["IdentityFunction"]
     # All references resolve to resources, parameters or pseudo parameters.
     known = set(template["Resources"]) | set(template["Parameters"]) | PSEUDO
     text = json.dumps(template)
@@ -112,8 +112,10 @@ def test_resources_and_core_properties(env):
         "IdentityPrivacyInvokePermission", "McpLogGroup", "IdentityLogGroup", "IdentityRole",
         "McpRole", "McpFunction", "IdentityFunction",
     }
-    assert set(resources) == expected | ({"Budget"} if env == "prod" else set())
-    assert all(item["Condition"] == "SupportedDeployment" for item in resources.values())
+    web = {"WebClient", "WebManagedLoginBranding"}
+    assert set(resources) == expected | web | ({"Budget"} if env == "prod" else set())
+    assert all(item["Condition"] == ("WebEnabled" if name in web else "SupportedDeployment")
+               for name, item in resources.items())
     pool = resources["UserPool"]["Properties"]
     assert pool["UsernameAttributes"] == ["email"]
     assert pool["UsernameConfiguration"] == {"CaseSensitive": False}
@@ -176,7 +178,8 @@ def test_functions_and_environment(env):
         assert "ReservedConcurrentExecutions" not in function
     assert set(mcp["Environment"]["Variables"]) == {
         "MAPIT_MCP_ENV", "MULTIUSER_ISSUER_URL", "MULTIUSER_RESOURCE_URL", "MULTIUSER_CLIENT_IDS",
-        "MULTIUSER_USER_POOL_ID", "MULTIUSER_TABLE", "MAPIT_CONFIG_JSON", "MULTIUSER_GEOGRAPHY"}
+        "MULTIUSER_USER_POOL_ID", "MULTIUSER_TABLE", "MAPIT_CONFIG_JSON", "MULTIUSER_GEOGRAPHY",
+        "MULTIUSER_WEB_ORIGINS"}
     assert set(identity["Environment"]["Variables"]) == {
         "MAPIT_MCP_ENV", "MULTIUSER_TABLE", "MAPIT_CONFIG_JSON", "MULTIUSER_RESOURCE_URL",
         "MULTIUSER_PUBLIC_CONFIG_PARAMETER", "MULTIUSER_CODEX_CALLBACK_PORT", "MULTIUSER_PRIVACY_CONTACT"}
@@ -243,13 +246,15 @@ def test_iam_least_privilege(env):
 def test_parameters_no_echo_and_no_defaults_with_private_data(env):
     params = stack.build_multiuser_template(env)["Parameters"]
     expected = {"ArtifactKey", "DomainPrefix", "CodexCallbackUrl", "CodexCallbackPort",
-                "MapitConfigJson", "PrivacyContact", "Geography"}
+                "MapitConfigJson", "PrivacyContact", "Geography", "WebCallbackUrl", "WebDevCallbackUrl"}
     assert set(params) == expected | ({"BudgetEmail"} if env == "prod" else set())
     assert params["MapitConfigJson"]["NoEcho"] is True
     assert params["PrivacyContact"]["NoEcho"] is True
     if env == "prod":
         assert params["BudgetEmail"]["NoEcho"] is True
-    assert all("Default" not in value for key, value in params.items() if key != "Geography")
+    # The only defaults are public switches: geography off and the web client off.
+    assert {key: value["Default"] for key, value in params.items() if "Default" in value} == {
+        "Geography": "0", "WebCallbackUrl": "", "WebDevCallbackUrl": ""}
     assert params["Geography"]["AllowedValues"] == ["0", "1"]
     pattern = re.compile(params["CodexCallbackUrl"]["AllowedPattern"])
     assert pattern.fullmatch("http://localhost:1455/auth/callback")
@@ -275,7 +280,9 @@ def test_budget_only_in_prod():
 def test_outputs(env):
     outputs = stack.build_multiuser_template(env)["Outputs"]
     assert set(outputs) == {"McpUrl", "ApiBaseUrl", "UserPoolId", "ClaudeClientId", "CodexClientId",
-                            "IssuerUrl", "TableName", "LoginDomain"}
+                            "IssuerUrl", "TableName", "LoginDomain", "WebClientId"}
+    assert outputs["WebClientId"] == {"Condition": "WebEnabled", "Value": {"Ref": "WebClient"}}
+    assert all(item["Condition"] == "SupportedDeployment" for key, item in outputs.items() if key != "WebClientId")
 
 
 def test_artifacts_template(env):
@@ -299,3 +306,170 @@ def test_templates_are_json_serializable_and_env_validated():
         stack.build_multiuser_template("staging")
     with pytest.raises(MultiuserError):
         stack.build_artifacts_template("staging")
+
+
+# -- web client (Honda Ride Log, D-078) and CORS ---------------------------------------
+
+PAGES_URL = "https://herrerogusano.github.io/honda-ride-log/"
+PAGES_ORIGIN = "https://herrerogusano.github.io"
+VITE_URL = "http://localhost:5173/"
+VITE_ORIGIN = "http://localhost:5173"
+WEB_CASES = [(PAGES_URL, VITE_URL), (PAGES_URL, ""), ("", VITE_URL), ("", "")]
+_REMOVED = object()  # stands for AWS::NoValue
+
+
+def _resolve(value, parameters, conditions):
+    """Evaluate the small intrinsic subset the web/CORS parts use (offline, no AWS)."""
+    if isinstance(value, list):
+        items = [_resolve(item, parameters, conditions) for item in value]
+        return [item for item in items if item is not _REMOVED]
+    if not isinstance(value, dict):
+        return value
+    if set(value) == {"Fn::If"}:
+        name, yes, no = value["Fn::If"]
+        return _resolve(yes if conditions[name] else no, parameters, conditions)
+    if value == {"Ref": "AWS::NoValue"}:
+        return _REMOVED
+    if set(value) == {"Ref"} and value["Ref"] in parameters:
+        return parameters[value["Ref"]]
+    if set(value) == {"Fn::Split"}:
+        separator, text = value["Fn::Split"]
+        return _resolve(text, parameters, conditions).split(separator)
+    if set(value) == {"Fn::Select"}:
+        index, items = value["Fn::Select"]
+        return _resolve(items, parameters, conditions)[index]
+    if set(value) == {"Fn::Join"}:
+        separator, items = value["Fn::Join"]
+        parts = _resolve(items, parameters, conditions)
+        if all(isinstance(part, str) for part in parts):
+            return separator.join(parts)
+        return {"Fn::Join": [separator, parts]}
+    resolved = {key: _resolve(item, parameters, conditions) for key, item in value.items()}
+    return {key: item for key, item in resolved.items() if item is not _REMOVED}
+
+
+def _conditions(template, parameters):
+    def evaluate(node):
+        if set(node) == {"Condition"}:
+            return evaluate(template["Conditions"][node["Condition"]])
+        (name, args), = node.items()
+        if name == "Fn::Equals":
+            left, right = (parameters[arg["Ref"]] if isinstance(arg, dict) else arg for arg in args)
+            return left == right
+        if name == "Fn::Not":
+            return not evaluate(args[0])
+        if name == "Fn::And":
+            return all(evaluate(arg) for arg in args)
+        if name == "Fn::Or":
+            return any(evaluate(arg) for arg in args)
+        raise AssertionError(name)
+
+    return {name: evaluate(node) for name, node in template["Conditions"].items()}
+
+
+def _resolved(env, web, dev):
+    template = stack.build_multiuser_template(env)
+    parameters = {"WebCallbackUrl": web, "WebDevCallbackUrl": dev, "AWS::Region": "eu-west-1",
+                  "AWS::StackName": f"honda-mapit-mcp-{env}-multiuser"}
+    conditions = _conditions(template, parameters)
+    return _resolve(template, parameters, conditions), conditions
+
+
+@pytest.mark.parametrize("web,dev", WEB_CASES)
+def test_web_client_exists_only_when_a_web_callback_is_configured(env, web, dev):
+    template, conditions = _resolved(env, web, dev)
+    assert conditions["SupportedDeployment"] is True
+    assert conditions["WebEnabled"] is bool(web or dev)
+    resources = template["Resources"]
+    urls = [url for url in (web, dev) if url]
+    client = resources["WebClient"]["Properties"]
+    assert resources["WebClient"]["Condition"] == "WebEnabled"
+    if urls:
+        assert client["CallbackURLs"] == urls and client["LogoutURLs"] == urls
+    # Same public PKCE shape and scopes as the Claude and Codex clients.
+    reference = dict(resources["ClaudeClient"]["Properties"])
+    assert "LogoutURLs" not in reference
+    for key in ("ClientName", "CallbackURLs"):
+        reference.pop(key)
+    # The web discards the refresh token: one hour instead of thirty days.
+    assert (reference.pop("RefreshTokenValidity"), reference.pop("TokenValidityUnits")["RefreshToken"]) == (30, "days")
+    assert client["RefreshTokenValidity"] == 1
+    assert client["TokenValidityUnits"] == {"AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "hours"}
+    assert {key: item for key, item in client.items()
+            if key not in ("ClientName", "CallbackURLs", "LogoutURLs", "RefreshTokenValidity",
+                           "TokenValidityUnits")} == reference
+    assert client["ClientName"] == f"honda-mapit-mcp-{env}-web"
+    assert client["GenerateSecret"] is False and client["AllowedOAuthFlows"] == ["code"]
+    branding = resources["WebManagedLoginBranding"]
+    assert branding["Condition"] == "WebEnabled"
+    assert branding["Properties"] == {"UserPoolId": {"Ref": "UserPool"}, "ClientId": {"Ref": "WebClient"},
+                                      "UseCognitoProvidedValues": True}
+
+
+@pytest.mark.parametrize("web,dev", WEB_CASES)
+def test_mcp_lambda_accepts_the_web_client_and_its_origins(env, web, dev):
+    template, _ = _resolved(env, web, dev)
+    variables = template["Resources"]["McpFunction"]["Properties"]["Environment"]["Variables"]
+    clients = [{"Ref": "ClaudeClient"}, {"Ref": "CodexClient"}] + ([{"Ref": "WebClient"}] if web or dev else [])
+    assert variables["MULTIUSER_CLIENT_IDS"] == {"Fn::Join": [",", clients]}
+    origins = [origin for origin, url in ((PAGES_ORIGIN, web), (VITE_ORIGIN, dev)) if url]
+    assert variables["MULTIUSER_WEB_ORIGINS"] == ",".join(origins)
+
+
+@pytest.mark.parametrize("web,dev", WEB_CASES)
+def test_cors_allows_only_the_web_origins_with_minimal_methods_and_headers(env, web, dev):
+    template, _ = _resolved(env, web, dev)
+    api = template["Resources"]["HttpApi"]["Properties"]
+    origins = [origin for origin, url in ((PAGES_ORIGIN, web), (VITE_ORIGIN, dev)) if url]
+    if not origins:
+        assert "CorsConfiguration" not in api
+        return
+    assert api["CorsConfiguration"] == {
+        "AllowOrigins": origins,
+        "AllowMethods": ["POST"],
+        "AllowHeaders": ["authorization", "content-type", "mcp-protocol-version"],
+        "MaxAge": 7200,
+    }
+
+
+def test_cors_never_uses_a_wildcard_or_credentials(env):
+    api = stack.build_multiuser_template(env)["Resources"]["HttpApi"]["Properties"]
+    cors = json.dumps(api["CorsConfiguration"])
+    assert "*" not in cors and "AllowCredentials" not in cors and "ExposeHeaders" not in cors
+
+
+def test_preflight_is_not_routed_to_a_lambda_or_the_jwt_authorizer(env):
+    """API Gateway answers OPTIONS itself only while no route can match it."""
+    resources = stack.build_multiuser_template(env)["Resources"]
+    keys = [item["Properties"]["RouteKey"] for item in resources.values()
+            if item["Type"] == "AWS::ApiGatewayV2::Route"]
+    assert keys and not any(key == "$default" or key.split(" ", 1)[0] in ("OPTIONS", "ANY") for key in keys)
+    assert "CorsConfiguration" in resources["HttpApi"]["Properties"]
+
+
+def test_web_client_leaves_existing_identity_resources_untouched(env):
+    """Adding the web client must never modify or replace the pool or its current clients."""
+    resources = stack.build_multiuser_template(env)["Resources"]
+    assert "WebClient" in resources
+    for name in ("UserPool", "UserPoolDomain", "ResourceServer", "ClaudeClient", "CodexClient",
+                 "ClaudeManagedLoginBranding", "CodexManagedLoginBranding", "InvitationsTable",
+                 "PublicConfigParameter", "JwtAuthorizer", "IdentityFunction"):
+        text = json.dumps(resources[name])
+        assert "Web" not in text and "Fn::If" not in text, name
+
+
+def test_web_callback_patterns():
+    params = stack.build_multiuser_template("dev")["Parameters"]
+    web = re.compile(params["WebCallbackUrl"]["AllowedPattern"])
+    dev = re.compile(params["WebDevCallbackUrl"]["AllowedPattern"])
+    for good in ("", PAGES_URL, "https://example.org/"):
+        assert web.fullmatch(good)
+    for bad in ("https://herrerogusano.github.io", "http://herrerogusano.github.io/x/", "https://*/",
+                "https://a.example:8443/", "https://a.example/?x=1", "https://a.example/#f",
+                "https://user@a.example/", "https://A.example/", "http://localhost:5173/", "*"):
+        assert not web.fullmatch(bad), bad
+    for good in ("", VITE_URL, "http://localhost:5173/honda-ride-log/"):
+        assert dev.fullmatch(good)
+    for bad in ("http://localhost/", "https://localhost:5173/", "http://127.0.0.1:5173/", "http://localhost:5173",
+                "http://localhost:5173/?x=1", "http://localhost.evil.example:5173/", "http://example.org:5173/", "*"):
+        assert not dev.fullmatch(bad), bad

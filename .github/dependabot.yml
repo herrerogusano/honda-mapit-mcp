@@ -15,6 +15,18 @@ updates:
       time: "07:00"
       timezone: "Europe/Madrid"
     open-pull-requests-limit: 3
+    ignore:
+      # Geometry engine contract: src/mapit/geography_engine.py accepts only Shapely 2.1.2, and
+      # the production geometry runtime is hash-locked (infra/aws/geography-runtime-requirements.txt:
+      # numpy 2.4.3, shapely 2.1.2). An update must move the engine check, the lock and the tests
+      # together in one reviewed PR, so it is done by hand (PR #119 failed 17 tests on Shapely 2.2.0).
+      - dependency-name: "shapely"
+      - dependency-name: "numpy"
+      # The realtime extra follows the websockets range of openai-agents
+      # (docs/phase-4-agent-contracts.md); openai-agents 0.22.3 and 0.24.0 still require
+      # websockets<17, so CI never installs a new major. Widen it by hand when openai-agents does.
+      - dependency-name: "websockets"
+        update-types: ["version-update:semver-major"]
     groups:
       python-minor-patch:
         patterns: ["*"]

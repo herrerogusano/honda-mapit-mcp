@@ -81,6 +81,27 @@ def policy():
     return multiuser_policy(environment="dev", user_pool_id=POOL, resource_url=RESOURCE, client_ids=CLIENTS)
 
 
+WEB_CLIENT = "WebClient0123"
+WEB_ORIGINS = ("https://herrerogusano.github.io", "http://localhost:5173")
+
+
+def web_policy():
+    return multiuser_policy(environment="dev", user_pool_id=POOL, resource_url=RESOURCE,
+                            client_ids=CLIENTS + (WEB_CLIENT,), web_origins=WEB_ORIGINS)
+
+
+def browser_event(access, origin, **kwargs):
+    """A fetch() from the static web: API Gateway forwards every browser header."""
+    value = event(access, **kwargs)
+    value["headers"].update({
+        "origin": origin, "referer": origin + "/honda-ride-log/", "mcp-protocol-version": "2025-06-18",
+        "user-agent": "Mozilla/5.0", "accept-language": "es-ES,es;q=0.9", "accept-encoding": "gzip, deflate, br",
+        "sec-fetch-mode": "cors", "sec-fetch-site": "cross-site", "sec-fetch-dest": "empty",
+        "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https", "x-forwarded-port": "443",
+    })
+    return value
+
+
 def token(private, kid="k1", drop=(), **overrides):
     now = int(time.time())
     claims = dict(iss=ISSUER, aud=RESOURCE, sub="11111111-2222-3333-4444-555555555555",
@@ -120,14 +141,15 @@ class Session:
 
 
 class Harness:
-    def __init__(self, keys, *, error=None, rejected=False, missing=False, delete_result=True, geography=False):
+    def __init__(self, keys, *, error=None, rejected=False, missing=False, delete_result=True, geography=False,
+                 selected=None):
         self.created = []
         self.relinks = []
         self.deletes = []
         self.error, self.rejected, self.missing, self.delete_result = error, rejected, missing, delete_result
         self.fetcher = Fetcher(jwks_bytes((keys[0], "k1")))
         self.runtime = create_multiuser_runtime(
-            policy(), JwksCache(ISSUER, fetcher=self.fetcher),
+            selected or policy(), JwksCache(ISSUER, fetcher=self.fetcher),
             services_factory=self.factory, relink=self.relink, delete_account=self.delete,
             geographic_queries=geography,
         )
@@ -176,6 +198,51 @@ def test_policy_derives_scope_and_rejects_bad_bindings():
                      {"request_deadline_seconds": True}, {"max_token_bytes": 9000}):
         with pytest.raises(ValueError):
             MultiuserPolicy(**{**base, **override})
+
+
+def test_policy_adds_only_valid_web_origins():
+    api_origin = f"https://{API}.execute-api.eu-west-1.amazonaws.com"
+    assert policy().allowed_origins == (api_origin,)
+    assert web_policy().allowed_origins == (api_origin,) + WEB_ORIGINS
+    for bad in (("*",), ("null",), ("http://example.org",), ("http://localhost",), ("http://127.0.0.1:5173",),
+                ("http://localhost:5173/",), ("https://a.example/",), ("https://a.example/x",),
+                ("https://*.github.io",), ("https://user@a.example",), ("http://localhost:0",),
+                ("http://localhost:65536",), ("http://localhost.evil.example:5173",),
+                ("https://a.example", "https://a.example"), (api_origin,), ["https://a.example"],
+                ("https://a.example", "https://b.example", "https://c.example", "https://d.example")):
+        with pytest.raises(ValueError):
+            multiuser_policy(environment="dev", user_pool_id=POOL, resource_url=RESOURCE, client_ids=CLIENTS,
+                             web_origins=bad)
+
+
+# -- browser (static web client) ----------------------------------------------------
+
+@pytest.mark.parametrize("origin", WEB_ORIGINS)
+def test_browser_request_from_a_configured_web_origin_is_served(keys, origin):
+    harness = Harness(keys, selected=web_policy())
+    access = token(keys[0], client_id=WEB_CLIENT)
+    response = harness.runtime.lambda_handler(browser_event(access, origin), Context())
+    result = tool_result(response)
+    assert result.get("isError", False) is False and result["structuredContent"]["status"] == "SYNTHETIC"
+    # Stateless JSON: nothing a browser would need exposed through CORS.
+    assert response["headers"]["content-type"].startswith("application/json")
+    assert not {"mcp-session-id", "set-cookie"} & set(response["headers"])
+    assert not any(name.startswith("access-control-") for name in response["headers"])
+
+
+def test_browser_request_from_an_unlisted_origin_is_rejected_before_the_tenant(keys):
+    access = token(keys[0], client_id=WEB_CLIENT)
+    for harness, origin in ((Harness(keys), WEB_ORIGINS[0]),  # web not configured in this stack
+                            (Harness(keys, selected=web_policy()), "https://evil.example"),
+                            (Harness(keys, selected=web_policy()), "null")):
+        response = harness.runtime.lambda_handler(browser_event(access, origin), Context())
+        assert response["statusCode"] == 400 and harness.created == []
+
+
+def test_web_client_token_is_rejected_when_the_web_client_is_not_configured(keys):
+    harness = Harness(keys)
+    assert harness.call(token(keys[0], client_id=WEB_CLIENT))["statusCode"] == 401
+    assert harness.created == []
 
 
 # -- authentication ------------------------------------------------------------
@@ -483,6 +550,36 @@ def test_entrypoint_environment_fails_closed(entrypoint, monkeypatch, overrides)
     response = entry.handler(event(None, path=METADATA), Context())
     assert response["statusCode"] == 503 and response["body"] == '{"error":"service_unavailable"}'
     assert aws.calls == []
+
+
+def test_entrypoint_web_origins_admit_the_browser(entrypoint, monkeypatch, keys):
+    aws, _ = entrypoint
+    access = token(keys[0], client_id=WEB_CLIENT)
+    # Variable absent (code deployed before its configuration): no browser origin is accepted.
+    assert entry.handler(event(None, path=METADATA), Context())["statusCode"] == 200
+    assert entry.handler(browser_event(access, WEB_ORIGINS[0], method="tools/list"), Context())["statusCode"] == 400
+    monkeypatch.setenv("MULTIUSER_CLIENT_IDS", ",".join(CLIENTS + (WEB_CLIENT,)))
+    monkeypatch.setenv("MULTIUSER_WEB_ORIGINS", ",".join(WEB_ORIGINS))
+    for origin in WEB_ORIGINS:
+        tools = tool_result(entry.handler(browser_event(access, origin, method="tools/list"), Context()))["tools"]
+        assert len(tools) == 11
+    evil = browser_event(access, "https://evil.example", method="tools/list")
+    assert entry.handler(evil, Context())["statusCode"] == 400
+    monkeypatch.setenv("MULTIUSER_WEB_ORIGINS", "")
+    assert entry.handler(browser_event(access, WEB_ORIGINS[0], method="tools/list"), Context())["statusCode"] == 400
+    assert aws.calls == []
+
+
+@pytest.mark.parametrize("value", [
+    "*", "null", "https://a.example/", "http://localhost", "http://example.org:5173", "https://a.example,",
+    " https://a.example", "https://a.example,https://a.example", "https://A.example",
+    "https://a.example,https://b.example,http://localhost:5173",
+])
+def test_entrypoint_invalid_web_origins_fail_closed(entrypoint, monkeypatch, value):
+    aws, _ = entrypoint
+    monkeypatch.setenv("MULTIUSER_WEB_ORIGINS", value)
+    response = entry.handler(event(None, path=METADATA), Context())
+    assert response["statusCode"] == 503 and aws.calls == []
 
 
 def test_entrypoint_jwks_failure_is_unavailable(entrypoint, monkeypatch):

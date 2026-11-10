@@ -69,6 +69,12 @@ _ISSUER_RE = re.compile(r"^https://cognito-idp\.eu-west-1\.amazonaws\.com/eu-wes
 _RESOURCE_RE = re.compile(r"^https://([a-z0-9]{10}\.execute-api\.eu-west-1\.amazonaws\.com)/mcp$")
 _CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9]{1,128}$")
 _HOST_RE = re.compile(r"^[a-z0-9.-]{1,253}$")
+# An exact browser origin: HTTPS host without port, or the loopback name used by
+# a local development server. Never a wildcard, "null", a path or credentials.
+_ORIGIN_RE = re.compile(
+    r"^(?:https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?|http://localhost:[1-9][0-9]{3,4})$"
+)
+_MAX_WEB_ORIGINS = 2
 _MAX_BODY = 2 * 1024 * 1024
 _MAX_TOKEN = 8192
 _MAX_DEADLINE = 14.0
@@ -89,6 +95,12 @@ class TenantSessionMissing(RuntimeError):
 
 def _bounded_int(value: Any, low: int, high: int) -> bool:
     return type(value) is int and low <= value <= high
+
+
+def _valid_origin(value: Any) -> bool:
+    if type(value) is not str or not _ORIGIN_RE.fullmatch(value):
+        return False
+    return value.startswith("https://") or 1024 <= int(value.rsplit(":", 1)[1]) <= 65535
 
 
 @dataclass(frozen=True)
@@ -128,21 +140,13 @@ class MultiuserPolicy:
             or match.group(1) not in self.allowed_hosts
         ):
             raise ValueError("invalid allowed hosts")
-        if type(self.allowed_origins) is not tuple or not 1 <= len(self.allowed_origins) <= 4:
+        if (
+            type(self.allowed_origins) is not tuple
+            or not 1 <= len(self.allowed_origins) <= 4
+            or len(set(self.allowed_origins)) != len(self.allowed_origins)
+            or any(not _valid_origin(item) for item in self.allowed_origins)
+        ):
             raise ValueError("invalid allowed origins")
-        for origin in self.allowed_origins:
-            parsed = urlsplit(origin) if type(origin) is str else None
-            if (
-                parsed is None
-                or parsed.scheme != "https"
-                or not parsed.hostname
-                or parsed.path not in ("",)
-                or parsed.query
-                or parsed.fragment
-                or parsed.username is not None
-                or origin != f"https://{parsed.netloc}"
-            ):
-                raise ValueError("invalid allowed origins")
         if not _bounded_int(self.max_request_body_bytes, 1024, _MAX_BODY):
             raise ValueError("request body limit is outside the allowed bounds")
         if not _bounded_int(self.max_response_body_bytes, 1024, _MAX_BODY):
@@ -172,11 +176,18 @@ class MultiuserPolicy:
 
 
 def multiuser_policy(*, environment: str, user_pool_id: str, resource_url: str,
-                     client_ids: tuple[str, ...]) -> MultiuserPolicy:
-    """Derive issuer/host/origin bindings canonically from the pool and MCP URL."""
+                     client_ids: tuple[str, ...], web_origins: tuple[str, ...] = ()) -> MultiuserPolicy:
+    """Derive issuer/host/origin bindings canonically from the pool and MCP URL.
+
+    ``web_origins`` are the exact origins of the static web client (at most two:
+    the published site and a local development server). A browser always sends
+    ``Origin``; without them every browser request is rejected.
+    """
     match = _RESOURCE_RE.fullmatch(resource_url) if type(resource_url) is str else None
     if match is None or type(user_pool_id) is not str:
         raise ValueError("invalid multiuser bindings")
+    if type(web_origins) is not tuple or len(web_origins) > _MAX_WEB_ORIGINS:
+        raise ValueError("invalid web origins")
     host = match.group(1)
     return MultiuserPolicy(
         environment=environment,
@@ -184,7 +195,7 @@ def multiuser_policy(*, environment: str, user_pool_id: str, resource_url: str,
         resource_url=resource_url,
         client_ids=client_ids,
         allowed_hosts=(host,),
-        allowed_origins=(f"https://{host}",),
+        allowed_origins=(f"https://{host}",) + web_origins,
     )
 
 

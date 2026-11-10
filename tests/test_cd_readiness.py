@@ -30,7 +30,7 @@ def test_target_must_match_exact_protected_branch_and_commit_is_pinned() -> None
     assert '"$(git rev-parse HEAD)" != "${SOURCE_SHA}"' in text
     assert "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in text
     assert "persist-credentials: false" in text
-    assert "uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97" in text
+    assert "uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0" in text
 
 
 def test_workflow_has_read_only_permissions_serializes_and_is_bounded() -> None:

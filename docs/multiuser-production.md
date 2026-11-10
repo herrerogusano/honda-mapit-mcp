@@ -9,6 +9,9 @@ journals and the owner identity pool stay untouched and are not reused.
 
 - Invited friends (at most 10 users per environment) use the hosted MCP from
   Claude (claude.ai / Desktop custom connector) and Codex. ChatGPT comes later.
+  Since 2026-11-09 (vault decision D-078) a static web, "Honda Ride Log", is an
+  approved third client; see "Web client" below. Its frontend lives in a
+  separate repository (`honda-ride-log`), not here.
 - Users sign in **only with their Honda MAPIT email and password**.
 - MAPIT stays read-only. We store only each user's MAPIT refresh token, encrypted
   in SSM Parameter Store. MAPIT passwords are never written by our code.
@@ -45,9 +48,10 @@ private, versioned, encrypted S3 bucket for Lambda ZIPs.
 | `UserPoolDomain` | Prefix from private config; ManagedLoginVersion 2 |
 | `ResourceServer` | Identifier = MCP URL `https://{ApiId}.execute-api.eu-west-1.amazonaws.com/mcp`; scope `use` |
 | `ClaudeClient`, `CodexClient` | Public (no secret), code flow + PKCE, scopes `openid` and `{MCP URL}/use`, callbacks `https://claude.ai/api/mcp/auth_callback` (plus `claude.com` and the fixed Claude Code loopback `http://localhost:8790/callback`) and the private exact Codex loopback URL; refresh-token and (if needed) user-password auth flows; access/ID tokens 60 min, refresh 30 days; token revocation and user-existence-error prevention on; clients cannot write `custom:tenant_id` |
+| `WebClient` (only if a web callback is configured) | Same public PKCE shape and scopes as the other two, except the refresh token, which lasts 1 hour (the web keeps only the access token and discards it); callback and sign-out URLs = `WebCallbackUrl` and/or `WebDevCallbackUrl` |
 | `ManagedLoginBranding` per client | `UseCognitoProvidedValues: true` (required for `aud` = resource) |
 | `InvitationsTable` `honda-mapit-mcp-{env}-invitations` | PK `email` (S), on-demand, deletion protection in prod |
-| `HttpApi` + `$default` stage | Throttling rate 10 rps, burst 20; access logs off |
+| `HttpApi` + `$default` stage | Throttling rate 10 rps, burst 20; access logs off; CORS only when the web client exists, only for its origins |
 | JWT authorizer | Issuer = pool issuer, audience = MCP URL |
 | Routes | `POST /mcp` (JWT, scope `{MCP URL}/use`) and `GET /.well-known/oauth-protected-resource/mcp` (NONE) -> MCP Lambda; `GET /invitacion`, `POST /invitacion`, `GET /privacidad` (NONE) -> identity Lambda |
 | `McpFunction` `honda-mapit-mcp-{env}-mcp` | python3.13 arm64, 512 MB, timeout 20 s, handler `mapit.multiuser_entrypoint.handler` |
@@ -144,7 +148,8 @@ MAPIT password (users never reset passwords in our pool).
 API Gateway validates issuer, audience and scope. The Lambda re-verifies the
 JWT against the pool JWKS (fetched over HTTPS at cold start, cached, refetched
 at most every 5 minutes for an unknown `kid`): RS256, `iss`, `aud` = MCP URL,
-`token_use=access`, `client_id` in the stack's client set, scope contains
+`token_use=access`, `client_id` in the stack's client set (Claude, Codex and,
+when configured, the web client), scope contains
 `{MCP URL}/use`, `exp/iat`, `mapit_tenant` = 32 lowercase hex, `username`
 present. A per-request lazy provider reads that tenant's parameter and builds
 the existing `CloudServicesProvider`/`CloudDirectTransport`.
@@ -161,6 +166,89 @@ the existing `CloudServicesProvider`/`CloudDirectTransport`.
 
 The ten existing read-only tools (and geography tools when enabled) are
 unchanged.
+
+## Web client (Honda Ride Log)
+
+Approved by the owner on 2026-11-09 (vault decision D-078). The web is a static
+single-page site in the separate repository `honda-ride-log`; nothing of it is
+built or stored here, and nothing new is stored in AWS. It is one more client
+of this stack, like Claude and Codex: the browser signs in against the same
+pool (authorization code + PKCE, public client `WebClient`) and calls
+`POST /mcp` with the access token. Invitation, consent, tenant isolation and
+the read-only tools are unchanged. With the web each user reads their own
+MAPIT history from their own browser: about 7 MAPIT reads per page load and 1
+per opened route.
+
+Status: template, runtime and tests are offline work. Nothing is deployed; a
+real browser sign-in and the deployed CORS behaviour are **not verified**.
+Deploying it to DEV and later to prod needs its own owner approval.
+
+### Opt-in configuration
+
+The web client is off unless the private config has at least one of:
+
+- `web_callback_url`: exact HTTPS URL of the published site, e.g.
+  `https://herrerogusano.github.io/honda-ride-log/` (lowercase host, no port,
+  query or fragment).
+- `web_dev_callback_url`: exact URL of a local development server, only
+  `http://localhost:PORT/...`, e.g. `http://localhost:5173/` (Vite default).
+  Meant for DEV; adding it to prod lets any page served on that local port of
+  a signed-in user's machine start a sign-in, so leave it out of prod unless
+  the owner decides otherwise.
+
+They become the stack parameters `WebCallbackUrl` and `WebDevCallbackUrl`
+(default empty). Each URL is both the sign-in callback and the sign-out URL,
+and must match the site's `redirect_uri` character by character. With neither,
+there is no `WebClient`, no CORS and no `WebClientId` output: the stack is
+what it was before.
+
+### What changes when it is on
+
+- `WebClient` and its managed-login branding are created. The pool, its
+  domain, the resource server, `ClaudeClient` and `CodexClient` are not
+  modified (a test pins this); nothing is replaced.
+- `HttpApi` gets a CORS configuration: `AllowOrigins` = the origins of those
+  URLs (never `*`), `AllowMethods` = `POST`, `AllowHeaders` =
+  `authorization`, `content-type`, `mcp-protocol-version`, `MaxAge` 7200 s; no
+  credentials and no exposed headers.
+- `McpFunction` gets the third client id in `MULTIUSER_CLIENT_IDS` and the
+  same origins in `MULTIUSER_WEB_ORIGINS`.
+- The public-config SSM parameter is unchanged on purpose: the identity Lambda
+  rejects unknown fields in it, and the invitation page does not show the web
+  client.
+
+### What a browser needs to call `/mcp`
+
+Read from the service code (`lambda_adapter.py`, `remote_http.py`, the MCP SDK
+transport) and covered by offline tests:
+
+- `POST /mcp` only, one JSON-RPC message per request, body up to 2 MiB.
+- `Authorization: Bearer <access token>`; `Content-Type: application/json`;
+  `Accept` including `application/json` (send `application/json,
+  text/event-stream`); optionally `MCP-Protocol-Version`.
+- No session: the server is stateless and answers plain JSON, never SSE. It
+  never returns `Mcp-Session-Id` (the adapter turns such a response into a
+  502), so no `initialize` round-trip is needed and no response header has to
+  be exposed. Cookies and query strings are rejected.
+- **The Lambda has its own Origin allow-list**, independent of CORS: a request
+  with an `Origin` header that is not the API's own origin was answered `400`.
+  A browser always sends `Origin`, so CORS alone was not enough;
+  `MULTIUSER_WEB_ORIGINS` adds the web origins to that list.
+- The access token must carry `aud` = MCP URL and the scope `{MCP URL}/use`:
+  the site has to send `scope=openid {MCP URL}/use` and
+  `resource={MCP URL}` in the authorize request, as the MCP clients do. This
+  is how the existing clients are understood to get that `aud`; it is not
+  verified for a browser.
+
+### Preflight and the JWT authorizer
+
+The API has no `OPTIONS`, `ANY` or `$default` route (a test pins this), so
+with CORS configured API Gateway answers the `OPTIONS` preflight itself,
+without the JWT authorizer and without invoking a Lambda. Not verified against
+the deployed API: whether a `401`/`403` produced by the authorizer itself
+carries CORS headers. If it does not, the browser reports an expired token as
+a network error instead of a readable 401, and the site must treat a failed
+`fetch` as "sign in again".
 
 ## Privacy and consent
 

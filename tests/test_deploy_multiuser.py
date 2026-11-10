@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -134,6 +135,8 @@ def test_dry_run_creates_change_set_but_executes_nothing(tmp_path):
     assert json.loads(params["MapitConfigJson"]) == MAPIT
     assert params["CodexCallbackPort"] == "1455" and params["Geography"] == "0"
     assert "BudgetEmail" not in params
+    # Without web fields in the private config the web client and CORS stay off.
+    assert params["WebCallbackUrl"] == "" and params["WebDevCallbackUrl"] == ""
     text = "\n".join(lines)
     assert SECRET_MARKER not in text and "owner@example.com" not in text
     assert "123456789012" not in text and "********9012" in text
@@ -204,6 +207,48 @@ def test_busy_stack_is_refused(tmp_path):
     {"unexpected": 1},
 ])
 def test_private_config_validation(tmp_path, overrides):
+    with pytest.raises(deploy.DeployError):
+        deploy.load_private_config(_config(tmp_path, **overrides), "dev")
+
+
+WEB_URL = "https://herrerogusano.github.io/honda-ride-log/"
+WEB_DEV_URL = "http://localhost:5173/"
+
+
+@pytest.mark.parametrize("fields", [
+    {"web_callback_url": WEB_URL}, {"web_dev_callback_url": WEB_DEV_URL},
+    {"web_callback_url": WEB_URL, "web_dev_callback_url": WEB_DEV_URL},
+])
+def test_web_callbacks_reach_the_stack_parameters_and_the_template_accepts_them(tmp_path, fields):
+    config = deploy.load_private_config(_config(tmp_path, **fields), "dev")
+    params = {p["ParameterKey"]: p["ParameterValue"]
+              for p in deploy.stack_parameters("dev", config, "runtime/" + "c" * 64 + ".zip")}
+    assert params["WebCallbackUrl"] == fields.get("web_callback_url", "")
+    assert params["WebDevCallbackUrl"] == fields.get("web_dev_callback_url", "")
+    template = deploy.build_multiuser_template("dev")
+    assert set(params) == set(template["Parameters"])
+    for name in ("WebCallbackUrl", "WebDevCallbackUrl"):
+        assert re.fullmatch(template["Parameters"][name]["AllowedPattern"], params[name]) is not None
+
+
+@pytest.mark.parametrize("overrides", [
+    {"web_callback_url": "*"},
+    {"web_callback_url": ""},
+    {"web_callback_url": "https://herrerogusano.github.io"},
+    {"web_callback_url": "http://herrerogusano.github.io/honda-ride-log/"},
+    {"web_callback_url": "https://herrerogusano.github.io/honda-ride-log/?x=1"},
+    {"web_callback_url": "https://herrerogusano.github.io:8443/"},
+    {"web_callback_url": "http://localhost:5173/"},
+    {"web_callback_url": ["https://herrerogusano.github.io/"]},
+    {"web_dev_callback_url": "https://localhost:5173/"},
+    {"web_dev_callback_url": "http://127.0.0.1:5173/"},
+    {"web_dev_callback_url": "http://localhost/"},
+    {"web_dev_callback_url": "http://localhost:80/"},
+    {"web_dev_callback_url": "http://localhost:70000/"},
+    {"web_dev_callback_url": "http://example.org:5173/"},
+    {"web_dev_callback_url": None},
+])
+def test_web_callback_validation(tmp_path, overrides):
     with pytest.raises(deploy.DeployError):
         deploy.load_private_config(_config(tmp_path, **overrides), "dev")
 

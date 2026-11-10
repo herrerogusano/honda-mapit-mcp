@@ -33,7 +33,7 @@ from .multiuser_runtime import (
 ENV_NAMES = (
     "AWS_LAMBDA_FUNCTION_NAME", "AWS_REGION", "MAPIT_MCP_ENV", "MULTIUSER_ISSUER_URL",
     "MULTIUSER_RESOURCE_URL", "MULTIUSER_CLIENT_IDS", "MULTIUSER_USER_POOL_ID",
-    "MULTIUSER_TABLE", "MAPIT_CONFIG_JSON", "MULTIUSER_GEOGRAPHY",
+    "MULTIUSER_TABLE", "MAPIT_CONFIG_JSON", "MULTIUSER_GEOGRAPHY", "MULTIUSER_WEB_ORIGINS",
 )
 _POOL_RE = re.compile(r"^eu-west-1_[A-Za-z0-9]{9,64}$")
 _RESOURCE_RE = re.compile(r"^https://([a-z0-9]{10})\.execute-api\.eu-west-1\.amazonaws\.com/mcp$")
@@ -140,9 +140,16 @@ def _settings(environ: Mapping[str, str]) -> dict[str, Any]:
         or any(not _CLIENT_RE.fullmatch(item) for item in client_ids)
     ):
         raise _EntryError("environment_invalid")
+    # Origins of the static web client. Absent or empty (no web client, or new
+    # code running before its configuration arrives) means no browser origin.
+    origins_raw = environ.get("MULTIUSER_WEB_ORIGINS", "")
+    if type(origins_raw) is not str:
+        raise _EntryError("environment_invalid")
+    web_origins = tuple(origins_raw.split(",")) if origins_raw else ()
     try:
         policy = multiuser_policy(
             environment=env, user_pool_id=pool, resource_url=resource, client_ids=client_ids,
+            web_origins=web_origins,
         )
     except Exception:
         raise _EntryError("environment_invalid") from None
