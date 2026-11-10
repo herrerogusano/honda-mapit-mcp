@@ -48,7 +48,7 @@ private, versioned, encrypted S3 bucket for Lambda ZIPs.
 | `UserPoolDomain` | Prefix from private config; ManagedLoginVersion 2 |
 | `ResourceServer` | Identifier = MCP URL `https://{ApiId}.execute-api.eu-west-1.amazonaws.com/mcp`; scope `use` |
 | `ClaudeClient`, `CodexClient` | Public (no secret), code flow + PKCE, scopes `openid` and `{MCP URL}/use`, callbacks `https://claude.ai/api/mcp/auth_callback` (plus `claude.com` and the fixed Claude Code loopback `http://localhost:8790/callback`) and the private exact Codex loopback URL; refresh-token and (if needed) user-password auth flows; access/ID tokens 60 min, refresh 30 days; token revocation and user-existence-error prevention on; clients cannot write `custom:tenant_id` |
-| `WebClient` (only if a web callback is configured) | Same public PKCE shape and scopes as the other two; callback and sign-out URLs = `WebCallbackUrl` and/or `WebDevCallbackUrl` |
+| `WebClient` (only if a web callback is configured) | Same public PKCE shape and scopes as the other two, except the refresh token, which lasts 1 hour (the web keeps only the access token and discards it); callback and sign-out URLs = `WebCallbackUrl` and/or `WebDevCallbackUrl` |
 | `ManagedLoginBranding` per client | `UseCognitoProvidedValues: true` (required for `aud` = resource) |
 | `InvitationsTable` `honda-mapit-mcp-{env}-invitations` | PK `email` (S), on-demand, deletion protection in prod |
 | `HttpApi` + `$default` stage | Throttling rate 10 rps, burst 20; access logs off; CORS only when the web client exists, only for its origins |

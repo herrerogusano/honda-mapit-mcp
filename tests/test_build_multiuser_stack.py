@@ -391,8 +391,13 @@ def test_web_client_exists_only_when_a_web_callback_is_configured(env, web, dev)
     assert "LogoutURLs" not in reference
     for key in ("ClientName", "CallbackURLs"):
         reference.pop(key)
+    # The web discards the refresh token: one hour instead of thirty days.
+    assert (reference.pop("RefreshTokenValidity"), reference.pop("TokenValidityUnits")["RefreshToken"]) == (30, "days")
+    assert client["RefreshTokenValidity"] == 1
+    assert client["TokenValidityUnits"] == {"AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "hours"}
     assert {key: item for key, item in client.items()
-            if key not in ("ClientName", "CallbackURLs", "LogoutURLs")} == reference
+            if key not in ("ClientName", "CallbackURLs", "LogoutURLs", "RefreshTokenValidity",
+                           "TokenValidityUnits")} == reference
     assert client["ClientName"] == f"honda-mapit-mcp-{env}-web"
     assert client["GenerateSecret"] is False and client["AllowedOAuthFlows"] == ["code"]
     branding = resources["WebManagedLoginBranding"]

@@ -441,6 +441,11 @@ def build_multiuser_template(env: str) -> dict[str, Any]:
     web_client = _client("web", _web_urls(), env)
     web_client["Condition"] = "WebEnabled"
     web_client["Properties"]["LogoutURLs"] = _web_urls()
+    # The web keeps only the access token and discards the refresh token, so it
+    # gets the shortest life Cognito allows (60 minutes, never below the access token).
+    web_client["Properties"]["RefreshTokenValidity"] = 1
+    web_client["Properties"]["TokenValidityUnits"] = {
+        "AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "hours"}
 
     resources: dict[str, Any] = {
         "UserPool": {
