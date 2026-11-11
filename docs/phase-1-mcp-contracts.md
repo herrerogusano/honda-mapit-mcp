@@ -145,6 +145,14 @@ start time on a half-open interval, a multi-month window returns the union of
 its months, and an over-ceiling or cursor response can be discarded and re-read
 in smaller windows. Offline tests prove the code against this reading only.
 
+Also not verified: how MAPIT behaves on a long window that is slow or fails.
+Only an over-ceiling or cursor response triggers a split. A timeout, a 503/504
+or a dropped connection while a large window downloads fails the whole call
+with `mapit_unavailable`, where a one-month window might have succeeded. The
+split is deliberately not extended to transport errors, because during an
+outage that would multiply the reads. The read meter's `outcome:"error"` lines
+are how this is watched.
+
 ## Read meter
 
 Each MCP tool call writes one line to stderr (stdout carries the stdio MCP
