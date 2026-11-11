@@ -176,8 +176,13 @@ of this stack, like Claude and Codex: the browser signs in against the same
 pool (authorization code + PKCE, public client `WebClient`) and calls
 `POST /mcp` with the access token. Invitation, consent, tenant isolation and
 the read-only tools are unchanged. With the web each user reads their own
-MAPIT history from their own browser: about 7 MAPIT reads per page load and 1
-per opened route.
+MAPIT history from their own browser. MAPIT reads per tool call, as logged by
+the read meter (`docs/phase-1-mcp-contracts.md`, "Read meter") when each period
+fits in one response: status 1, vehicle details 2, each period route list 2,
+each opened route 2. A page load that asks for status, vehicle details and N
+period route lists therefore costs `3 + 2N` reads (15 for six semesters).
+Before period reads, each route list cost one read per calendar month plus one
+(7 per semester, 45 for the same six-semester load).
 
 Status: template, runtime and tests are offline work. Nothing is deployed; a
 real browser sign-in and the deployed CORS behaviour are **not verified**.

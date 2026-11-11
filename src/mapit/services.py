@@ -7,7 +7,7 @@ from calendar import monthrange
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, Mapping
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -396,6 +396,50 @@ def split_month_windows(start: datetime, end: datetime) -> list[tuple[datetime, 
     return windows
 
 
+class _SplitWindow(Exception):
+    """A route-list read must be retried as smaller month groups."""
+
+
+def _read_route_list(
+    read: Callable[[datetime, datetime], Any],
+    start: datetime,
+    end: datetime,
+) -> Iterator[list[Any]]:
+    """Yield each route list for ``[start, end)``, oldest window first.
+
+    The whole period is read at once. A response over the byte ceiling, or one
+    carrying a pagination cursor, is discarded and its window is split in half
+    at a calendar-month boundary and read again, recursively. A single calendar
+    month is never split: there the original error stands, exactly as with the
+    previous month-by-month reads. Any other error stops the whole read.
+    """
+    pending = [split_month_windows(start, end)]
+    while pending:
+        months = pending.pop()
+        try:
+            try:
+                payload = read(months[0][0], months[-1][1])
+            except MapitResponseTooLarge:
+                if len(months) > 1:
+                    raise _SplitWindow from None
+                raise
+            if not isinstance(payload, Mapping) or not isinstance(payload.get("data"), list):
+                raise ServiceError("invalid_response", "MAPIT route history has an unexpected shape")
+            if payload.get("lastEvaluatedKey") is not None:
+                if len(months) > 1:
+                    raise _SplitWindow
+                raise ServiceError("pagination_unsupported", "MAPIT returned an unsupported route-history cursor")
+        except _SplitWindow:
+            middle = len(months) // 2
+            # LIFO stack: push the later half first so the earlier half is read first.
+            pending.append(months[middle:])
+            pending.append(months[:middle])
+            continue
+        except Exception as exc:
+            raise _translate_error(exc) from None
+        yield payload["data"]
+
+
 def _map_http_error(exc: MapitHTTPError) -> ServiceError:
     status = exc.status
     if status in {401, 403}:
@@ -551,20 +595,16 @@ class MapitServices:
         routes: dict[str, _RouteFact] = {}
         aggregate_features = 0
         aggregate_coordinates = 0
-        for window_start, window_end in split_month_windows(start, end):
-            try:
-                payload = self.client.get_geo(
-                    "/v1/routes",
-                    params={"vehicleId": vehicle_id, "from": _iso(window_start), "to": _iso(window_end)},
-                    max_response_bytes=MAX_ROUTE_LIST_BYTES,
-                )
-            except Exception as exc:
-                raise _translate_error(exc) from None
-            if not isinstance(payload, Mapping) or not isinstance(payload.get("data"), list):
-                raise ServiceError("invalid_response", "MAPIT route history has an unexpected shape")
-            if payload.get("lastEvaluatedKey") is not None:
-                raise ServiceError("pagination_unsupported", "MAPIT returned an unsupported route-history cursor")
-            for item in payload["data"]:
+
+        def read_window(window_start: datetime, window_end: datetime) -> Any:
+            return self.client.get_geo(
+                "/v1/routes",
+                params={"vehicleId": vehicle_id, "from": _iso(window_start), "to": _iso(window_end)},
+                max_response_bytes=MAX_ROUTE_LIST_BYTES,
+            )
+
+        for items in _read_route_list(read_window, start, end):
+            for item in items:
                 if not isinstance(item, Mapping):
                     raise ServiceError("invalid_response", "MAPIT route history contains an invalid route")
                 route = self._normalize_route(item)

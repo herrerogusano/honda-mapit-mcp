@@ -3,16 +3,79 @@
 from __future__ import annotations
 
 import json
+import sys
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterator, Mapping
 from urllib.parse import quote, urlparse
 
 from .auth import MapitSession
 from .config import MapitConfig
 from .http_transport import ResponseTooLargeError, open_direct, read_bounded
 from .signing import SigV4Signer, canonical_uri
+
+
+# --- Per-tool-call read meter ------------------------------------------------
+# One line per tool call goes to stderr (stdout is the stdio MCP channel). The
+# line holds only the fixed tool name, the number of GETs sent to MAPIT Core/Geo
+# and a fixed outcome word: no identifiers, parameters, URLs, dates or content.
+
+
+class ReadMeter:
+    """Mutable read count for one tool call."""
+
+    __slots__ = ("reads",)
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+
+_ACTIVE_METER: ContextVar[ReadMeter | None] = ContextVar("mapit_read_meter", default=None)
+
+
+def _stderr_sink(line: str) -> None:
+    print(line, file=sys.stderr, flush=True)
+
+
+_meter_sink: Callable[[str], None] = _stderr_sink
+
+
+def set_read_meter_sink(sink: Callable[[str], None] | None) -> None:
+    """Replace the read-count log sink (tests); ``None`` restores stderr."""
+    global _meter_sink
+    _meter_sink = sink if sink is not None else _stderr_sink
+
+
+def record_mapit_read() -> None:
+    """Count one GET sent to MAPIT Core/Geo in the active tool call, if any."""
+    meter = _ACTIVE_METER.get()
+    if meter is not None:
+        meter.reads += 1
+
+
+@contextmanager
+def metered_tool_call(tool: str) -> Iterator[ReadMeter]:
+    """Count MAPIT reads made while the block runs and log one count line."""
+    meter = ReadMeter()
+    token = _ACTIVE_METER.set(meter)
+    outcome = "error"
+    try:
+        yield meter
+        outcome = "ok"
+    finally:
+        _ACTIVE_METER.reset(token)
+        try:
+            _meter_sink(
+                json.dumps(
+                    {"event": "mapit_reads", "tool": tool, "reads": meter.reads, "outcome": outcome},
+                    separators=(",", ":"),
+                )
+            )
+        except Exception:  # noqa: BLE001 - a log failure must never change a tool result.
+            pass
 
 
 class MapitHTTPError(RuntimeError):
@@ -82,6 +145,8 @@ class MapitClient:
         while True:
             self.session.refresh_if_needed()
             headers = self.signer.sign_get(url, self.session.credentials, self.session.id_token)
+            # Every GET sent to Core/Geo counts, including the one auth-recovery retry.
+            record_mapit_read()
             try:
                 return self._send_get(url, headers, max_response_bytes=effective_limit)
             except MapitHTTPError as exc:

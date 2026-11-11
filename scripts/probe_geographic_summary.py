@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
+from mapit.client import MapitResponseTooLarge
 from mapit.geography import summer_window_utc
 from mapit.geographic_tools import AREA_SOURCE, _load_menorca_area
 from mapit.services import MapitServices, ServiceError, _iso, split_month_windows
@@ -46,6 +47,18 @@ class _ReadBudget:
         return self.client.get_core(path, params=params, max_response_bytes=max_response_bytes)
 
     def get_geo(self, path: str, *, params=None, max_response_bytes=None):
+        # The service reads a period at once and splits it on an over-ceiling
+        # answer. Refuse a multi-month window locally, never forwarding it, so
+        # only the four fixed monthly windows can reach MAPIT, in order.
+        if (
+            path == "/v1/routes" and type(params) is dict
+            and set(params) == {"vehicleId", "from", "to"}
+            and self.core_reads == 1 and self.geo_reads < len(self.windows)
+            and params["from"] == self.windows[self.geo_reads][0]
+            and params["to"] in [end for _, end in self.windows[self.geo_reads + 1:]]
+            and max_response_bytes == 2 * 1024 * 1024
+        ):
+            raise MapitResponseTooLarge()
         if (
             path != "/v1/routes" or type(params) is not dict
             or set(params) != {"vehicleId", "from", "to"}

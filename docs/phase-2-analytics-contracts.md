@@ -29,12 +29,14 @@ analytics do not fetch geometry to derive them.
 
 ## Retrieval and safety
 
-Analytics reuse the Phase 1 monthly `from`/`to` route retrieval. They never use
-the unsafe unfiltered global history read or route-detail/GeoJSON calls.
+Analytics reuse the Phase 1 period `from`/`to` route retrieval
+([period reads](phase-1-mcp-contracts.md#period-reads)). They never use the
+unsafe unfiltered global history read or route-detail/GeoJSON calls.
 
-- One period is limited to 366 days, 13 monthly Geo reads, and 2 MiB per
-  monthly response.
-- A comparison is limited to two such periods and at most 26 Geo reads.
+- One period is limited to 366 days and 2 MiB per response. It costs one Geo
+  read when its list fits in one response and at most 25 (`2 x 13 - 1`) when
+  every multi-month window must be split.
+- A comparison is limited to two such periods and at most 50 Geo reads.
 - At most 10,000 normalized routes may be accumulated per period.
 - Route IDs are deduplicated. Byte-for-byte-equivalent normalized duplicates
   are ignored; duplicates whose analytical fields conflict fail with
