@@ -7,7 +7,7 @@ automatic_review: false
 
 model:
   provider: anthropic
-  name: anthropic/claude-sonnet-5-5
+  name: anthropic/claude-opus-5-5
   temperature: 0
   timeout_seconds: 180
 
@@ -19,7 +19,7 @@ limits:
   max_output_tokens: 8192
   # Preventive per-run estimate, not an accounting cap. The real monthly cap (5 USD) is the
   # spend limit of the Anthropic workspace that owns this repository's key.
-  max_estimated_cost_usd: 0.50
+  max_estimated_cost_usd: 2.00
   max_inline_comments: 15
   max_batches: 4
 
