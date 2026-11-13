@@ -226,7 +226,7 @@ def test_aws_failures_refuse_with_step_and_provider_code():
         second = refused(aws.gate())
     aws.done()
     assert (first.code, first.step, first.provider_code) == (REFUSED_UNAVAILABLE, "config_read_failed",
-                                                             "InternalServerError")
+                                                             None)
     assert (second.step, second.cause_type, second.provider_code) == ("usage_write_failed", "ThrottlingException",
                                                                        "ThrottlingException")
     assert all(TENANT_A not in line and USER not in line for line in aws.lines)

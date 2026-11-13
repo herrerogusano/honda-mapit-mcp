@@ -37,7 +37,7 @@ from typing import Any
 from .multiuser_common import validate_tenant_id
 from .public_web import (
     CALLS_PER_MINUTE, PARTITION_KEY, SESSION_CALL_LIMIT, SESSION_MAX_AGE_SECONDS, TTL_ATTRIBUTE,
-    CONFIG_SOURCE_MALFORMED, PublicWebError, config_key, parse_web_config, person_key,
+    CONFIG_SOURCE_MALFORMED, CONFIG_SOURCE_READ_FAILED, PublicWebError, load_web_config, person_key,
     session_usage_key, web_session_parameter_name, web_table_name,
 )
 
@@ -192,12 +192,12 @@ class PublicSessionGate:
 
     def _check_config(self, now: int) -> None:
         try:
-            response = self._client("dynamodb").get_item(
-                TableName=self._table, Key=config_key(), ConsistentRead=True)
+            dynamodb = self._client("dynamodb")
         except Exception as exc:
             raise PublicSessionRefused(REFUSED_UNAVAILABLE, "config_read_failed", cause=exc) from None
-        item = response.get("Item") if isinstance(response, Mapping) else None
-        config = parse_web_config(item)
+        config = load_web_config(dynamodb, self._table)
+        if config.source == CONFIG_SOURCE_READ_FAILED:
+            raise PublicSessionRefused(REFUSED_UNAVAILABLE, "config_read_failed")
         if config.source == CONFIG_SOURCE_MALFORMED:
             raise PublicSessionRefused(REFUSED_UNAVAILABLE, "config_malformed")
         if now < config.pause_until:
