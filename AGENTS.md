@@ -44,6 +44,11 @@ repeat past work. Every rule below traces to that file; dates are decision dates
   ask the user before changing those defaults.
 - No MAPIT history probes, month/date scanning, unfiltered reads or per-route
   detail reads without a new bounded allowance; no automatic ledger sync.
+- Route-list tools read each requested period (at most 366 days) with one
+  bounded `from`/`to` request under the 2 MiB ceiling, and split it at
+  calendar-month boundaries only when a response exceeds the ceiling or
+  carries a cursor; one month is never split (2026-11-11, replaces the fixed
+  month-by-month read; `docs/phase-1-mcp-contracts.md`, "Period reads").
 - Distance ledger (2026-09-30): local SQLite and alias key outside Git and
   OneDrive; pseudonymous aliases, UTC day/native distance, no coordinates,
   streets or secrets; no automatic collection; ignore `complete` for admission
@@ -184,8 +189,9 @@ Geography, Phase 6-8 and production (2026-09-30 to 2026-10-03):
   (public PKCE client and CORS, opt-in by private config;
   `docs/multiuser-production.md`). Its frontend lives in a separate repository
   (`honda-ride-log`), not here. With the web each user reads their own history
-  from their own browser (about 7 MAPIT reads per page load and 1 per opened
-  route); this is the only exception to the history-read rule in "MAPIT
+  from their own browser (`3 + 2N` MAPIT reads for a page load with N period
+  route lists, 2 per opened route; see `docs/multiuser-production.md`); this
+  is the only exception to the history-read rule in "MAPIT
   safety" and does not cover agents. Deploying the web client to DEV or prod
   needs its own owner approval.
 - Definitive owner Cognito identity/MFA (2026-10-02): never reset or delete the

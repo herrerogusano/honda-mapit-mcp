@@ -38,7 +38,7 @@ see [public-source research](geographic-spain-research.md).
   no positive-length inside interval, and crossing routes are not prorated.
 - Embedded-list geographic summaries, aware start-in-interval validation,
   duplicate-conflict rejection, route/feature/coordinate/work/response guards,
-  failure before another monthly read on budget exhaustion. No detail fan-out.
+  failure before another route-list read on budget exhaustion. No detail fan-out.
 - Explicit opt-in MCP registration and CLI. Default/dev remain ten tools;
   opt-in adds `geographic_summary` and `summer_geographic_summary` for Menorca.
 - Madrid summer window June 1 inclusive–September 1 exclusive, contemporary

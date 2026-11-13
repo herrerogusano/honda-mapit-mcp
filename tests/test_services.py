@@ -130,29 +130,25 @@ def test_vehicle_details_encodes_id_and_normalizes_dealer():
     assert result.units_confirmed is False
 
 
-def test_list_routes_splits_months_deduplicates_and_sorts():
-    first = {
-        "data": [
-            {"id": "route-b", "startedAt": "2026-01-20T00:00:00Z", "distance": 2},
-            {"id": "route-a", "startedAt": "2026-01-10T00:00:00Z", "distance": 1},
-        ]
-    }
-    second = {
+def test_list_routes_reads_period_once_deduplicates_and_sorts():
+    whole_period = {
         "data": [
             {"id": "route-b", "startedAt": "2026-01-20T00:00:00Z", "distance": 2},
             {"id": "route-c", "startedAt": "2026-02-10T00:00:00Z", "distance": 3},
+            {"id": "route-a", "startedAt": "2026-01-10T00:00:00Z", "distance": 1},
+            {"id": "route-b", "startedAt": "2026-01-20T00:00:00Z", "distance": 2},
         ]
     }
-    client = RecordingClient(route_windows=[first, second])
+    client = RecordingClient(route_windows=[whole_period])
 
     result = MapitServices(client).list_routes("2026-01-01", "2026-03-01")
 
     route_calls = [call for call in client.calls if call[1] == "geo"]
-    assert len(route_calls) == 2
+    assert len(route_calls) == 1
     assert route_calls[0][3] == {
         "vehicleId": "vehicle/one",
         "from": "2026-01-01T00:00:00.000Z",
-        "to": "2026-02-01T00:00:00.000Z",
+        "to": "2026-03-01T00:00:00.000Z",
     }
     assert [route.route_id for route in result.routes] == ["route-a", "route-b", "route-c"]
     assert result.matched_routes == 3
@@ -192,10 +188,7 @@ def test_route_cursor_fails_closed_instead_of_claiming_completeness():
 
 def test_conflicting_duplicate_route_fails_closed():
     client = RecordingClient(
-        route_windows=[
-            {"data": [{"id": "same", "distance": 1}]},
-            {"data": [{"id": "same", "distance": 2}]},
-        ]
+        route_windows=[{"data": [{"id": "same", "distance": 1}, {"id": "same", "distance": 2}]}]
     )
 
     with pytest.raises(ServiceError) as error:
@@ -214,7 +207,7 @@ def test_route_accumulation_limit_fails_closed():
     assert error.value.code == "route_limit_exceeded"
 
 
-def test_route_analytics_wrappers_use_monthly_read_path():
+def test_route_analytics_wrappers_use_period_read_path():
     route = {
         "id": "route-one",
         "distance": 10,

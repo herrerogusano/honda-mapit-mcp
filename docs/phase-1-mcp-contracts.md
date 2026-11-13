@@ -73,10 +73,11 @@ VIN, mileage, product, plan, branch, and available dealer information.
 
 ### `list_routes(from_time, to_time)`
 
-Reads each monthly window, validates `{data: [...]}`, rejects any non-null
-`lastEvaluatedKey`, normalizes route fields, deduplicates by route ID, and sorts
-by start timestamp then ID. It returns no more than 500 routes and reports both
-the matched and returned counts plus `truncated`.
+Reads the whole requested period with one `from`/`to` route-list request (see
+"Period reads" below), validates `{data: [...]}`, normalizes route fields,
+deduplicates by route ID, and sorts by start timestamp then ID. It returns no
+more than 500 routes and reports both the matched and returned counts plus
+`truncated`.
 
 ### `get_route_detail(route_id)`
 
@@ -87,7 +88,7 @@ remains unconfirmed.
 
 ### `get_distance(from_time, to_time)`
 
-Sums the native `distance` values after the same monthly retrieval and
+Sums the native `distance` values after the same period retrieval and
 deduplication as `list_routes`. If any returned route lacks a finite distance,
 the tool fails with `distance_unavailable` instead of treating it as zero.
 
@@ -105,9 +106,73 @@ Accordingly:
 
 - route/distance outputs use `metric_unit="mapit_native_unconfirmed"`;
 - route/distance outputs use `completeness="unverified"`;
-- route-list responses are capped at 2 MiB per monthly window;
+- route-list responses are capped at 2 MiB per request window;
 - route-detail responses are capped at 1 MiB;
-- a non-null upstream cursor fails closed because pagination is not understood.
+- a non-null upstream cursor is never followed; on a single calendar month it
+  fails closed because pagination is not understood.
+
+## Period reads
+
+Every route-list tool reads one bounded period (at most 366 days) for the
+selected vehicle:
+
+1. It sends one `GET /v1/routes` with the whole period as `from`/`to`.
+2. If that response exceeds the 2 MiB ceiling or carries a non-null
+   `lastEvaluatedKey`, the response is discarded and the window is read again
+   as two halves split at a calendar-month boundary, earlier half first. Each
+   half follows the same rule, recursively.
+3. A window of one calendar month (or the partial month at either end of the
+   request) is never split. There the original failure stands:
+   `response_too_large` or `pagination_unsupported`. Any other failure in any
+   window (HTTP error, invalid envelope) stops the whole call; no partial result
+   is returned.
+
+The month windows that end the recursion are exactly the windows the earlier
+month-by-month reads used, so a period that fails here also failed before. The
+results are merged with the existing route-ID deduplication and the same sort,
+so routes, order, fields and truncation do not depend on how the period was
+split. A period whose list fits in one response costs one route-list read
+instead of one per month; the worst case, when every multi-month window must
+be split, is `2 x months - 1` route-list reads (25 for a 366-day period).
+
+Why the rule changed: month-by-month reads were adopted because one unfiltered
+whole-history read exceeded the 2 MiB ceiling. A bounded `from`/`to` period
+with automatic splitting keeps the same ceiling and falls back to the same
+month windows, while sending fewer reads when the list fits.
+
+Contract as read here, not verified against MAPIT: `from`/`to` filter routes by
+start time on a half-open interval, a multi-month window returns the union of
+its months, and an over-ceiling or cursor response can be discarded and re-read
+in smaller windows. Offline tests prove the code against this reading only.
+
+Also not verified: how MAPIT behaves on a long window that is slow or fails.
+Only an over-ceiling or cursor response triggers a split. A timeout, a 503/504
+or a dropped connection while a large window downloads fails the whole call
+with `mapit_unavailable`, where a one-month window might have succeeded. The
+split is deliberately not extended to transport errors, because during an
+outage that would multiply the reads. The read meter's `outcome:"error"` lines
+are how this is watched.
+
+## Read meter
+
+Each MCP tool call writes one line to stderr (stdout carries the stdio MCP
+protocol):
+
+```json
+{"event":"mapit_reads","tool":"list_routes","reads":2,"outcome":"ok"}
+```
+
+`reads` counts every GET sent to MAPIT Core/Geo during the call, including the
+single auth-recovery retry; Cognito authentication calls are not counted.
+`outcome` is `ok` or `error`. The line carries no identifiers, parameters,
+dates, URLs or response content. When each period fits in one response the
+counts are: `get_vehicle_status` 1, `get_vehicle_details` 2,
+`get_route_detail` 2, every single-period route tool (`list_routes`,
+`get_distance`, `get_route_statistics`, `get_distance_breakdown`,
+`get_route_extremes`, `geographic_summary`, `summer_geographic_summary`) 2, and
+each two-period comparison 4. Before this change a single-period route tool
+cost one account-summary read plus one read per calendar month (7 for a
+semester, up to 14 for 366 days).
 
 These fields must not be relabelled as kilometres or complete history without
 new primary evidence and a separately reviewed contract change.
