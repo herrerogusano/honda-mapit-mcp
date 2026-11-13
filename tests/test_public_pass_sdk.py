@@ -125,6 +125,21 @@ def test_ip_limit_with_real_conditional_error():
     ddb.assert_no_pending_responses()
 
 
+def test_missing_fingerprint_key_is_not_created_with_real_model():
+    # No put_parameter is stubbed: the Stubber would raise if one were sent.
+    made = _clients()
+    ddb, ssm = made["dynamodb"][1], made["ssm"][1]
+    ddb.add_response("get_item", {}, expected_params={
+        "TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True})
+    key_name = web.fingerprint_key_parameter_name("dev")
+    ssm.add_client_error("get_parameter", "ParameterNotFound", http_status_code=400,
+                         expected_params={"Name": key_name, "WithDecryption": True})
+    with ddb, ssm, pytest.raises(pp.PassError) as caught:
+        _service(made).issue(_event())
+    assert caught.value.code == "fingerprint_key_missing"
+    ssm.assert_no_pending_responses()
+
+
 def test_missing_secret_with_real_model():
     made = _clients()
     ddb, ssm = made["dynamodb"][1], made["ssm"][1]

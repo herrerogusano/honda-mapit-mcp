@@ -27,6 +27,7 @@ ENV = {
     "MAPIT_WEB_TABLE": "honda-mapit-mcp-dev-web-state",
     "MAPIT_WEB_TURNSTILE_HOSTNAMES": "localhost,web.example.org",
 }
+PROD = {"MAPIT_MCP_ENV": "prod", "MAPIT_WEB_TABLE": "honda-mapit-mcp-prod-web-state"}
 OK = {"success": True, "challenge_ts": "2026-11-06T21:19:50.000Z", "hostname": "localhost",
       "error-codes": [], "action": "web-pass", "cdata": ""}
 
@@ -249,6 +250,43 @@ def test_bad_input_gets_the_same_fixed_400_and_no_side_effects(world, case):
     assert world.codes == ["request_invalid"]
 
 
+@pytest.fixture
+def loads_calls(monkeypatch):
+    calls = []
+
+    def spy(*args, **kwargs):
+        calls.append(args)
+        return json.loads(*args, **kwargs)
+
+    monkeypatch.setattr(pp, "json", type("J", (), {"loads": staticmethod(spy),
+                                                    "dumps": staticmethod(json.dumps)}))
+    return calls
+
+
+def _padded(total_bytes: int, result: str = RESULT) -> str:
+    core = json.dumps({"email": EMAIL, "turnstile": result})
+    return core[:-1] + " " * (total_bytes - len(core.encode("utf-8"))) + "}"
+
+
+def test_body_over_the_byte_limit_is_400_before_parsing(world, loads_calls):
+    body = _padded(4097)  # literal on purpose: a larger constant must make this fail
+    assert len(body.encode()) == 4097
+    assert world.call(raw=body) == (400, {"error": "peticion_invalida"})
+    assert loads_calls == [] and world.ssm.calls == []
+
+
+def test_multibyte_body_is_measured_in_bytes_before_parsing(world, loads_calls):
+    body = json.dumps({"email": EMAIL, "turnstile": "é" * 2100}, ensure_ascii=False)
+    assert len(body) <= pp.MAX_BODY_BYTES < len(body.encode())
+    assert world.call(raw=body) == (400, {"error": "peticion_invalida"})
+    assert loads_calls == []
+
+
+def test_body_at_the_byte_limit_is_accepted(world, loads_calls):
+    assert world.call(raw=_padded(pp.MAX_BODY_BYTES))[0] == 200
+    assert len(loads_calls[0][0]) == pp.MAX_BODY_BYTES  # the body; the second call is siteverify
+
+
 def test_charset_utf8_is_accepted(world):
     assert world.call(headers={"Content-Type": "application/json; charset=UTF-8"})[0] == 200
 
@@ -291,7 +329,9 @@ def test_ip_row_uses_the_base_fingerprint_of_the_address(world):
 @pytest.mark.parametrize("item,expected,code", [
     ({"pk": {"S": "config"}, "open": {"BOOL": False}}, {"estado": "cerrado"}, "web_closed"),
     ({"pk": {"S": "config"}, "pause_until": {"N": str(NOW + 1)}}, {"estado": "pausa"}, "web_paused"),
-    ({"pk": {"S": "config"}, "open": {"S": "yes"}}, {"estado": "cerrado"}, "config_malformed"),
+    ({"pk": {"S": "config"}, "open": {"S": "yes"}}, {"estado": "pausa"}, "config_malformed"),
+    ({"pk": {"S": "config"}, "open": {"BOOL": False}, "pause_until": {"N": str(NOW + 1)}},
+     {"estado": "cerrado"}, "web_closed"),
 ])
 def test_closed_or_paused_answers_like_estado_without_cloudflare(world, item, expected, code):
     world.dynamo.items["config"] = item
@@ -305,9 +345,9 @@ def test_pause_over_issues_again(world):
     assert world.call()[0] == 200
 
 
-def test_config_read_failure_is_closed(world):
+def test_config_read_failure_answers_pausa(world):
     world.dynamo.fail["get_item"] = "ProvisionedThroughputExceededException"
-    assert world.call() == (503, {"error": "no_disponible"})
+    assert world.call() == (503, {"estado": "pausa"})
     assert world.transport.calls == []
     # load_web_config fails closed and keeps no cause, so none is logged.
     assert world.logs == [("config_read_failed", None, None)]
@@ -394,11 +434,20 @@ def test_dummy_secret_is_refused_in_prod_only(monkeypatch):
     assert dev.call()[0] == 200
 
 
-def test_fingerprint_key_failure_fails_closed(world):
+def test_missing_fingerprint_key_is_never_created_here(world):
     del world.ssm.values["/honda-mapit-mcp/dev/web/fingerprint-key"]
-    world.ssm.put_parameter = lambda **kw: (_ for _ in ()).throw(ClientError("AccessDeniedException"))
+    puts = []
+    world.ssm.put_parameter = lambda **kw: puts.append(kw) or {"Version": 1, "Tier": "Standard"}
+    assert world.call() == (503, {"error": "no_disponible"})
+    assert puts == []
+    assert world.logs == [("fingerprint_key_missing", None, None)]
+    assert world.transport.calls == [] and world.dynamo.writes() == []
+
+
+def test_fingerprint_key_read_failure_fails_closed(world):
+    world.ssm.get_parameter = lambda **kw: (_ for _ in ()).throw(ClientError("AccessDeniedException"))
     assert world.call()[0] == 503
-    assert world.logs == [("fingerprint_key_write_failed", "ClientError", "AccessDeniedException")]
+    assert world.logs == [("fingerprint_key_read_failed", "ClientError", "AccessDeniedException")]
     assert world.transport.calls == []
 
 
@@ -452,6 +501,9 @@ def test_invalid_clock_fails_closed(world):
     ({"MAPIT_WEB_TURNSTILE_HOSTNAMES": ",".join(["a.example"] * 11)}, "pass_hostnames_invalid"),
     ({"MAPIT_MCP_ENV": "prod", "MAPIT_WEB_TABLE": "honda-mapit-mcp-prod-web-state"},
      "pass_hostnames_invalid"),
+    ({**PROD, "MAPIT_WEB_TURNSTILE_HOSTNAMES": "web.example.org,app.localhost"}, "pass_hostnames_invalid"),
+    ({**PROD, "MAPIT_WEB_TURNSTILE_HOSTNAMES": "web.example.org,127.0.0.1"}, "pass_hostnames_invalid"),
+    ({**PROD, "MAPIT_WEB_TURNSTILE_HOSTNAMES": "192.0.2.10"}, "pass_hostnames_invalid"),
 ])
 def test_bad_settings_fail_closed(monkeypatch, change, code):
     env = {k: v for k, v in {**ENV, **change}.items() if v is not None}
@@ -480,9 +532,9 @@ def test_unexpected_exception_is_closed_and_carries_only_the_class(world, monkey
     assert world.logs == [("pass_internal_error", "RuntimeError", None)]
 
 
-def test_config_response_with_null_item_is_closed(world):
+def test_config_response_with_null_item_answers_pausa(world):
     world.dynamo.get_item = lambda **kw: {"Item": None}
-    assert world.call() == (503, {"estado": "cerrado"})
+    assert world.call() == (503, {"estado": "pausa"})
     assert world.transport.calls == []
 
 

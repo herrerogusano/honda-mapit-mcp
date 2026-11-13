@@ -125,6 +125,16 @@ class Settings:
     hostnames: frozenset[str]
 
 
+def _local_or_ip(name: str) -> bool:
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+    try:
+        ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return True
+
+
 def load_settings(environ: Mapping[str, str]) -> Settings:
     try:
         enabled = web.public_mode_enabled(environ)
@@ -142,7 +152,7 @@ def load_settings(environ: Mapping[str, str]) -> Settings:
     names = raw.split(",") if type(raw) is str else []
     if not 0 < len(names) <= MAX_HOSTNAMES or any(not _HOSTNAME_RE.fullmatch(n) for n in names):
         raise PassError("pass_hostnames_invalid", "unavailable")
-    if env == "prod" and "localhost" in names:
+    if env == "prod" and any(_local_or_ip(n) for n in names):
         raise PassError("pass_hostnames_invalid", "unavailable")
     return Settings(env=env, table=web.web_table_name(env), hostnames=frozenset(names))
 
@@ -180,12 +190,16 @@ def parse_body(event: Mapping[str, Any]) -> tuple[str, str]:
     body = event.get("body")
     if type(body) is not str or event.get("isBase64Encoded") is not False:
         raise _bad()
-    if not 0 < len(body) <= MAX_BODY_BYTES:
+    if len(body) > MAX_BODY_BYTES:  # cheap pre-check: never fewer bytes than characters
         raise _bad()
     try:
-        if len(body.encode("utf-8")) > MAX_BODY_BYTES:
-            raise ValueError("size")
-        data = json.loads(body, object_pairs_hook=_reject_duplicates, parse_constant=_reject_constant)
+        raw = body.encode("utf-8")
+    except UnicodeError:
+        raise _bad() from None
+    if not 0 < len(raw) <= MAX_BODY_BYTES:
+        raise _bad()
+    try:
+        data = json.loads(raw, object_pairs_hook=_reject_duplicates, parse_constant=_reject_constant)
     except (ValueError, RecursionError):
         raise _bad() from None
     if type(data) is not dict or set(data) != {"email", "turnstile"}:
@@ -322,6 +336,23 @@ def verify_turnstile(transport: Transport, secret: str, result: str, remote_ip: 
 
 # --- Service --------------------------------------------------------------------
 
+class FingerprintKeyCreationRefused(Exception):
+    """The pass function never creates the fingerprint key."""
+
+
+class _ReadOnlySsm:
+    """Exposes only ``get_parameter``; ``put_parameter`` is refused before any call."""
+
+    def __init__(self, ssm: Any) -> None:
+        self._ssm = ssm
+
+    def get_parameter(self, **kwargs: Any) -> Any:
+        return self._ssm.get_parameter(**kwargs)
+
+    def put_parameter(self, **_kwargs: Any) -> Any:
+        raise FingerprintKeyCreationRefused()
+
+
 def _is_conditional_failure(exc: BaseException) -> bool:
     return web._provider_code(exc) == "ConditionalCheckFailedException"
 
@@ -331,7 +362,8 @@ class PassService:
                  clock: Callable[[], float] = time.time) -> None:
         self._settings = settings
         self._dynamodb = dynamodb
-        self._keys = web.FingerprintKeyStore(ssm, settings.env)
+        # Read-only: only the identity function may create the fingerprint key.
+        self._keys = web.FingerprintKeyStore(_ReadOnlySsm(ssm), settings.env)
         self._secrets = SecretStore(ssm, settings.env)
         self._transport = transport
         self._clock = clock
@@ -351,6 +383,8 @@ class PassService:
         try:
             key = self._keys.key()
         except web.PublicWebError as exc:
+            if exc.cause_type == FingerprintKeyCreationRefused.__name__:
+                raise PassError("fingerprint_key_missing", "unavailable") from None
             raise _from_web_error(exc, "unavailable") from None
         try:
             email_fp = web.email_fingerprint(key, email)
@@ -372,10 +406,12 @@ class PassService:
 
     def _check_config(self, now: int) -> None:
         config = web.load_web_config(self._dynamodb, self._settings.table)
+        # Same vocabulary as GET /estado: "cerrado" only for open=false; a
+        # pause, a malformed row or a failed read are all "pausa".
         if config.source == web.CONFIG_SOURCE_READ_FAILED:
-            raise PassError("config_read_failed", "unavailable")
+            raise PassError("config_read_failed", "paused")
         if config.source == web.CONFIG_SOURCE_MALFORMED:
-            raise PassError("config_malformed", "closed")
+            raise PassError("config_malformed", "paused")
         if not config.open:
             raise PassError("web_closed", "closed")
         if not config.accepting(now):
