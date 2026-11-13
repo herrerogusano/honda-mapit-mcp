@@ -406,6 +406,10 @@ def _user_migration(event: dict[str, Any], context: Any, started: float,
           Name=web.web_session_parameter_name(env, tenant), Value=refresh_token,
           Type="SecureString", Overwrite=False, Tier="Standard")
     del refresh_token
+    # Past the deadline no SDK call fits, so a session stored just above is not
+    # deleted here. It belongs to a random tenant that no token ever carries,
+    # and the sweep deletes every parameter under the sessions prefix by age
+    # (SWEEP_AGE_SECONDS), as for any other session. Its usage row expires.
     if base._monotonic() >= deadline:
         raise _Stop("deadline_passed")
     event["response"] = {
