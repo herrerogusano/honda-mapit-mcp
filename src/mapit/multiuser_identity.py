@@ -8,6 +8,9 @@ One handler serves two event families (see docs/multiuser-production.md):
   (Pre Token Generation V2_0) adds the opaque tenant claim to access tokens.
 * API Gateway HTTP API v2: ``GET /privacidad``, ``GET/POST /invitacion``.
 
+With ``MAPIT_WEB_MODE=public`` every event goes to :mod:`mapit.public_identity`
+instead (see that module); with the variable absent nothing changes.
+
 Nothing is logged and no SDK client or network work happens at import time.
 The event (which carries the password) is never logged, printed or embedded in
 exception text; every failure maps to a fixed Spanish message.
@@ -30,6 +33,7 @@ from typing import Any, Callable, Mapping
 from urllib.parse import parse_qsl
 
 from . import multiuser_pages as pages
+from . import public_web as _web
 from .cloud_transport import validate_cloud_config
 from .config import MapitConfig
 from .http_transport import direct_opener, open_direct
@@ -648,6 +652,8 @@ def _token_generation(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _cognito_trigger(event: dict[str, Any], context: Any, started: float) -> dict[str, Any]:
+    if _web.public_mode_enabled(os.environ):
+        return _public.cognito_trigger(event, context, started, os.environ)
     source = event.get("triggerSource")
     if source == "UserMigration_Authentication":
         return _user_migration(event, context, started, os.environ)
@@ -809,6 +815,8 @@ def _http_request(event: Mapping[str, Any]) -> dict[str, Any]:
     method = http.get("method") if isinstance(http, Mapping) else None
     path = event.get("rawPath")
     environ = os.environ
+    if _web.public_mode_enabled(environ):
+        return _public.http_request(event, environ)
     if path == "/privacidad" and method == "GET":
         try:
             _environment_name(environ)
@@ -836,7 +844,7 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
         try:
             return _cognito_trigger(event, context, started)
         except IdentityError as exc:
-            if exc.args and exc.args[0] in _USER_MESSAGES:
+            if exc.args and (exc.args[0] in _USER_MESSAGES or exc.args[0] in _public.USER_MESSAGES):
                 message = exc.args[0]
         except Exception:
             pass
@@ -850,6 +858,9 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
             return _html(503, pages.render_unavailable())
     raise IdentityError(MSG_GENERIC)
 
+
+# Public web mode (MAPIT_WEB_MODE=public). Imported last: it uses this module.
+from . import public_identity as _public  # noqa: E402
 
 __all__ = [
     "CSP", "IdentityError", "MapitCredentialsRejected", "MapitLoginFailed",
