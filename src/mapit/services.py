@@ -24,7 +24,14 @@ from .analytics import (
     route_extremes,
     route_statistics,
 )
-from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
+from .client import (
+    MapitClient,
+    MapitHTTPError,
+    MapitResponseError,
+    MapitResponseTooLarge,
+    MapitTimeout,
+    MapitTransportError,
+)
 from .distance_units import DISTANCE_CONVERSION_BASIS, native_distance_to_km
 from .geography import (
     GeographyError,
@@ -400,6 +407,10 @@ class _SplitWindow(Exception):
     """A route-list read must be retried as smaller month groups."""
 
 
+class _MonthlyWindow(Exception):
+    """A route-list read must be retried as its individual months."""
+
+
 def _read_route_list(
     read: Callable[[datetime, datetime], Any],
     start: datetime,
@@ -409,9 +420,13 @@ def _read_route_list(
 
     The whole period is read at once. A response over the byte ceiling, or one
     carrying a pagination cursor, is discarded and its window is split in half
-    at a calendar-month boundary and read again, recursively. A single calendar
-    month is never split: there the original error stands, exactly as with the
-    previous month-by-month reads. Any other error stops the whole read.
+    at a calendar-month boundary and read again, recursively. A read timeout on
+    a multi-month window replaces that window directly by its single months, so
+    at most one timeout is spent per window instead of one per halving level. A
+    single calendar month is never split: there the original error stands,
+    exactly as with the previous month-by-month reads. Any other error
+    (connection failure, HTTP status, invalid envelope) stops the whole read.
+    Either way a period of ``n`` months costs at most ``2n - 1`` route reads.
     """
     pending = [split_month_windows(start, end)]
     while pending:
@@ -422,6 +437,10 @@ def _read_route_list(
             except MapitResponseTooLarge:
                 if len(months) > 1:
                     raise _SplitWindow from None
+                raise
+            except MapitTimeout:
+                if len(months) > 1:
+                    raise _MonthlyWindow from None
                 raise
             if not isinstance(payload, Mapping) or not isinstance(payload.get("data"), list):
                 raise ServiceError("invalid_response", "MAPIT route history has an unexpected shape")
@@ -434,6 +453,10 @@ def _read_route_list(
             # LIFO stack: push the later half first so the earlier half is read first.
             pending.append(months[middle:])
             pending.append(months[:middle])
+            continue
+        except _MonthlyWindow:
+            # LIFO stack: push the latest month first so months are read oldest first.
+            pending.extend([month] for month in reversed(months))
             continue
         except Exception as exc:
             raise _translate_error(exc) from None

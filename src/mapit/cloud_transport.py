@@ -22,6 +22,7 @@ from .client import (
     MAX_MAPIT_RESPONSE_BYTES,
     MapitHTTPError,
     MapitResponseTooLarge,
+    MapitTimeout,
     MapitTransportError,
 )
 from .config import MapitConfig
@@ -255,11 +256,13 @@ class CloudDirectTransport:
         self._reserve_attempt()
         request = urllib.request.Request(url, data=body, headers=dict(headers), method=method)
         response = None
+        full_timeout = False
         try:
             # Request construction and header copying take place after budget
             # reservation; recalculate the per-socket timeout immediately
             # before dispatch so that work in this layer cannot overrun it.
             timeout = min(float(self.config.http_timeout), self.check_deadline())
+            full_timeout = timeout >= float(self.config.http_timeout)
             response = open_direct(request, timeout=timeout, opener=self._opener)
             self.check_deadline()
             status = getattr(response, "status", None)
@@ -309,8 +312,12 @@ class CloudDirectTransport:
             except Exception:
                 pass
             self._raise_http(status, method, url)
-        except Exception:
+        except Exception as exc:
             if method == "GET":
+                # A read timeout at the full configured timeout means MAPIT was
+                # slow to answer; one cut short by the request deadline is not.
+                if isinstance(exc, TimeoutError) and full_timeout:
+                    raise MapitTimeout() from None
                 raise MapitTransportError() from None
             raise CognitoTransportError() from None
         finally:
