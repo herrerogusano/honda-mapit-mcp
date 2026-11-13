@@ -34,6 +34,36 @@ def _client(service: str):
     return client, stub_module.Stubber(client)
 
 
+def _pool_client(name: str = "honda-mapit-mcp-dev-web-users"):
+    """Cognito client whose first stubbed call is the DescribeUserPool check."""
+    cognito, stub = _client("cognito-idp")
+    stub.add_response("describe_user_pool", {"UserPool": {
+        "Id": POOL, "Name": name, "Status": "Enabled", "CreationDate": OLD, "LastModifiedDate": OLD,
+        "Arn": "arn:aws:cognito-idp:eu-west-1:123456789012:userpool/" + POOL,
+    }}, {"UserPoolId": POOL})
+    return cognito, stub
+
+
+def test_invitation_pool_with_real_model_deletes_nothing():
+    # No SSM or ListUsers response is queued: Stubber fails on any such call.
+    ssm, ssm_stub = _client("ssm")
+    cognito, cognito_stub = _pool_client("honda-mapit-mcp-dev-users")
+    with ssm_stub, cognito_stub:
+        result = _run(ssm, cognito)
+    cognito_stub.assert_no_pending_responses()
+    assert result.codes == ["sweep_pool_mismatch"]
+
+
+def test_describe_user_pool_error_with_real_model_deletes_nothing():
+    ssm, ssm_stub = _client("ssm")
+    cognito, cognito_stub = _client("cognito-idp")
+    cognito_stub.add_client_error("describe_user_pool", "ResourceNotFoundException", http_status_code=400,
+                                  expected_params={"UserPoolId": POOL})
+    with ssm_stub, cognito_stub:
+        result = _run(ssm, cognito)
+    assert result.codes == ["sweep_pool_check_failed"]
+
+
 def _meta(name: str, when: datetime) -> dict:
     return {"Name": name, "Type": "SecureString", "LastModifiedDate": when, "Version": 1,
             "Tier": "Standard", "DataType": "text"}
@@ -46,7 +76,7 @@ def _run(ssm, cognito):
 
 def test_full_sweep_with_real_models():
     ssm, ssm_stub = _client("ssm")
-    cognito, cognito_stub = _client("cognito-idp")
+    cognito, cognito_stub = _pool_client()
     s1, s2 = web.web_session_parameter_name("dev", T1), web.web_session_parameter_name("dev", T2)
     ssm_stub.add_response("describe_parameters",
                           {"Parameters": [_meta(s1, OLD)], "NextToken": "n1"}, DESCRIBE)
@@ -73,7 +103,7 @@ def test_full_sweep_with_real_models():
 
 def test_real_not_found_errors_are_idempotent():
     ssm, ssm_stub = _client("ssm")
-    cognito, cognito_stub = _client("cognito-idp")
+    cognito, cognito_stub = _pool_client()
     s1 = web.web_session_parameter_name("dev", T1)
     ssm_stub.add_response("describe_parameters", {"Parameters": [_meta(s1, OLD)]}, DESCRIBE)
     ssm_stub.add_client_error("delete_parameter", "ParameterNotFound", http_status_code=400,
@@ -89,7 +119,7 @@ def test_real_not_found_errors_are_idempotent():
 
 def test_real_access_denied_is_coded():
     ssm, ssm_stub = _client("ssm")
-    cognito, cognito_stub = _client("cognito-idp")
+    cognito, cognito_stub = _pool_client()
     ssm_stub.add_client_error("describe_parameters", "AccessDeniedException", http_status_code=400)
     cognito_stub.add_client_error("list_users", "NotAuthorizedException", http_status_code=400)
     with ssm_stub, cognito_stub:
@@ -100,7 +130,7 @@ def test_real_access_denied_is_coded():
 def test_foreign_names_in_a_real_response_are_never_deleted():
     # Stubber raises on any unexpected call, so no delete_parameter is queued.
     ssm, ssm_stub = _client("ssm")
-    cognito, cognito_stub = _client("cognito-idp")
+    cognito, cognito_stub = _pool_client()
     ssm_stub.add_response("describe_parameters", {"Parameters": [
         _meta(web.fingerprint_key_parameter_name("dev"), OLD),
         _meta("/honda-mapit-mcp/dev/web/sessions/" + T1 + "/other", OLD),

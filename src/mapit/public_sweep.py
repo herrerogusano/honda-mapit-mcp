@@ -10,7 +10,11 @@ login leaves behind:
    deleted; the fingerprint key and anything else is never touched.
 2. Users of the web user pool (``ListUsers`` without attributes) whose
    ``UserCreateDate`` is ``SWEEP_AGE_SECONDS`` or older (``AdminDeleteUser``).
-   Only the pool whose id comes from :data:`POOL_VARIABLE` is used.
+   Only the pool whose id comes from :data:`POOL_VARIABLE` is used, and only
+   after ``DescribeUserPool`` shows that this id is the pool named
+   :func:`web_user_pool_name` for the environment. Otherwise the run deletes
+   nothing (sessions included) and fails with ``sweep_pool_mismatch`` or
+   ``sweep_pool_check_failed``.
 
 Expired table rows are left to DynamoDB TTL: finding them without a scan is not
 possible (their keys are fingerprints or tenant ids the sweep does not know),
@@ -47,6 +51,7 @@ from .public_web import (
     public_mode_enabled,
     web_session_parameter_name,
     web_session_parameter_prefix,
+    web_stack_name,
 )
 
 ENV_VARIABLE = "MAPIT_MCP_ENV"
@@ -67,6 +72,15 @@ CLOCK_SKEW_SECONDS = 300          # a date further in the future is invalid
 _POOL_RE = re.compile(r"^eu-west-1_[0-9A-Za-z]{9,45}$")
 _TOKEN_MAX = 4096
 _USERNAME_MAX = 128
+
+def web_user_pool_name(env: str) -> str:
+    """Name the web template must give its user pool (``UserPoolName``).
+
+    The sweep deletes users only in a pool with exactly this name. It differs
+    from the invitation stack pool ``honda-mapit-mcp-{env}-users``.
+    """
+    return f"{web_stack_name(env)}-users"
+
 
 STATUS_OK = "ok"
 STATUS_INCOMPLETE = "incomplete"
@@ -153,9 +167,35 @@ class Sweeper:
 
     def run(self) -> SweepResult:
         result = SweepResult()
+        if not self._pool_verified(result):
+            return result
         self._sweep_sessions(result)
         self._sweep_users(result)
         return result
+
+    # --- Pool check --------------------------------------------------------
+
+    def _pool_verified(self, result: SweepResult) -> bool:
+        """``DescribeUserPool``: the configured id must be the web pool of this env.
+
+        Any mismatch or failure deletes nothing in this run.
+        """
+        if not self._time_left():
+            result.incomplete = True
+            return False
+        try:
+            response = self._cognito.describe_user_pool(UserPoolId=self._pool)
+        except Exception:
+            result.fail("sweep_pool_check_failed")
+            return False
+        pool = response.get("UserPool") if isinstance(response, Mapping) else None
+        if not isinstance(pool, Mapping):
+            result.fail("sweep_pool_check_failed")
+            return False
+        if pool.get("Id") != self._pool or pool.get("Name") != web_user_pool_name(self._env):
+            result.fail("sweep_pool_mismatch")
+            return False
+        return True
 
     # --- Sessions ----------------------------------------------------------
 
@@ -296,6 +336,7 @@ _METRICS = (
     ("UsersDeleted", "Count"),
     ("SweepFailed", "Count"),
     ("SweepIncomplete", "Count"),
+    ("InvalidDates", "Count"),
 )
 
 
@@ -319,6 +360,7 @@ def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict
         "UsersDeleted": result.users_deleted,
         "SweepFailed": 1 if failed else 0,
         "SweepIncomplete": 1 if result.incomplete else 0,
+        "InvalidDates": result.invalid_dates,
         "event": "web_sweep",
         "status": result.status,
         "codes": list(result.codes),
@@ -326,7 +368,6 @@ def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict
         "sessions_already_gone": result.sessions_gone,
         "users_seen": result.users_seen,
         "users_already_gone": result.users_gone,
-        "invalid_dates": result.invalid_dates,
     }
     if failed:
         record["error"] = FAILURE_CODE
@@ -414,5 +455,5 @@ __all__ = [
     "ENV_VARIABLE", "POOL_VARIABLE", "MODE_VARIABLE", "FAILURE_CODE", "METRIC_NAMESPACE",
     "METRIC_DIMENSION", "DEADLINE_MARGIN_MS", "MAX_SESSION_PAGES", "MAX_USER_PAGES",
     "STATUS_OK", "STATUS_INCOMPLETE", "STATUS_FAILED", "SweepResult", "Sweeper",
-    "emf_record", "run_sweep", "handler",
+    "emf_record", "run_sweep", "handler", "web_user_pool_name",
 ]

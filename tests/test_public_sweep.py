@@ -67,12 +67,25 @@ class FakeSsm:
         return {}
 
 
+def pool_response(pool_id: str = POOL, name: str | None = None) -> dict:
+    return {"UserPool": {"Id": pool_id, "Name": name if name is not None else "honda-mapit-mcp-dev-web-users",
+                         "Status": "Enabled"}}
+
+
 class FakeCognito:
-    def __init__(self, pages: list, delete_errors: dict | None = None) -> None:
+    def __init__(self, pages: list, delete_errors: dict | None = None, pool=None) -> None:
         self.pages = list(pages)
         self.delete_errors = delete_errors or {}
+        self.pool = pool if pool is not None else pool_response()
+        self.describe_calls: list[dict] = []
         self.list_calls: list[dict] = []
         self.deleted: list[tuple[str, str]] = []
+
+    def describe_user_pool(self, **kwargs):
+        self.describe_calls.append(kwargs)
+        if isinstance(self.pool, Exception):
+            raise self.pool
+        return self.pool
 
     def list_users(self, **kwargs):
         self.list_calls.append(kwargs)
@@ -337,12 +350,73 @@ def test_no_call_without_time_margin():
 
 
 def test_stops_mid_run_and_leaves_the_rest():
-    budget = iter([60_000, 60_000, 60_000, 1_000])
+    # pool check, session list, two deletes, then the margin is gone
+    budget = iter([60_000, 60_000, 60_000, 60_000, 1_000])
     ssm = FakeSsm([{"Parameters": [session(T1, OLD), session(T2, OLD), session(T3, OLD)]}])
     cognito = FakeCognito([])
     result = sweeper(ssm, cognito, remaining=lambda: next(budget, 0)).run()
     assert len(ssm.deleted) == 2 and cognito.list_calls == []
     assert result.incomplete and result.status == sweep.STATUS_INCOMPLETE
+
+
+def test_stops_mid_user_deletes_and_leaves_the_rest():
+    # pool check, session list, user list, two user deletes, then the margin is gone
+    budget = iter([60_000, 60_000, 60_000, 60_000, 60_000, 1_000])
+    cognito = FakeCognito([{"Users": [user("u1", OLD), user("u2", OLD), user("u3", OLD)]}])
+    result = sweeper(empty_sessions(), cognito, remaining=lambda: next(budget, 0)).run()
+    assert cognito.deleted == [(POOL, "u1"), (POOL, "u2")]
+    assert result.users_deleted == 2
+    assert result.incomplete and result.status == sweep.STATUS_INCOMPLETE
+
+
+def test_user_page_cap_marks_incomplete(monkeypatch):
+    monkeypatch.setattr(sweep, "MAX_USER_PAGES", 2)
+    cognito = FakeCognito([{"Users": [user("u1", OLD)], "PaginationToken": "p1"},
+                           {"Users": [user("u2", OLD)], "PaginationToken": "p2"}])
+    result = sweeper(empty_sessions(), cognito).run()
+    assert len(cognito.list_calls) == 2 and len(cognito.deleted) == 2
+    assert result.incomplete and result.status == sweep.STATUS_INCOMPLETE
+
+
+# --- Pool check ------------------------------------------------------------
+
+def test_pool_is_described_before_anything_else():
+    order = []
+
+    class OrderedSsm(FakeSsm):
+        def describe_parameters(self, **kwargs):
+            order.append("ssm")
+            return super().describe_parameters(**kwargs)
+
+    class OrderedCognito(FakeCognito):
+        def describe_user_pool(self, **kwargs):
+            order.append("pool")
+            return super().describe_user_pool(**kwargs)
+
+    cognito = OrderedCognito([{"Users": []}])
+    sweeper(OrderedSsm([{"Parameters": []}]), cognito).run()
+    assert order == ["pool", "ssm"] and cognito.describe_calls == [{"UserPoolId": POOL}]
+    assert sweep.web_user_pool_name("dev") == "honda-mapit-mcp-dev-web-users"
+    assert sweep.web_user_pool_name("prod") == "honda-mapit-mcp-prod-web-users"
+
+
+@pytest.mark.parametrize("pool, code", [
+    (pool_response(name="honda-mapit-mcp-dev-users"), "sweep_pool_mismatch"),
+    (pool_response(name="honda-mapit-mcp-prod-web-users"), "sweep_pool_mismatch"),
+    (pool_response(name="honda-mapit-mcp-dev-web-users-x"), "sweep_pool_mismatch"),
+    (pool_response(pool_id="eu-west-1_ZzZzZzZzZ"), "sweep_pool_mismatch"),
+    ({"UserPool": {"Id": POOL}}, "sweep_pool_mismatch"),
+    ({"UserPool": None}, "sweep_pool_check_failed"),
+    ({}, "sweep_pool_check_failed"),
+    (AwsError("ResourceNotFoundException"), "sweep_pool_check_failed"),
+])
+def test_another_pool_or_failed_check_deletes_nothing(pool, code):
+    ssm = FakeSsm([{"Parameters": [session(T1, OLD)]}])
+    cognito = FakeCognito([{"Users": [user("u1", OLD)]}], pool=pool)
+    result = sweeper(ssm, cognito).run()
+    assert ssm.describe_calls == [] and ssm.deleted == []
+    assert cognito.list_calls == [] and cognito.deleted == []
+    assert result.codes == [code] and result.status == sweep.STATUS_FAILED
 
 
 def test_broken_remaining_time_counts_as_no_time():
@@ -410,6 +484,29 @@ def test_make_client_refuses_other_services_and_missing_credentials(monkeypatch)
     monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
     with pytest.raises(web.PublicWebError):
         sweep._make_client("ssm")
+
+
+def test_run_sweep_with_the_real_clock_keeps_a_one_minute_item(monkeypatch):
+    real_now = datetime.now(timezone.utc)
+    young, old = real_now - timedelta(minutes=1), real_now - timedelta(minutes=51)
+    ssm = FakeSsm([{"Parameters": [
+        {"Name": web.web_session_parameter_name(ENV, T1), "LastModifiedDate": young},
+        {"Name": web.web_session_parameter_name(ENV, T2), "LastModifiedDate": old},
+    ]}])
+    cognito = FakeCognito([{"Users": [{"Username": "young", "UserCreateDate": young},
+                                      {"Username": "old", "UserCreateDate": old}]}])
+    monkeypatch.setattr(sweep, "_client_factory", {"ssm": ssm, "cognito-idp": cognito}.__getitem__)
+    result = sweep.run_sweep(ENVIRON, Context())
+    assert result.status == sweep.STATUS_OK and result.invalid_dates == 0
+    assert ssm.deleted == [web.web_session_parameter_name(ENV, T2)]
+    assert cognito.deleted == [(POOL, "old")]
+    assert 50 * 60 <= result.oldest_age <= 52 * 60
+
+
+def test_invalid_dates_are_an_emf_metric():
+    record = sweep.emf_record(sweep.SweepResult(invalid_dates=3), "dev", 1)
+    names = [m["Name"] for m in record["_aws"]["CloudWatchMetrics"][0]["Metrics"]]
+    assert "InvalidDates" in names and record["InvalidDates"] == 3
 
 
 def test_handler_logs_one_emf_line_without_identifiers(factory, monkeypatch):
