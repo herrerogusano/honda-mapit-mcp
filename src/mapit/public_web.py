@@ -18,8 +18,13 @@ existing rows):
 * fingerprint: lowercase hex of HMAC-SHA256 over
   ``b"honda-mapit-mcp/web/fingerprint/v1/" + domain + b"\\x00" + value``
   (UTF-8), with ``domain`` one of ``email``, ``ip``, ``result``. The email is
-  normalized with :func:`mapit.multiuser_common.normalize_email`, the IP with
-  :mod:`ipaddress` (compressed form); a Turnstile result is used verbatim.
+  normalized with :func:`mapit.multiuser_common.normalize_email`. The IP value
+  is, with :mod:`ipaddress`: for IPv4 the compressed address (``192.0.2.1``);
+  an IPv4-mapped IPv6 address (``::ffff:192.0.2.1``) is first turned into that
+  IPv4 address; for any other IPv6 address its /64 network in compressed form
+  (``2001:db8:1:2::/64``), since one client usually controls a whole /64.
+  Scoped addresses (``fe80::1%eth0``) are rejected. A Turnstile result is used
+  verbatim.
 * fingerprint key: 32 random bytes, standard base64 with padding, in the
   SecureString parameter :func:`fingerprint_key_parameter_name`.
 * table: one partition key ``pk`` (string), no sort key; expiry attribute
@@ -34,6 +39,7 @@ import binascii
 import hashlib
 import hmac
 import ipaddress
+import logging
 import re
 import secrets
 import threading
@@ -249,7 +255,22 @@ def ip_passes_key(ip_fp: str, window: int) -> Key:
 
 
 def breaker_window(now: int) -> int:
+    """Fixed ``BREAKER_WINDOW_SECONDS`` window index of ``now``.
+
+    The breaker opens when one window's rejection count is ``>=
+    BREAKER_REJECTIONS`` (see :func:`breaker_tripped`). Because windows are
+    fixed, up to ``2 * BREAKER_REJECTIONS - 2`` rejections can fall within ten
+    minutes that span a window change without opening it (N - 1 at the end of
+    one window, N - 1 at the start of the next).
+    """
     return _epoch_arg(now) // BREAKER_WINDOW_SECONDS
+
+
+def breaker_tripped(rejections: int) -> bool:
+    """True when a window's rejection count opens the breaker (``>= N``)."""
+    if type(rejections) is not int or rejections < 0:
+        raise PublicWebError("count_invalid")
+    return rejections >= BREAKER_REJECTIONS
 
 
 def breaker_key(window: int) -> Key:
@@ -331,14 +352,23 @@ def email_fingerprint(key: bytes, email: object) -> str:
     return fingerprint(key, "email", normalized)
 
 
-def ip_fingerprint(key: bytes, ip: object) -> str:
-    if type(ip) is not str:
+def ip_fingerprint_value(ip: object) -> str:
+    """The text that is fingerprinted for an IP (see the module docstring)."""
+    if type(ip) is not str or "%" in ip:
         raise PublicWebError("ip_invalid")
     try:
-        normalized = ipaddress.ip_address(ip).compressed
+        address = ipaddress.ip_address(ip)
     except ValueError:
         raise PublicWebError("ip_invalid") from None
-    return fingerprint(key, "ip", normalized)
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped is not None:
+            return address.ipv4_mapped.compressed
+        return ipaddress.ip_network(f"{address.compressed}/64", strict=False).compressed
+    return address.compressed
+
+
+def ip_fingerprint(key: bytes, ip: object) -> str:
+    return fingerprint(key, "ip", ip_fingerprint_value(ip))
 
 
 def result_fingerprint(key: bytes, result: object) -> str:
@@ -354,6 +384,14 @@ def _provider_code(exc: BaseException) -> str | None:
     except Exception:
         return None
     return code if type(code) is str and re.fullmatch(r"[A-Za-z0-9.]{1,64}", code) else None
+
+
+EVENT_FINGERPRINT_KEY_CREATED = "fingerprint_key_created"
+_LOGGER = logging.getLogger("mapit.public_web")
+
+
+def _log_event(code: str) -> None:
+    _LOGGER.warning(code)
 
 
 def _encode_key(key: bytes) -> str:
@@ -379,13 +417,21 @@ class FingerprintKeyStore:
     key is written with ``Overwrite=False``. If another caller created it
     first (``ParameterAlreadyExists``), the stored key is read again. An
     existing but invalid parameter is never overwritten: it is an error.
+
+    When this instance creates the key it emits the fixed event
+    :data:`EVENT_FINGERPRINT_KEY_CREATED` (never the value) through ``on_event``;
+    by default a WARNING record on the ``mapit.public_web`` logger. A key
+    created outside the first deployment means every count was reset, so the
+    stack should alarm on it.
     """
 
     def __init__(self, ssm: Any, env: str, *,
-                 token_bytes: Callable[[int], bytes] = secrets.token_bytes) -> None:
+                 token_bytes: Callable[[int], bytes] = secrets.token_bytes,
+                 on_event: Callable[[str], None] | None = None) -> None:
         self._ssm = ssm
         self._name = fingerprint_key_parameter_name(env)
         self._token_bytes = token_bytes
+        self._on_event = on_event if on_event is not None else _log_event
         self._key: bytes | None = None
         self._lock = threading.Lock()
 
@@ -434,6 +480,7 @@ class FingerprintKeyStore:
         version = response.get("Version") if isinstance(response, Mapping) else None
         if type(version) is not int or version < 1:
             raise PublicWebError("fingerprint_key_write_unconfirmed")
+        self._on_event(EVENT_FINGERPRINT_KEY_CREATED)
         return candidate
 
 
@@ -442,6 +489,7 @@ class FingerprintKeyStore:
 CONFIG_SOURCE_DEFAULT = "default"      # row absent
 CONFIG_SOURCE_ROW = "row"              # row present and valid
 CONFIG_SOURCE_MALFORMED = "malformed"  # row present but invalid: closed
+CONFIG_SOURCE_READ_FAILED = "read_failed"  # GetItem failed: closed
 _CONFIG_ATTRIBUTES = frozenset({PARTITION_KEY, "open", "pause_until", "cap", "occupied", "pass_required"})
 _NUMBER_RE = re.compile(r"^(0|[1-9][0-9]{0,12})$")
 
@@ -473,6 +521,9 @@ DEFAULT_WEB_CONFIG = WebConfig(
 CLOSED_WEB_CONFIG = WebConfig(
     open=False, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
     source=CONFIG_SOURCE_MALFORMED)
+READ_FAILED_WEB_CONFIG = WebConfig(
+    open=False, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
+    source=CONFIG_SOURCE_READ_FAILED)
 
 
 def _bool_attribute(item: Mapping[str, Any], name: str, default: bool) -> bool:
@@ -497,9 +548,12 @@ def _number_attribute(item: Mapping[str, Any], name: str, default: int) -> int:
 def parse_web_config(item: object) -> WebConfig:
     """Parse the low-level DynamoDB ``config`` item.
 
-    ``None`` (row absent): the defaults (open, cap 100, pass required). Missing
-    attributes take their default, so a row created by an atomic counter update
-    stays valid. Unknown attributes, wrong types or a wrong key: closed.
+    ``None`` means only one thing: a successful ``GetItem`` whose response has
+    no ``Item``. It gives the defaults (open, cap 100, pass required). A failed
+    or unreadable read must never be passed here as ``None``; it must become a
+    closed config (:func:`load_web_config` does that). Missing attributes take
+    their default, so a row created by an atomic counter update stays valid.
+    Unknown attributes, wrong types or a wrong key: :data:`CLOSED_WEB_CONFIG`.
     """
     if item is None:
         return DEFAULT_WEB_CONFIG
@@ -520,14 +574,61 @@ def parse_web_config(item: object) -> WebConfig:
         return CLOSED_WEB_CONFIG
 
 
+def load_web_config(dynamodb: Any, table_name: str) -> WebConfig:
+    """Strongly consistent ``GetItem`` of the config row, failing closed.
+
+    Any exception, or a response that is not a mapping, gives
+    :data:`READ_FAILED_WEB_CONFIG` (closed, ``source="read_failed"``). Only a
+    successful response without ``Item`` gives the defaults.
+    """
+    try:
+        response = dynamodb.get_item(TableName=table_name, Key=config_key(), ConsistentRead=True)
+    except Exception:
+        return READ_FAILED_WEB_CONFIG
+    if not isinstance(response, Mapping):
+        return READ_FAILED_WEB_CONFIG
+    if "Item" not in response:
+        return parse_web_config(None)
+    item = response["Item"]
+    return parse_web_config(item) if item is not None else CLOSED_WEB_CONFIG
+
+
+def claim_seat_update(table_name: str) -> dict[str, Any]:
+    """The ``Update`` of one new person taking a seat, atomic with its cap check.
+
+    The same mapping works as ``update_item`` keyword arguments and as the
+    ``Update`` element of ``transact_write_items``. It adds 1 to ``occupied``
+    only if: ``cap`` is absent and ``occupied`` (absent = 0) is below
+    :data:`DEFAULT_CAP`; or ``cap`` is 0 (no cap); or ``cap`` is a positive
+    number and ``occupied`` (absent = 0) is below it. A non-number ``cap`` or
+    ``occupied`` fails the condition (closed). It does not check ``open`` or
+    the pause; callers check those on the row they read.
+    """
+    return {
+        "TableName": table_name,
+        "Key": config_key(),
+        "UpdateExpression": "ADD #occupied :one",
+        "ConditionExpression": (
+            "(attribute_not_exists(#cap) AND (attribute_not_exists(#occupied) OR #occupied < :default_cap))"
+            " OR #cap = :zero"
+            " OR (attribute_exists(#cap) AND attribute_not_exists(#occupied) AND #cap > :zero)"
+            " OR #occupied < #cap"
+        ),
+        "ExpressionAttributeNames": {"#occupied": "occupied", "#cap": "cap"},
+        "ExpressionAttributeValues": {
+            ":one": {"N": "1"}, ":zero": {"N": "0"}, ":default_cap": {"N": str(DEFAULT_CAP)},
+        },
+    }
+
+
 __all__ = [name for name in globals() if (name.isupper() and not name.startswith("_")) or name in {
     "PublicWebError", "public_mode_enabled", "web_stack_name", "web_table_name",
     "web_function_name", "web_parameter_root", "web_session_parameter_prefix",
     "web_session_parameter_name", "fingerprint_key_parameter_name", "config_key", "person_key",
     "attempts_key", "pass_key", "used_result_key", "ip_window", "ip_passes_key",
-    "breaker_window", "breaker_key", "session_usage_key", "day_key", "month_key",
+    "breaker_window", "breaker_tripped", "breaker_key", "session_usage_key", "day_key", "month_key",
     "person_expires_at", "attempts_expires_at", "pass_expires_at", "used_result_expires_at",
     "ip_passes_expires_at", "breaker_expires_at", "session_usage_expires_at", "ttl_value",
-    "fingerprint", "email_fingerprint", "ip_fingerprint", "result_fingerprint",
-    "FingerprintKeyStore", "WebConfig", "parse_web_config", "Key",
+    "fingerprint", "email_fingerprint", "ip_fingerprint", "ip_fingerprint_value", "result_fingerprint",
+    "FingerprintKeyStore", "WebConfig", "parse_web_config", "load_web_config", "claim_seat_update", "Key",
 }]
