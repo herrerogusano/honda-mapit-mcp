@@ -255,7 +255,8 @@ def test_charset_utf8_is_accepted(world):
 
 @pytest.mark.parametrize("ip,code", [(None, "source_ip_missing"), ("", "source_ip_missing"),
                                      (7, "source_ip_missing"), ("999.1.1.1", "source_ip_invalid"),
-                                     ("203.0.113.7:443", "source_ip_invalid")])
+                                     ("203.0.113.7:443", "source_ip_invalid"),
+                                     ("fe80::1%eth0", "source_ip_invalid")])
 def test_missing_or_invalid_source_ip_fails_closed(world, ip, code):
     assert world.call(ip=ip) == (503, {"error": "no_disponible"})
     assert world.transport.calls == [] and world.dynamo.calls == []
@@ -271,10 +272,18 @@ def test_ipv6_limit_counts_the_slash_64_but_cloudflare_gets_the_address(world):
     assert remote == ["2001:db8:1:2::1"]
 
 
-def test_ipv4_mapped_address_counts_as_the_ipv4_address(world):
+def test_ipv4_mapped_address_counts_and_is_sent_as_the_ipv4_address(world):
     world.call(ip="::ffff:203.0.113.7")
     ip_pk = web.ip_passes_key(web.ip_fingerprint(KEY, IP), NOW // 600)["pk"]["S"]
     assert ip_pk in world.dynamo.items
+    assert parse_qs(world.transport.calls[0][1].decode())["remoteip"] == [IP]
+
+
+def test_ip_row_uses_the_base_fingerprint_of_the_address(world):
+    world.call(ip="2001:db8:1:2::abcd")
+    expected = web.ip_passes_key(web.ip_fingerprint(KEY, "2001:db8:1:2::abcd"), NOW // 600)
+    assert web.ip_fingerprint_value("2001:db8:1:2::abcd") == "2001:db8:1:2::/64"
+    assert expected["pk"]["S"] in world.dynamo.items
 
 
 # --- Configuration row ------------------------------------------------------------
@@ -300,7 +309,8 @@ def test_config_read_failure_is_closed(world):
     world.dynamo.fail["get_item"] = "ProvisionedThroughputExceededException"
     assert world.call() == (503, {"error": "no_disponible"})
     assert world.transport.calls == []
-    assert world.logs == [("config_read_failed", "ClientError", "ProvisionedThroughputExceededException")]
+    # load_web_config fails closed and keeps no cause, so none is logged.
+    assert world.logs == [("config_read_failed", None, None)]
 
 
 # --- Cloudflare -------------------------------------------------------------------
@@ -461,11 +471,19 @@ def test_non_mapping_event_is_closed(world):
     assert reply["statusCode"] == 503 and world.codes == ["event_invalid"]
 
 
-def test_unexpected_exception_is_closed_and_carries_only_the_class(world):
-    world.dynamo.get_item = lambda **kw: (_ for _ in ()).throw(RuntimeError(EMAIL))
-    world.ssm.get_parameter = None  # never reached
-    assert world.call()[0] == 503
-    assert world.logs == [("config_read_failed", "RuntimeError", None)]
+def test_unexpected_exception_is_closed_and_carries_only_the_class(world, monkeypatch):
+    def boom(event):
+        raise RuntimeError(EMAIL)
+
+    monkeypatch.setattr(pp, "parse_body", boom)
+    assert world.call() == (503, {"error": "no_disponible"})
+    assert world.logs == [("pass_internal_error", "RuntimeError", None)]
+
+
+def test_config_response_with_null_item_is_closed(world):
+    world.dynamo.get_item = lambda **kw: {"Item": None}
+    assert world.call() == (503, {"estado": "cerrado"})
+    assert world.transport.calls == []
 
 
 def test_response_headers_have_no_cors_and_no_store(world):

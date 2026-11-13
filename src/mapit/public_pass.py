@@ -65,7 +65,6 @@ MAX_SITEVERIFY_RESPONSE_BYTES = 16 * 1024
 MAX_BODY_BYTES = 4 * 1024
 MAX_HOSTNAMES = 10
 MAX_SECRET_CHARS = 256
-IPV6_LIMIT_PREFIX = 64                 # the per-IP limit counts one IPv6 /64 as one IP
 SDK_CONNECT_TIMEOUT = 0.5
 SDK_READ_TIMEOUT = 1.0
 LOG_FIELD = "web_pass_outcome"
@@ -203,23 +202,25 @@ def parse_body(event: Mapping[str, Any]) -> tuple[str, str]:
     return email, result
 
 
-def source_ip(event: Mapping[str, Any]) -> tuple[str, str]:
-    """Return ``(ip for Cloudflare, ip for the limit)``; the limit uses the IPv6 /64."""
+def source_ip(event: Mapping[str, Any]) -> str:
+    """The validated source address (compressed; IPv4-mapped IPv6 as IPv4).
+
+    It goes to Cloudflare as ``remoteip``. The per-IP limit fingerprints it with
+    :func:`mapit.public_web.ip_fingerprint`, which reduces IPv6 to its /64.
+    """
     context = event.get("requestContext")
     http = context.get("http") if isinstance(context, Mapping) else None
     value = http.get("sourceIp") if isinstance(http, Mapping) else None
     if type(value) is not str or not 0 < len(value) <= 45:
         raise PassError("source_ip_missing", "unavailable")
     try:
+        web.ip_fingerprint_value(value)  # rejects scoped and malformed addresses
         address = ipaddress.ip_address(value)
-    except ValueError:
+    except (web.PublicWebError, ValueError):
         raise PassError("source_ip_invalid", "unavailable") from None
     if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
         address = address.ipv4_mapped
-    if isinstance(address, ipaddress.IPv6Address):
-        network = ipaddress.IPv6Network((address, IPV6_LIMIT_PREFIX), strict=False)
-        return address.compressed, network.network_address.compressed
-    return address.compressed, address.compressed
+    return address.compressed
 
 
 # --- Turnstile ------------------------------------------------------------------
@@ -344,7 +345,7 @@ class PassService:
     def issue(self, event: Mapping[str, Any]) -> str:
         """Run every step; return ``"issued"`` or raise :class:`PassError`."""
         email, result = parse_body(event)
-        remote_ip, limit_ip = source_ip(event)
+        remote_ip = source_ip(event)
         now = self._now()
         self._check_config(now)
         try:
@@ -356,7 +357,7 @@ class PassService:
         except web.PublicWebError:
             raise _bad() from None
         result_fp = web.result_fingerprint(key, result)
-        ip_fp = web.ip_fingerprint(key, limit_ip)
+        ip_fp = web.ip_fingerprint(key, remote_ip)
         secret = self._secrets.secret()
         try:
             verify_turnstile(self._transport, secret, result, remote_ip, self._settings.hostnames)
@@ -370,14 +371,9 @@ class PassService:
         return "issued"
 
     def _check_config(self, now: int) -> None:
-        try:
-            response = self._dynamodb.get_item(
-                TableName=self._settings.table, Key=web.config_key(), ConsistentRead=True)
-        except Exception as exc:
-            raise PassError("config_read_failed", "unavailable", cause=exc) from None
-        if not isinstance(response, Mapping):
+        config = web.load_web_config(self._dynamodb, self._settings.table)
+        if config.source == web.CONFIG_SOURCE_READ_FAILED:
             raise PassError("config_read_failed", "unavailable")
-        config = web.parse_web_config(response.get("Item"))
         if config.source == web.CONFIG_SOURCE_MALFORMED:
             raise PassError("config_malformed", "closed")
         if not config.open:
@@ -512,7 +508,7 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
 __all__ = [
     "PASS_PATH", "ENV_VARIABLE", "TABLE_VARIABLE", "HOSTNAMES_VARIABLE", "SITEVERIFY_URL",
     "TURNSTILE_ACTION", "SITEVERIFY_TIMEOUT_SECONDS", "MAX_SITEVERIFY_RESPONSE_BYTES",
-    "MAX_BODY_BYTES", "IPV6_LIMIT_PREFIX", "LOG_FIELD", "PassError", "PassService", "SecretStore",
+    "MAX_BODY_BYTES", "LOG_FIELD", "PassError", "PassService", "SecretStore",
     "Settings", "Transport", "default_transport", "handle", "handler", "load_settings",
     "parse_body", "reset_services", "response", "sdk_config", "source_ip",
     "turnstile_secret_parameter_name", "verify_turnstile",
