@@ -38,6 +38,8 @@ from .lambda_adapter import _build_synthetic_lambda_handler
 from .mcp_server import create_server
 from .multiuser_common import ENVIRONMENTS, REGION, TENANT_CLAIM, TENANT_ID_RE
 from .public_web_service import (
+    DELETE_DONE, DELETE_FAILED, DELETE_NO_SESSION, FAILED_DELETE, FAILED_LOGOUT,
+    MSG_PUBLIC_DELETE_FAILED, MSG_PUBLIC_DELETE_NO_SESSION, MSG_PUBLIC_EXPIRED,
     MSG_LOGOUT_DONE, MSG_LOGOUT_FAILED, MSG_PUBLIC_DELETE_DONE, MSG_PUBLIC_DELETE_PREVIEW,
     MSG_PUBLIC_LIMIT, MSG_PUBLIC_PAUSED, MSG_PUBLIC_RATE, PUBLIC_READ_TOOLS, PUBLIC_TOOLS,
     REFUSED_EXPIRED, REFUSED_LIMIT, REFUSED_PAUSED, REFUSED_RATE, REFUSED_UNAVAILABLE,
@@ -443,23 +445,33 @@ def _current_auth_time() -> int:
     except Exception:
         auth_time = None
     if not _bounded_int(auth_time, 0, _MAX_EPOCH):
-        raise ToolError(MSG_UNAVAILABLE)
+        raise _public_tool_error(REFUSED_UNAVAILABLE)
     return auth_time
 
 
 _PUBLIC_REFUSAL_MESSAGES = MappingProxyType({
-    REFUSED_EXPIRED: MSG_SESSION_EXPIRED,
+    REFUSED_EXPIRED: MSG_PUBLIC_EXPIRED,
     REFUSED_LIMIT: MSG_PUBLIC_LIMIT,
     REFUSED_RATE: MSG_PUBLIC_RATE,
     REFUSED_PAUSED: MSG_PUBLIC_PAUSED,
     REFUSED_UNAVAILABLE: MSG_UNAVAILABLE,
+    FAILED_LOGOUT: MSG_LOGOUT_FAILED,
+    FAILED_DELETE: MSG_PUBLIC_DELETE_FAILED,
 })
 
 
-def _public_tool_error(code: str) -> ToolError:
+def _public_tool_error(code: str, message: str | None = None) -> ToolError:
+    """Public web mode tool error: ``"<code>: <message>"`` (fixed code first)."""
     if code not in _PUBLIC_REFUSAL_MESSAGES:
-        code = REFUSED_UNAVAILABLE
-    return ToolError(f"{code}: {_PUBLIC_REFUSAL_MESSAGES[code]}")
+        code, message = REFUSED_UNAVAILABLE, None
+    return ToolError(f"{code}: {message if message is not None else _PUBLIC_REFUSAL_MESSAGES[code]}")
+
+
+def _public_identity() -> tuple[str, str]:
+    try:
+        return _current_identity()
+    except ToolError:
+        raise _public_tool_error(REFUSED_UNAVAILABLE) from None
 
 
 class _TenantOperations:
@@ -498,7 +510,7 @@ class _TenantProxy:
         return "TenantProxy(<redacted>)"
 
     def get(self) -> _TenantOperations:
-        tenant, username = _current_identity()
+        tenant, username = _public_identity() if self._gate is not None else _current_identity()
         return _TenantOperations(self, tenant, username)
 
     def _expired(self, tenant: str, username: str) -> ToolError:
@@ -531,9 +543,10 @@ class _TenantProxy:
 
     def _run(self, tenant: str, username: str, name: str, args: tuple, kwargs: dict) -> Any:
         # Re-check that the operation still belongs to the current token.
-        if _current_identity() != (tenant, username):
-            raise ToolError(MSG_UNAVAILABLE)
-        if self._gate is not None:
+        public = self._gate is not None
+        if (_public_identity() if public else _current_identity()) != (tenant, username):
+            raise _public_tool_error(REFUSED_UNAVAILABLE) if public else ToolError(MSG_UNAVAILABLE)
+        if public:
             self._admit(tenant, username)
         provider = None
         try:
@@ -557,6 +570,8 @@ class _TenantProxy:
         except Exception:
             if _session_rejected(provider):
                 raise self._expired(tenant, username) from None
+            if public:
+                raise _public_tool_error(REFUSED_UNAVAILABLE) from None
             raise ToolError(MSG_UNAVAILABLE) from None
 
 
@@ -592,27 +607,29 @@ def _register_public_tools(server: Any, gate: Any) -> None:
     @server.tool(name="cerrar_sesion", annotations=_DESTRUCTIVE)
     def cerrar_sesion() -> str:
         """Cierra tu sesión: borra al momento tu sesión de MAPIT guardada y tu usuario de este servicio."""
-        tenant, username = _current_identity()
+        tenant, username = _public_identity()
         try:
             done = gate.end_session(tenant, username)
         except Exception:
             done = False
         if done is not True:
-            raise ToolError(MSG_LOGOUT_FAILED)
+            raise _public_tool_error(FAILED_LOGOUT)
         return MSG_LOGOUT_DONE
 
     @server.tool(name="borrar_mis_datos", annotations=_DESTRUCTIVE)
     def borrar_mis_datos(confirmar: bool) -> str:
         """Borra tu sesión de MAPIT guardada, tu usuario de este servicio y el registro de tus entradas (solo con confirmar=true)."""
-        tenant, username = _current_identity()
+        tenant, username = _public_identity()
         if confirmar is not True:
             return MSG_PUBLIC_DELETE_PREVIEW
         try:
-            done = gate.delete_account(tenant, username)
+            outcome = gate.delete_account(tenant, username)
         except Exception:
-            done = False
-        if done is not True:
-            raise ToolError(MSG_DELETE_FAILED)
+            outcome = DELETE_FAILED
+        if outcome == DELETE_NO_SESSION:
+            raise _public_tool_error(FAILED_DELETE, MSG_PUBLIC_DELETE_NO_SESSION)
+        if outcome != DELETE_DONE:
+            raise _public_tool_error(FAILED_DELETE)
         return MSG_PUBLIC_DELETE_DONE
 
     names = {tool.name for tool in server._tool_manager.list_tools()}

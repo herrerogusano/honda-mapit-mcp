@@ -37,7 +37,8 @@ from typing import Any
 from .multiuser_common import validate_tenant_id
 from .public_web import (
     CALLS_PER_MINUTE, PARTITION_KEY, SESSION_CALL_LIMIT, SESSION_MAX_AGE_SECONDS, TTL_ATTRIBUTE,
-    CONFIG_SOURCE_MALFORMED, CONFIG_SOURCE_READ_FAILED, PublicWebError, load_web_config, person_key,
+    CONFIG_SOURCE_MALFORMED, CONFIG_SOURCE_READ_FAILED, PublicWebError, config_key, load_web_config,
+    person_key,
     session_usage_key, web_session_parameter_name, web_table_name,
 )
 
@@ -77,6 +78,24 @@ MSG_PUBLIC_DELETE_DONE = (
     "Hecho: se han borrado tu sesión de MAPIT guardada, tu usuario de este servicio y el "
     "registro de tus entradas. Las próximas peticiones fallarán."
 )
+# Provisional texts of the public mode (no connector or invitation wording).
+MSG_PUBLIC_EXPIRED = "Tu sesión ha caducado. Vuelve a entrar desde la web."
+MSG_PUBLIC_DELETE_NO_SESSION = (
+    "No se han podido borrar tus datos porque tu sesión ya no es válida. Entra de nuevo y "
+    "repite borrar mis datos."
+)
+MSG_PUBLIC_DELETE_FAILED = (
+    "No se han podido borrar tus datos ahora mismo. Inténtalo de nuevo dentro de un rato."
+)
+
+# Tool error codes of the account tools (prefix of their error text).
+FAILED_LOGOUT = "logout_failed"
+FAILED_DELETE = "delete_failed"
+
+# Outcomes of PublicSessionGate.delete_account.
+DELETE_DONE = "done"
+DELETE_NO_SESSION = "no_session"
+DELETE_FAILED = "failed"
 
 _MAX_EPOCH = 2**40
 _MINUTE = 60
@@ -290,13 +309,17 @@ class PublicSessionGate:
         validate_tenant_id(tenant)
         return self._delete_session(tenant, username)
 
-    def delete_account(self, tenant: str, username: str) -> bool:
-        """``borrar_mis_datos``: the person row, then the session.
+    def delete_account(self, tenant: str, username: str) -> str:
+        """``borrar_mis_datos``: the person row and its seat, then the session.
 
-        The person row is found through the usage row's ``person_fp``. If that
-        row is missing, expired or the person row cannot be deleted, nothing
-        else is deleted and False is returned, so the call can be retried.
-        The configuration counter ``occupied`` is not changed here.
+        The person row is found through the usage row's ``person_fp``. One
+        ``TransactWriteItems`` deletes it (``attribute_exists(pk)``) and frees
+        its seat (``ADD occupied -1`` only if ``occupied > 0``). If the person
+        row is already gone, no seat is freed. If ``occupied`` is already 0 the
+        person row is still deleted, without the counter. Returns
+        :data:`DELETE_DONE`; :data:`DELETE_NO_SESSION` when the usage row is
+        missing, expired or has no valid ``person_fp`` (nothing deleted); or
+        :data:`DELETE_FAILED` (the session is kept so the call can be retried).
         """
         validate_tenant_id(tenant)
         now = self._now()
@@ -305,26 +328,57 @@ class PublicSessionGate:
                 TableName=self._table, Key=session_usage_key(tenant), ConsistentRead=True)
         except Exception as exc:
             _log_line(self._log, "public_delete_failed", "usage_read", exc)
-            return False
+            return DELETE_FAILED
         item = response.get("Item") if isinstance(response, Mapping) else None
         expires_at = _number(item, TTL_ATTRIBUTE)
         person = item.get("person_fp") if isinstance(item, Mapping) else None
         if expires_at is None or expires_at <= now or not isinstance(person, Mapping) or set(person) != {"S"}:
             _log_line(self._log, "public_delete_failed", "usage_invalid")
-            return False
+            return DELETE_NO_SESSION
         try:
             key = person_key(person["S"])
         except PublicWebError:
             _log_line(self._log, "public_delete_failed", "person_fp_invalid")
+            return DELETE_NO_SESSION
+        if not self._delete_person(key):
+            return DELETE_FAILED
+        return DELETE_DONE if self._delete_session(tenant, username) else DELETE_FAILED
+
+    def _delete_person(self, key: Mapping[str, Any]) -> bool:
+        names = {"#k": PARTITION_KEY}
+        try:
+            self._client("dynamodb").transact_write_items(TransactItems=[
+                {"Delete": {"TableName": self._table, "Key": dict(key),
+                            "ConditionExpression": "attribute_exists(#k)",
+                            "ExpressionAttributeNames": names}},
+                {"Update": {"TableName": self._table, "Key": config_key(),
+                            "UpdateExpression": "ADD #o :minus_one",
+                            "ConditionExpression": "#o > :zero",
+                            "ExpressionAttributeNames": {"#o": "occupied"},
+                            "ExpressionAttributeValues": {":minus_one": {"N": "-1"}, ":zero": {"N": "0"}}}},
+            ])
+            return True
+        except Exception as exc:
+            if _provider_code(exc) != "TransactionCanceledException":
+                _log_line(self._log, "public_delete_failed", "person_transaction", exc)
+                return False
+            response = getattr(exc, "response", None)
+            reasons = response.get("CancellationReasons") if isinstance(response, Mapping) else None
+            codes = ([reason.get("Code") if isinstance(reason, Mapping) else None for reason in reasons]
+                     if isinstance(reasons, list) else [])
+            if len(codes) == 2 and codes[0] == "ConditionalCheckFailed":
+                return True  # the person row was already gone: nothing to free
+            if codes == ["None", "ConditionalCheckFailed"]:
+                # occupied is already 0 (or absent): delete the row, never go negative.
+                return self._attempt("person_row", lambda: self._client("dynamodb").delete_item(
+                    TableName=self._table, Key=dict(key)))
+            _log_line(self._log, "public_delete_failed", "person_transaction", exc)
             return False
-        if not self._attempt(
-                "person_row",
-                lambda: self._client("dynamodb").delete_item(TableName=self._table, Key=key)):
-            return False
-        return self._delete_session(tenant, username)
 
 
 __all__ = [
+    "DELETE_DONE", "DELETE_FAILED", "DELETE_NO_SESSION", "FAILED_DELETE", "FAILED_LOGOUT",
+    "MSG_PUBLIC_DELETE_FAILED", "MSG_PUBLIC_DELETE_NO_SESSION", "MSG_PUBLIC_EXPIRED",
     "MSG_LOGOUT_DONE", "MSG_LOGOUT_FAILED", "MSG_PUBLIC_DELETE_DONE", "MSG_PUBLIC_DELETE_PREVIEW",
     "MSG_PUBLIC_LIMIT", "MSG_PUBLIC_PAUSED", "MSG_PUBLIC_RATE", "PUBLIC_ACCOUNT_TOOLS",
     "PUBLIC_READ_TOOLS", "PUBLIC_TOOLS", "PublicSessionGate", "PublicSessionRefused",

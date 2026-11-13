@@ -19,10 +19,11 @@ stub = pytest.importorskip("botocore.stub")
 from mapit import multiuser_entrypoint as entry  # noqa: E402
 from mapit import public_web as web  # noqa: E402
 from mapit.multiuser_runtime import (  # noqa: E402
-    MSG_DELETE_FAILED, MSG_SESSION_EXPIRED, MSG_UNAVAILABLE, JwksCache, create_multiuser_runtime,
+    MSG_UNAVAILABLE, JwksCache, create_multiuser_runtime,
 )
 from mapit.public_web_service import (  # noqa: E402
-    MSG_LOGOUT_DONE, MSG_LOGOUT_FAILED, MSG_PUBLIC_DELETE_DONE, MSG_PUBLIC_DELETE_PREVIEW,
+    DELETE_DONE, DELETE_FAILED, DELETE_NO_SESSION, MSG_PUBLIC_DELETE_FAILED, MSG_PUBLIC_DELETE_NO_SESSION,
+    MSG_PUBLIC_EXPIRED, MSG_LOGOUT_DONE, MSG_LOGOUT_FAILED, MSG_PUBLIC_DELETE_DONE, MSG_PUBLIC_DELETE_PREVIEW,
     MSG_PUBLIC_LIMIT, MSG_PUBLIC_PAUSED, MSG_PUBLIC_RATE, PUBLIC_TOOLS, REFUSED_EXPIRED,
     REFUSED_LIMIT, REFUSED_PAUSED, REFUSED_RATE, REFUSED_UNAVAILABLE, PublicSessionGate,
     PublicSessionRefused,
@@ -38,6 +39,8 @@ TABLE = web.web_table_name("dev")
 PARAM = web.web_session_parameter_name("dev", TENANT_A)
 FP = "c" * 64
 USER = "user-a"
+WEB_TOOLS = ["borrar_mis_datos", "cerrar_sesion", "get_route_detail", "get_vehicle_details",
+             "get_vehicle_status", "list_routes"]
 
 
 def make_clients():
@@ -258,33 +261,83 @@ def _usage_read(item):
     return add
 
 
-def test_delete_account_removes_person_row_then_session_and_leaves_occupied():
+PERSON_KEY = {"pk": {"S": f"person#{FP}"}}
+TRANSACTION = {"TransactItems": [
+    {"Delete": {"TableName": TABLE, "Key": PERSON_KEY, "ConditionExpression": "attribute_exists(#k)",
+                "ExpressionAttributeNames": {"#k": "pk"}}},
+    {"Update": {"TableName": TABLE, "Key": {"pk": {"S": "config"}}, "UpdateExpression": "ADD #o :minus_one",
+                "ConditionExpression": "#o > :zero", "ExpressionAttributeNames": {"#o": "occupied"},
+                "ExpressionAttributeValues": {":minus_one": {"N": "-1"}, ":zero": {"N": "0"}}}},
+]}
+
+
+def _transaction(aws, error=None, reasons=None):
+    ddb = aws.stubbers["dynamodb"]
+    if error is None:
+        ddb.add_response("transact_write_items", {}, TRANSACTION)
+    elif reasons is None:
+        ddb.add_client_error("transact_write_items", error, http_status_code=500, expected_params=TRANSACTION)
+    else:
+        ddb.add_client_error("transact_write_items", error, http_status_code=400, expected_params=TRANSACTION,
+                             modeled_fields={"CancellationReasons": [{"Code": code} for code in reasons]})
+
+
+def test_delete_account_deletes_person_and_frees_the_seat_in_one_transaction():
     with Aws() as aws:
         _usage_read(usage())(aws)
-        aws.stubbers["dynamodb"].add_response("delete_item", {}, {
-            "TableName": TABLE, "Key": {"pk": {"S": f"person#{FP}"}}})
+        _transaction(aws)
         aws.deletes()
-        assert aws.gate().delete_account(TENANT_A, USER) is True
-    aws.done()  # no config update: an UpdateItem would be an unexpected stubbed call
+        assert aws.gate().delete_account(TENANT_A, USER) == DELETE_DONE
+    aws.done()
+    assert aws.lines == []
 
 
-@pytest.mark.parametrize("item", [None, usage(expires_at={"N": str(NOW)}), usage(person_fp=None),
-                                  usage(person_fp={"S": "not-a-fingerprint"})])
-def test_delete_account_without_a_valid_usage_row_deletes_nothing(item):
+def test_delete_account_person_already_gone_frees_no_seat():
+    with Aws() as aws:
+        _usage_read(usage())(aws)
+        _transaction(aws, "TransactionCanceledException", ["ConditionalCheckFailed", "None"])
+        aws.deletes()  # no plain delete and no counter update: they would be unstubbed calls
+        assert aws.gate().delete_account(TENANT_A, USER) == DELETE_DONE
+    aws.done()
+    assert aws.lines == []
+
+
+def test_delete_account_with_occupied_zero_deletes_the_row_without_the_counter():
+    with Aws() as aws:
+        _usage_read(usage())(aws)
+        _transaction(aws, "TransactionCanceledException", ["None", "ConditionalCheckFailed"])
+        aws.stubbers["dynamodb"].add_response("delete_item", {}, {"TableName": TABLE, "Key": PERSON_KEY})
+        aws.deletes()
+        assert aws.gate().delete_account(TENANT_A, USER) == DELETE_DONE
+    aws.done()
+    assert aws.lines == []
+
+
+@pytest.mark.parametrize(("item", "step"), [
+    (None, "usage_invalid"), (usage(expires_at={"N": str(NOW)}), "usage_invalid"),
+    (usage(person_fp=None), "usage_invalid"), (usage(person_fp={"S": "not-a-fingerprint"}), "person_fp_invalid"),
+])
+def test_delete_account_without_a_valid_usage_row_deletes_nothing(item, step):
     with Aws() as aws:
         _usage_read(item)(aws)
-        assert aws.gate().delete_account(TENANT_A, USER) is False
+        assert aws.gate().delete_account(TENANT_A, USER) == DELETE_NO_SESSION
     aws.done()
+    lines = [json.loads(line) for line in aws.lines]
+    assert [(line["event"], line["step"]) for line in lines] == [("public_delete_failed", step)]
 
 
-def test_delete_account_keeps_the_session_when_the_person_row_fails():
+@pytest.mark.parametrize(("error", "reasons"), [
+    ("InternalServerError", None),
+    ("TransactionCanceledException", ["None", "TransactionConflict"]),
+])
+def test_delete_account_keeps_the_session_when_the_person_transaction_fails(error, reasons):
     with Aws() as aws:
         _usage_read(usage())(aws)
-        aws.stubbers["dynamodb"].add_client_error("delete_item", "InternalServerError", http_status_code=500)
-        assert aws.gate().delete_account(TENANT_A, USER) is False
+        _transaction(aws, error, reasons)
+        assert aws.gate().delete_account(TENANT_A, USER) == DELETE_FAILED
     aws.done()
     assert FP not in "".join(aws.lines)
-    assert [json.loads(line)["step"] for line in aws.lines] == ["person_row"]  # no session deletion tried
+    assert [json.loads(line)["step"] for line in aws.lines] == ["person_transaction"]  # no session deletion
 
 
 # -- runtime --------------------------------------------------------------------
@@ -330,8 +383,8 @@ def test_public_tool_list_is_the_short_list(keys):
     with Aws() as aws:
         harness = PublicHarness(keys, aws)
         tools = tool_result(harness.call(public_token(keys), method="tools/list"))["tools"]
-    assert sorted(tool["name"] for tool in tools) == sorted(PUBLIC_TOOLS)
-    assert len(PUBLIC_TOOLS) == 6 and harness.created == []
+    assert sorted(tool["name"] for tool in tools) == WEB_TOOLS
+    assert sorted(PUBLIC_TOOLS) == WEB_TOOLS and harness.created == []
     blocked = harness.call(public_token(keys), name="get_distance",
                            arguments={"from_time": "2026-01-01T00:00:00Z", "to_time": "2026-02-01T00:00:00Z"})
     assert tool_result(blocked)["isError"] is True and harness.created == []
@@ -347,14 +400,34 @@ def test_public_mode_requires_auth_time_not_after_iat(keys):
     aws.done()
 
 
-def test_public_read_is_counted_once_then_served(keys):
+PERIOD = {"from_time": "2026-01-01T00:00:00Z", "to_time": "2026-07-01T00:00:00Z"}
+
+
+@pytest.mark.parametrize(("name", "arguments"), [
+    ("get_vehicle_status", {}), ("get_vehicle_details", {}), ("list_routes", PERIOD),
+    ("get_route_detail", {"route_id": "synthetic-route"}),
+])
+def test_public_read_is_counted_once_then_served(keys, name, arguments):
     with Aws() as aws:
         aws.config()
         aws.count(now=None)
         harness = PublicHarness(keys, aws)
-        error, body = text(harness.call(public_token(keys)))
+        error, body = text(harness.call(public_token(keys), name=name, arguments=arguments))
     aws.done()
     assert error is False and len(harness.created) == 1 and harness.created[0].tenant == TENANT_A
+    assert harness.created[0].services.dispatch_count == 1
+
+
+def test_unexpected_admission_error_is_unavailable_without_mapit(keys, monkeypatch):
+    def broken(self, tenant, username, auth_time):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(PublicSessionGate, "admit", broken)
+    with Aws() as aws:
+        harness = PublicHarness(keys, aws)
+        assert text(harness.call(public_token(keys))) == (True, f"service_unavailable: {MSG_UNAVAILABLE}")
+    aws.done()
+    assert harness.created == []
 
 
 @pytest.mark.parametrize(("old", "code", "message"), [
@@ -378,7 +451,7 @@ def test_public_pause_and_age_messages(keys):
         assert text(harness.call(public_token(keys))) == (True, f"service_paused: {MSG_PUBLIC_PAUSED}")
         aws.deletes()
         old = token(keys[0], auth_time=int(time.time()) - 3300)
-        assert text(harness.call(old)) == (True, f"session_expired: {MSG_SESSION_EXPIRED}")
+        assert text(harness.call(old)) == (True, f"session_expired: {MSG_PUBLIC_EXPIRED}")
     aws.done()
     assert harness.created == []
 
@@ -389,7 +462,7 @@ def test_public_missing_mapit_session_ends_the_session(keys):
         aws.count(now=None)
         aws.deletes()
         harness = PublicHarness(keys, aws, missing=True)
-        assert text(harness.call(public_token(keys))) == (True, f"session_expired: {MSG_SESSION_EXPIRED}")
+        assert text(harness.call(public_token(keys))) == (True, f"session_expired: {MSG_PUBLIC_EXPIRED}")
     aws.done()
 
 
@@ -399,19 +472,23 @@ def test_logout_and_delete_tools(keys):
         aws.deletes()
         assert text(harness.call(public_token(keys), name="cerrar_sesion")) == (False, MSG_LOGOUT_DONE)
         aws.deletes(ssm_error="AccessDeniedException")
-        assert text(harness.call(public_token(keys), name="cerrar_sesion")) == (True, MSG_LOGOUT_FAILED)
+        assert text(harness.call(public_token(keys), name="cerrar_sesion")) == (
+            True, f"logout_failed: {MSG_LOGOUT_FAILED}")
         preview = harness.call(public_token(keys), name="borrar_mis_datos", arguments={"confirmar": False})
         assert text(preview) == (False, MSG_PUBLIC_DELETE_PREVIEW)
         live = usage(expires_at={"N": str(int(time.time()) + 3600)})
         _usage_read(live)(aws)
-        aws.stubbers["dynamodb"].add_response("delete_item", {}, {
-            "TableName": TABLE, "Key": {"pk": {"S": f"person#{FP}"}}})
+        _transaction(aws)
         aws.deletes()
         done = harness.call(public_token(keys), name="borrar_mis_datos", arguments={"confirmar": True})
         assert text(done) == (False, MSG_PUBLIC_DELETE_DONE)
         _usage_read(None)(aws)
         failed = harness.call(public_token(keys), name="borrar_mis_datos", arguments={"confirmar": True})
-        assert text(failed) == (True, MSG_DELETE_FAILED)
+        assert text(failed) == (True, f"delete_failed: {MSG_PUBLIC_DELETE_NO_SESSION}")
+        _usage_read(live)(aws)
+        _transaction(aws, "InternalServerError")
+        failed = harness.call(public_token(keys), name="borrar_mis_datos", arguments={"confirmar": True})
+        assert text(failed) == (True, f"delete_failed: {MSG_PUBLIC_DELETE_FAILED}")
     aws.done()
     assert harness.created == []
 
@@ -461,7 +538,7 @@ def test_entrypoint_public_mode_reads_the_web_session_parameter(public_entry, ke
         response = entry.handler(event(public_token(keys)), Context())
         tools = tool_result(entry.handler(event(public_token(keys), method="tools/list"), Context()))["tools"]
     aws.done()
-    assert text(response) == (True, f"session_expired: {MSG_SESSION_EXPIRED}")
+    assert text(response) == (True, f"session_expired: {MSG_PUBLIC_EXPIRED}")
     assert sorted(tool["name"] for tool in tools) == sorted(PUBLIC_TOOLS)
 
 
@@ -505,5 +582,20 @@ def test_entrypoint_without_the_mode_keeps_the_invitation_names(public_entry, mo
     assert entry._settings(dict(env_values()))["public"] is False
 
 
-def test_refusal_messages_never_reach_the_invitation_mode():
-    assert MSG_UNAVAILABLE not in (MSG_PUBLIC_LIMIT, MSG_PUBLIC_RATE, MSG_PUBLIC_PAUSED)
+def test_public_texts_do_not_use_invitation_wording():
+    texts = (MSG_PUBLIC_EXPIRED, MSG_PUBLIC_DELETE_NO_SESSION, MSG_PUBLIC_DELETE_FAILED, MSG_PUBLIC_LIMIT,
+             MSG_PUBLIC_RATE, MSG_PUBLIC_PAUSED, MSG_PUBLIC_DELETE_PREVIEW, MSG_PUBLIC_DELETE_DONE,
+             MSG_LOGOUT_DONE, MSG_LOGOUT_FAILED)
+    for value in texts:
+        assert not any(word in value.lower() for word in ("conector", "administrador", "invitación"))
+
+
+def test_missing_auth_time_in_the_request_context_is_a_coded_error(monkeypatch):
+    # Unreachable through the verifier (it requires auth_time); checked directly.
+    from types import SimpleNamespace
+
+    from mapit import multiuser_runtime as runtime
+    monkeypatch.setattr(runtime, "get_access_token", lambda: SimpleNamespace(claims={"username": USER}))
+    with pytest.raises(runtime.ToolError) as info:
+        runtime._current_auth_time()
+    assert str(info.value) == f"service_unavailable: {MSG_UNAVAILABLE}"
