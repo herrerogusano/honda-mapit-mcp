@@ -37,6 +37,12 @@ from .http_transport import ResponseTooLargeError, open_direct, read_bounded
 from .lambda_adapter import _build_synthetic_lambda_handler
 from .mcp_server import create_server
 from .multiuser_common import ENVIRONMENTS, REGION, TENANT_CLAIM, TENANT_ID_RE
+from .public_web_service import (
+    MSG_LOGOUT_DONE, MSG_LOGOUT_FAILED, MSG_PUBLIC_DELETE_DONE, MSG_PUBLIC_DELETE_PREVIEW,
+    MSG_PUBLIC_LIMIT, MSG_PUBLIC_PAUSED, MSG_PUBLIC_RATE, PUBLIC_READ_TOOLS, PUBLIC_TOOLS,
+    REFUSED_EXPIRED, REFUSED_LIMIT, REFUSED_PAUSED, REFUSED_RATE, REFUSED_UNAVAILABLE,
+    PublicSessionGate, PublicSessionRefused,
+)
 from .remote_http import _BoundedHTTPMiddleware
 from .services import ServiceError
 
@@ -304,13 +310,17 @@ class JwksCache:
 class MultiuserTokenVerifier:
     """Re-verify the pool access token; every failure is an anonymous ``None``."""
 
-    def __init__(self, policy: MultiuserPolicy, jwks: JwksCache) -> None:
+    def __init__(self, policy: MultiuserPolicy, jwks: JwksCache, *, require_auth_time: bool = False) -> None:
         if type(policy) is not MultiuserPolicy or not isinstance(jwks, JwksCache):
             raise ValueError("explicit multiuser policy and JWKS cache required")
         if jwks.issuer_url != policy.issuer_url:
             raise ValueError("JWKS issuer mismatch")
+        if type(require_auth_time) is not bool:
+            raise ValueError("require_auth_time must be a boolean")
         self._policy = policy
         self._jwks = jwks
+        # Public web mode: the login time (auth_time) is required and passed on.
+        self._require_auth_time = require_auth_time
 
     async def verify_token(self, token: str) -> AccessToken | None:
         policy = self._policy
@@ -385,6 +395,12 @@ class MultiuserTokenVerifier:
                 or ("nbf" in claims and (not _bounded_int(nbf, 0, _MAX_EPOCH) or nbf > now))
             ):
                 return None
+            passed = {"iss": policy.issuer_url, TENANT_CLAIM: tenant, "username": username}
+            if self._require_auth_time:
+                auth_time = claims.get("auth_time")
+                if not _bounded_int(auth_time, 0, _MAX_EPOCH) or auth_time > issued:
+                    return None
+                passed["auth_time"] = auth_time
             return AccessToken(
                 token=token,
                 client_id=client_id,
@@ -392,7 +408,7 @@ class MultiuserTokenVerifier:
                 expires_at=exp,
                 resource=policy.audience,
                 subject=subject,
-                claims={"iss": policy.issuer_url, TENANT_CLAIM: tenant, "username": username},
+                claims=passed,
             )
         except Exception:
             # Suppress parser/signature diagnostics and token material.
@@ -418,6 +434,34 @@ def _current_identity() -> tuple[str, str]:
     return tenant, username
 
 
+def _current_auth_time() -> int:
+    """Login time of the verified request token (public web mode only)."""
+    try:
+        access = get_access_token()
+        claims = access.claims if access is not None else None
+        auth_time = claims.get("auth_time") if isinstance(claims, dict) else None
+    except Exception:
+        auth_time = None
+    if not _bounded_int(auth_time, 0, _MAX_EPOCH):
+        raise ToolError(MSG_UNAVAILABLE)
+    return auth_time
+
+
+_PUBLIC_REFUSAL_MESSAGES = MappingProxyType({
+    REFUSED_EXPIRED: MSG_SESSION_EXPIRED,
+    REFUSED_LIMIT: MSG_PUBLIC_LIMIT,
+    REFUSED_RATE: MSG_PUBLIC_RATE,
+    REFUSED_PAUSED: MSG_PUBLIC_PAUSED,
+    REFUSED_UNAVAILABLE: MSG_UNAVAILABLE,
+})
+
+
+def _public_tool_error(code: str) -> ToolError:
+    if code not in _PUBLIC_REFUSAL_MESSAGES:
+        code = REFUSED_UNAVAILABLE
+    return ToolError(f"{code}: {_PUBLIC_REFUSAL_MESSAGES[code]}")
+
+
 class _TenantOperations:
     def __init__(self, proxy: "_TenantProxy", tenant: str, username: str) -> None:
         self._proxy, self._tenant, self._username = proxy, tenant, username
@@ -439,10 +483,13 @@ class _TenantProxy:
     """Per-request provider: one lazily built tenant provider, never shared."""
 
     def __init__(self, deadline: float, services_factory: Callable[[str, float], Any],
-                 relink: Callable[[str, str], Any]) -> None:
+                 relink: Callable[[str, str], Any], gate: Any | None = None) -> None:
         self._deadline = deadline
         self._factory = services_factory
         self._relink = relink
+        # Public web mode: admission (age, pause, limits) once per request and tenant.
+        self._gate = gate
+        self._admitted: set[str] = set()
         self._providers: dict[str, Any] = {}
         self._relinked: set[str] = set()
         self._lock = threading.Lock()
@@ -463,12 +510,31 @@ class _TenantProxy:
                 self._relink(tenant, username)
             except Exception:
                 pass
+        if self._gate is not None:
+            return _public_tool_error(REFUSED_EXPIRED)
         return ToolError(MSG_SESSION_EXPIRED)
+
+    def _admit(self, tenant: str, username: str) -> None:
+        with self._lock:
+            if tenant in self._admitted:
+                return
+        try:
+            self._gate.admit(tenant, username, _current_auth_time())
+        except PublicSessionRefused as refused:
+            raise _public_tool_error(refused.code) from None
+        except ToolError:
+            raise
+        except Exception:
+            raise _public_tool_error(REFUSED_UNAVAILABLE) from None
+        with self._lock:
+            self._admitted.add(tenant)
 
     def _run(self, tenant: str, username: str, name: str, args: tuple, kwargs: dict) -> Any:
         # Re-check that the operation still belongs to the current token.
         if _current_identity() != (tenant, username):
             raise ToolError(MSG_UNAVAILABLE)
+        if self._gate is not None:
+            self._admit(tenant, username)
         provider = None
         try:
             with self._lock:
@@ -479,6 +545,8 @@ class _TenantProxy:
             services = provider.get()
             return getattr(services, name)(*args, **kwargs)
         except TenantSessionMissing:
+            if self._gate is not None:
+                raise self._expired(tenant, username) from None
             raise ToolError(MSG_NOT_LINKED) from None
         except ToolError:
             raise
@@ -515,6 +583,43 @@ def _register_delete_tool(server: Any, delete_account: Callable[[str, str], Any]
         return MSG_DELETE_DONE
 
 
+def _register_public_tools(server: Any, gate: Any) -> None:
+    """Public web mode: keep only the web's read tools and add the two account tools."""
+    for name in [tool.name for tool in server._tool_manager.list_tools()]:
+        if name not in PUBLIC_READ_TOOLS:
+            server.remove_tool(name)
+
+    @server.tool(name="cerrar_sesion", annotations=_DESTRUCTIVE)
+    def cerrar_sesion() -> str:
+        """Cierra tu sesión: borra al momento tu sesión de MAPIT guardada y tu usuario de este servicio."""
+        tenant, username = _current_identity()
+        try:
+            done = gate.end_session(tenant, username)
+        except Exception:
+            done = False
+        if done is not True:
+            raise ToolError(MSG_LOGOUT_FAILED)
+        return MSG_LOGOUT_DONE
+
+    @server.tool(name="borrar_mis_datos", annotations=_DESTRUCTIVE)
+    def borrar_mis_datos(confirmar: bool) -> str:
+        """Borra tu sesión de MAPIT guardada, tu usuario de este servicio y el registro de tus entradas (solo con confirmar=true)."""
+        tenant, username = _current_identity()
+        if confirmar is not True:
+            return MSG_PUBLIC_DELETE_PREVIEW
+        try:
+            done = gate.delete_account(tenant, username)
+        except Exception:
+            done = False
+        if done is not True:
+            raise ToolError(MSG_DELETE_FAILED)
+        return MSG_PUBLIC_DELETE_DONE
+
+    names = {tool.name for tool in server._tool_manager.list_tools()}
+    if names != set(PUBLIC_TOOLS):
+        raise ValueError("public tool set mismatch")
+
+
 @dataclass(frozen=True)
 class MultiuserRuntime:
     policy: MultiuserPolicy
@@ -539,8 +644,13 @@ def create_multiuser_runtime(
     relink: Callable[[str, str], Any],
     delete_account: Callable[[str, str], Any],
     geographic_queries: bool = False,
+    public_gate: PublicSessionGate | None = None,
 ) -> MultiuserRuntime:
-    """Compose the Lambda handler; fetches the JWKS once if not yet cached."""
+    """Compose the Lambda handler; fetches the JWKS once if not yet cached.
+
+    ``public_gate`` (public web mode only) adds the session age, pause and call
+    limits, the short tool list and ``cerrar_sesion``; without it nothing changes.
+    """
     if (
         type(policy) is not MultiuserPolicy
         or not isinstance(jwks_cache, JwksCache)
@@ -549,10 +659,11 @@ def create_multiuser_runtime(
         or not callable(relink)
         or not callable(delete_account)
         or type(geographic_queries) is not bool
+        or (public_gate is not None and (not isinstance(public_gate, PublicSessionGate) or geographic_queries))
     ):
         raise ValueError("explicit multiuser composition required")
     initial_keys = jwks_cache.load()
-    verifier = MultiuserTokenVerifier(policy, jwks_cache)
+    verifier = MultiuserTokenVerifier(policy, jwks_cache, require_auth_time=public_gate is not None)
 
     def validate_keys(config: Any, _material: Mapping[str, bytes | str]) -> None:
         if config is not policy:
@@ -566,7 +677,7 @@ def create_multiuser_runtime(
         deadline = _INVOCATION_DEADLINE.get()
         if type(deadline) is not float or not math.isfinite(deadline) or time.monotonic() >= deadline:
             raise ValueError("invocation deadline unavailable")
-        proxy = _TenantProxy(deadline, services_factory, relink)
+        proxy = _TenantProxy(deadline, services_factory, relink, public_gate)
         server = create_server(
             proxy,
             auth_settings=AuthSettings(
@@ -578,7 +689,10 @@ def create_multiuser_runtime(
             token_verifier=verifier,
             geographic_queries=geographic_queries,
         )
-        _register_delete_tool(server, delete_account)
+        if public_gate is None:
+            _register_delete_tool(server, delete_account)
+        else:
+            _register_public_tools(server, public_gate)
         sdk_app = server.streamable_http_app(
             json_response=True,
             stateless_http=True,
