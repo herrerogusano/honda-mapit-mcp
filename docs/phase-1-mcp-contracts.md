@@ -121,19 +121,40 @@ selected vehicle:
    `lastEvaluatedKey`, the response is discarded and the window is read again
    as two halves split at a calendar-month boundary, earlier half first. Each
    half follows the same rule, recursively.
-3. A window of one calendar month (or the partial month at either end of the
+3. If MAPIT accepts the connection but does not answer a multi-month window
+   within the read timeout (`http_timeout`), that window is replaced directly
+   by its single months, read oldest first. Only a timeout while waiting for
+   the response or its body counts; a connect timeout does not. In the cloud
+   transport, a socket timeout that was shortened by the request deadline does
+   not count either.
+4. A window of one calendar month (or the partial month at either end of the
    request) is never split. There the original failure stands:
-   `response_too_large` or `pagination_unsupported`. Any other failure in any
-   window (HTTP error, invalid envelope) stops the whole call; no partial result
-   is returned.
+   `response_too_large`, `pagination_unsupported` or, for a timeout,
+   `mapit_unavailable`. Any other failure in any window (connection failure,
+   HTTP status including 5xx, invalid envelope) stops the whole call without a
+   split; no partial result is returned.
 
 The month windows that end the recursion are exactly the windows the earlier
-month-by-month reads used, so a period that fails here also failed before. The
-results are merged with the existing route-ID deduplication and the same sort,
-so routes, order, fields and truncation do not depend on how the period was
-split. A period whose list fits in one response costs one route-list read
-instead of one per month; the worst case, when every multi-month window must
-be split, is `2 x months - 1` route-list reads (25 for a 366-day period).
+month-by-month reads used, so a period that fails here also failed before,
+apart from the extra time spent on a window that timed out. The results are
+merged with the existing route-ID deduplication and the same sort, so routes,
+order, fields and truncation do not depend on how the period was split. A
+period whose list fits in one response costs one route-list read instead of
+one per month. Bounds per period of `n` months:
+
+- the worst case over all causes stays `2n - 1` route-list reads (25 for a
+  366-day period): falling back to months after a timeout never reads more
+  than halving would;
+- a timeout on the whole period costs `1 + n` route-list reads (14 for a
+  366-day period) and one wasted wait of at most `http_timeout`;
+- halving after a timeout was rejected because each halving level could spend
+  another full timeout, which a multi-month request may not afford inside its
+  per-request deadline (14 s and 24 attempts in the multiuser runtime).
+
+Observed in a test deployment: a six-month window starting months before the
+first route sometimes exceeded a 2 s timeout. That is the case the timeout
+fallback covers; that each single month of such a window answers in time is
+assumed, not measured.
 
 Why the rule changed: month-by-month reads were adopted because one unfiltered
 whole-history read exceeded the 2 MiB ceiling. A bounded `from`/`to` period
@@ -145,13 +166,14 @@ start time on a half-open interval, a multi-month window returns the union of
 its months, and an over-ceiling or cursor response can be discarded and re-read
 in smaller windows. Offline tests prove the code against this reading only.
 
-Also not verified: how MAPIT behaves on a long window that is slow or fails.
-Only an over-ceiling or cursor response triggers a split. A timeout, a 503/504
-or a dropped connection while a large window downloads fails the whole call
-with `mapit_unavailable`, where a one-month window might have succeeded. The
-split is deliberately not extended to transport errors, because during an
-outage that would multiply the reads. The read meter's `outcome:"error"` lines
-are how this is watched.
+Also not verified: why MAPIT is slow on some long windows, and whether every
+single month of such a window answers within the timeout. If one month times
+out too, the call fails with `mapit_unavailable`, as the month-by-month reads
+would. A 503/504 or a dropped connection on a long window still fails the whole
+call without a split, where a one-month window might have succeeded; splitting
+on those is deliberately left out because during an outage it would multiply
+the reads. The read meter's `outcome:"error"` lines, and `reads` above 2 for a
+single period, are how this is watched.
 
 ## Read meter
 
