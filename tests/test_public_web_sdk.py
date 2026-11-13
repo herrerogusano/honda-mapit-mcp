@@ -68,6 +68,45 @@ def test_access_denied_with_real_model():
         "fingerprint_key_read_failed", "AccessDeniedException", "AccessDeniedException")
 
 
+TABLE = "honda-mapit-mcp-dev-web-state"
+
+
+def _dynamodb():
+    client = botocore_session.get_session().create_client(
+        "dynamodb", region_name="eu-west-1", aws_access_key_id="testing", aws_secret_access_key="testing",
+    )
+    return client, stub_module.Stubber(client)
+
+
+def test_config_read_with_real_dynamodb_model():
+    client, stubber = _dynamodb()
+    expected = {"TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True}
+    stubber.add_response("get_item", {"Item": {"pk": {"S": "config"}, "cap": {"N": "0"}}}, expected)
+    stubber.add_response("get_item", {}, expected)
+    stubber.add_client_error("get_item", "ProvisionedThroughputExceededException", http_status_code=400,
+                             expected_params=expected)
+    with stubber:
+        assert web.load_web_config(client, TABLE).cap == 0
+        assert web.load_web_config(client, TABLE) == web.DEFAULT_WEB_CONFIG
+        assert web.load_web_config(client, TABLE) == web.READ_FAILED_WEB_CONFIG
+    stubber.assert_no_pending_responses()
+
+
+def test_seat_claim_is_valid_for_update_item_and_transactions():
+    client, stubber = _dynamodb()
+    update = web.claim_seat_update(TABLE)
+    stubber.add_response("update_item", {}, update)
+    stubber.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
+                             expected_params=update)
+    stubber.add_response("transact_write_items", {}, {"TransactItems": [{"Update": update}]})
+    with stubber:
+        client.update_item(**update)
+        with pytest.raises(client.exceptions.ConditionalCheckFailedException):
+            client.update_item(**update)
+        client.transact_write_items(TransactItems=[{"Update": update}])
+    stubber.assert_no_pending_responses()
+
+
 def test_put_request_matches_the_real_input_shape():
     # The Stubber raises if a parameter is not in the PutParameter input model.
     model = botocore_session.get_session().get_service_model("ssm")

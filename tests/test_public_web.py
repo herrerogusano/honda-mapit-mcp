@@ -187,13 +187,16 @@ def test_expiry_values():
 # Known answers: a change here changes every stored fingerprint and resets
 # every count. Do not update them without a migration plan.
 KNOWN_EMAIL = "8cd729db48e6da5bd4b26150d7085c7cbaa1820ad5d8e1f443e3965c6862b11a"
-KNOWN_IP = "63972fdf831bbbb86a205f8355852fd9626232b60d6d0da51dc3906940676575"
+KNOWN_IP6 = "06700aa6eebf6f77f2160ddd8cc36a343269996ccdc903f58eb59fd8d0fc14ac"  # 2001:db8::/64
+KNOWN_IP4 = "29d82346cd3f8fff1434f2a41c98de267f8ea102c737ce515e46f7e473847007"  # 192.0.2.1
 KNOWN_RESULT = "467bffa8f84b63328915473557bb9822fa861122ab768623d4f09a9233d4fd8a"
 
 
 def test_fingerprint_known_answers():
     assert web.email_fingerprint(KEY, " Rider@Example.COM ") == KNOWN_EMAIL
-    assert web.ip_fingerprint(KEY, "2001:DB8:0:0::1") == KNOWN_IP
+    assert web.ip_fingerprint(KEY, "2001:DB8:0:0::1") == KNOWN_IP6
+    assert web.ip_fingerprint(KEY, "192.0.2.1") == KNOWN_IP4
+    assert web.ip_fingerprint(KEY, "::ffff:192.0.2.1") == KNOWN_IP4
     assert web.result_fingerprint(KEY, "XXXX.DUMMY.TOKEN") == KNOWN_RESULT
 
 
@@ -296,8 +299,12 @@ class FakeSSM:
 
 
 NAME = "/honda-mapit-mcp/dev/web/fingerprint-key"
+_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 STORED_KEY = bytes(range(100, 132))
 STORED = base64.b64encode(STORED_KEY).decode()
+# Same 32 bytes, 44 characters, but the two unused low bits of the last data
+# character are not zero: the strict base64 decoder accepts it, the store must not.
+NON_CANONICAL = STORED[:42] + _ALPHABET[_ALPHABET.index(STORED[42]) | 1] + "="
 
 
 def _store(ssm, token=lambda n: KEY):
@@ -328,8 +335,10 @@ def test_store_creates_the_key_once_without_overwrite():
 
 def test_store_rereads_when_another_caller_created_the_key_first():
     ssm = FakeSSM(race_value=STORED)
-    store = _store(ssm)
+    events = []
+    store = web.FingerprintKeyStore(ssm, "dev", token_bytes=lambda n: KEY, on_event=events.append)
     assert store.key() == STORED_KEY  # the winner's key, not our candidate
+    assert events == []  # only the creator reports the creation
     assert [c[0] for c in ssm.calls] == ["get_parameter", "put_parameter", "get_parameter"]
 
 
@@ -379,6 +388,7 @@ def test_store_race_with_vanished_parameter_is_unavailable():
     "", "short", base64.b64encode(bytes(31)).decode(), base64.b64encode(bytes(33)).decode(),
     STORED.rstrip("="), STORED[:-2] + "!=", base64.urlsafe_b64encode(b"\xfb" * 32).decode(),
     STORED.replace("Z", "Z", 1) + " ",
+    NON_CANONICAL,
 ])
 def test_store_never_overwrites_an_invalid_existing_key(value):
     ssm = FakeSSM(stored=value)
