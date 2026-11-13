@@ -59,6 +59,13 @@ def _value(attr: dict[str, str]) -> Any:
 _TOKEN_RE = re.compile(r"attribute_(not_)?exists\((\w+)\)|:\w+|<>|<=|>=|=|<|>|\(|\)|\w+")
 
 
+def _resolve(expression: str, names: dict) -> str:
+    """Substitute ExpressionAttributeNames; every name must be defined and used."""
+    used = set(re.findall(r"#\w+", expression))
+    assert used == set(names), (used, names)
+    return re.sub(r"#\w+", lambda m: names[m.group(0)], expression)
+
+
 def _condition(expression: str, item: dict | None, values: dict) -> bool:
     out = []
     for match in _TOKEN_RE.finditer(expression):
@@ -140,7 +147,16 @@ class FakeTable:
         return {"Responses": {table: [copy.deepcopy(self.items[p]) for p in pks if p in self.items]},
                 "UnprocessedKeys": {}}
 
+    @staticmethod
+    def _named(op: dict) -> dict:
+        names = op.get("ExpressionAttributeNames", {})
+        text = " ".join(op.get(k, "") for k in ("UpdateExpression", "ConditionExpression"))
+        _resolve(text, names)
+        return {**op, **{k: _resolve(op[k], {n: v for n, v in names.items() if n in op[k]})
+                         for k in ("UpdateExpression", "ConditionExpression") if k in op}}
+
     def _apply(self, kind: str, op: dict) -> None:
+        op = self._named(op)
         pk = self._pk(op)
         if kind == "Put":
             self.items[pk] = copy.deepcopy(op["Item"])
@@ -149,6 +165,7 @@ class FakeTable:
                                      op.get("ExpressionAttributeValues", {}))
 
     def _ok(self, op: dict) -> bool:
+        op = self._named(op)
         _check_values(op)
         condition = op.get("ConditionExpression")
         return not condition or _condition(condition, self.items.get(self._pk(op)),

@@ -218,7 +218,7 @@ def _breaker_open(state: Mapping[str, Any], now: int) -> bool:
     if any(row is not None and (base._n(row, "open_until") or 0) > now for row in rows):
         return True
     current = rows[0]
-    return current is not None and (base._n(current, "rejections") or 0) >= web.BREAKER_REJECTIONS
+    return current is not None and web.breaker_tripped(max(base._n(current, "rejections") or 0, 0))
 
 
 def _pass_valid(row: Mapping[str, Any] | None) -> bool:
@@ -276,7 +276,7 @@ def _record_rejection(env: str, email_fp: str, state: Mapping[str, Any], config:
     rejections = (base._n(breaker, "rejections") or 0) if breaker is not None else 0
     breaker_values = {":one": _num(1), ":exp": web.ttl_value(web.breaker_expires_at(state["window"]))}
     breaker_expression = "ADD rejections :one SET expires_at = :exp"
-    if rejections + 1 >= web.BREAKER_REJECTIONS:
+    if web.breaker_tripped(max(rejections, 0) + 1):
         breaker_expression += ", open_until = :until"
         breaker_values[":until"] = _num(now + web.BREAKER_OPEN_SECONDS)
     _call("rejection_write", deadline, base._dynamodb().transact_write_items, TransactItems=[
@@ -294,18 +294,7 @@ def _record_rejection(env: str, email_fp: str, state: Mapping[str, Any], config:
     return locks
 
 
-def _seat_condition(row: Mapping[str, Any] | None, config: web.WebConfig) -> tuple[str, dict[str, Any]]:
-    """Condition for ``occupied + 1``: below the cap we read, cap unchanged."""
-    cap = {":cap": _num(config.cap)}
-    if row is None:
-        return "attribute_not_exists(pk)", {}
-    unchanged = "cap = :cap" if "cap" in row else "attribute_not_exists(cap)"
-    if config.cap == 0:
-        return unchanged, cap
-    return f"{unchanged} AND (attribute_not_exists(occupied) OR occupied < :cap)", cap
-
-
-def _admit(env: str, email_fp: str, state: Mapping[str, Any], config: web.WebConfig,
+def _admit(env: str, email_fp: str, state: Mapping[str, Any],
            tenant: str, now: int, deadline: float) -> None:
     table = web.web_table_name(env)
     expires = web.ttl_value(web.person_expires_at(now))
@@ -328,11 +317,9 @@ def _admit(env: str, email_fp: str, state: Mapping[str, Any], config: web.WebCon
         "calls": _num(0), web.TTL_ATTRIBUTE: web.ttl_value(web.session_usage_expires_at(now))},
         "ConditionExpression": "attribute_not_exists(pk)"}}]
     if new:
-        condition, values = _seat_condition(state["config"], config)
-        seat: dict[str, Any] = {"TableName": table, "Key": web.config_key(),
-                                "UpdateExpression": "ADD occupied :one", "ConditionExpression": condition,
-                                "ExpressionAttributeValues": {":one": _num(1), **values}}
-        items.append({"Update": seat})
+        # Atomic with the cap stored now (cap 0 = no cap); open and pause were
+        # checked on the row read before MAPIT.
+        items.append({"Update": web.claim_seat_update(table)})
         items.append({"Update": {"TableName": table, "Key": web.day_key(now),
                                  "UpdateExpression": "ADD new_people :one",
                                  "ExpressionAttributeValues": {":one": _num(1)}}})
@@ -401,7 +388,7 @@ def _user_migration(event: dict[str, Any], context: Any, started: float,
             and (base._n(person, "login_day_count") or 0) >= web.DAILY_LOGINS_PER_PERSON):
         raise _Stop("daily_limit", MSG_DAILY_LIMIT)
     tenant = validate_tenant_id(_token_hex(16))
-    _admit(env, email_fp, state, config, tenant, now, deadline)
+    _admit(env, email_fp, state, tenant, now, deadline)
     _call("session_write", deadline, base._ssm().put_parameter,
           Name=web.web_session_parameter_name(env, tenant), Value=refresh_token,
           Type="SecureString", Overwrite=False, Tier="Standard")
