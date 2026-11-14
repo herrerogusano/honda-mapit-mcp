@@ -21,9 +21,10 @@ document has a bug.
 ## Resources and names
 
 One CloudFormation stack per environment (`env` in `dev|prod`, region
-eu-west-1). The template and its deployment are described in the template
-script (planned name `scripts/build_web_stack.py`); this section lists only
-the names the code depends on.
+eu-west-1). The template is built by `scripts/build_public_web_stack.py` and
+deployed by `scripts/deploy_public_web.py`, where each resource is described;
+this section lists the names the code depends on and what the operator needs
+to know.
 
 | Resource | Name |
 |---|---|
@@ -35,9 +36,54 @@ the names the code depends on.
 | Fingerprint key | `/honda-mapit-mcp/{env}/web/fingerprint-key` (SecureString, 32 random bytes, base64) |
 | Turnstile secret | `/honda-mapit-mcp/{env}/web/turnstile-secret` (SecureString) |
 | Sweep metrics | namespace `honda-mapit-mcp/web`, dimension `Environment` |
+| Log metrics | namespace `honda-mapit-mcp/web-logs/{env}` (metric filters on fixed log codes) |
+| Alarm topic | `honda-mapit-mcp-{env}-web-alarms` (SNS, one email subscription that must be confirmed from that inbox) |
+| Log groups | `/aws/lambda/<function>`, 14 days |
 
 HTTP routes of the web API: `POST /pase` (pass function), `GET /estado`
-(identity function, no authentication) and `POST /mcp` (service, JWT).
+(identity function, no authentication), `POST /mcp` (service, JWT) and the
+protected-resource metadata route of the service. Throttling: 10 requests per
+second with a burst of 20 for the stage, and 2 per second with a burst of 5
+for each of `GET /estado` and `POST /pase`. CORS allows only the web origin
+(`http://localhost:5173` in DEV, the origin of the exact callback URL in prod).
+
+Reserved concurrency: one optional parameter per function
+(`IdentityReservedConcurrency`, `McpReservedConcurrency`,
+`PassReservedConcurrency`, `SweepReservedConcurrency`), empty by default,
+which reserves nothing. The deploy script fills them only from the optional
+`reserved_concurrency` object of its private config.
+
+### Deployment
+
+`python -m scripts.deploy_public_web --env {env} --private-config PATH
+--wheel-dir DIR`. Without `--execute` (dry run) it verifies the caller,
+checks whether the fingerprint key and the Turnstile secret exist (metadata
+only), builds the ZIP, uploads it to the existing artifacts bucket if absent
+and creates a change set; it writes nothing to SSM and executes nothing. With
+`--execute` it first creates the fingerprint key if absent (`PutParameter`
+SecureString, `Overwrite=False`, value never printed), then executes the
+change set. The pass function can only read the key and refuses every pass
+without it. The Turnstile secret is stored separately and once with
+`--store-turnstile-secret`, which asks for it without echoing it; the template
+never creates it.
+
+### Alarms
+
+Fifteen CloudWatch alarms, all notifying the alarm topic on alarm and on
+recovery:
+
+| Alarm (`honda-mapit-mcp-{env}-web-...`) | Fires when |
+|---|---|
+| `oldest-item-age` | the sweep's `OldestItemAgeSeconds` maximum is above 3600 in 10 minutes, or the sweep reported nothing (missing data counts as breaching) |
+| `sweep-failed` | a sweep run reported `SweepFailed` |
+| `invalid-dates` | the sweep saw unreadable dates in three consecutive 5-minute periods |
+| `pass-cloudflare` | the pass logged a Turnstile or Turnstile-secret failure |
+| `fingerprint-key-missing` | the pass could not read the fingerprint key |
+| `fingerprint-key-created` | the identity function created a new fingerprint key |
+| `breaker-open` | the identity function refused a sign-in because the breaker is open |
+| `identity-faults` | the identity function logged a fault code (not an expected refusal) |
+| `mcp-errors`, `pass-errors`, `sweep-errors` | Lambda `Errors` of that function |
+| `identity-timeouts`, `mcp-timeouts`, `pass-timeouts`, `sweep-timeouts` | a "Task timed out" line in that function's log |
 
 ### Hard to undo
 
@@ -52,8 +98,12 @@ this document before every stack creation:
   `honda-mapit-mcp/web/fingerprint/v1/` + domain + `\x00` + value, with the
   email normalized and IPv6 reduced to its /64. Changing it, or losing or
   recreating the key, resets every person and attempt row: everybody becomes
-  "new" and seats are recounted. A key created after the first deployment
-  logs the event `fingerprint_key_created`.
+  "new" and seats are recounted. The deploy script creates the key; if it is
+  missing at a sign-in, the identity function creates one and logs
+  `fingerprint_key_created`, which fires its alarm.
+- **Retained resources in prod**: the pool and the table have deletion
+  protection and are retained if the stack is deleted, so a new stack with
+  the same names cannot be created until they are removed by hand.
 
 ## Sign-in flow
 
@@ -128,8 +178,8 @@ this document before every stack creation:
 DynamoDB TTL deletes expired rows late (typically within days), so every reader
 treats `expires_at <= now` as absent. Outside the table: the Cognito user (less
 than one hour), the MAPIT session parameter (less than one hour) and function
-logs (retention set by the template; the code never logs emails, passwords,
-tokens, IPs or fingerprints).
+logs (14 days; the code never logs emails, passwords, tokens, IPs or
+fingerprints).
 
 The configuration row accepts only the attributes listed above; an unknown
 attribute, a wrong type or a wrong key closes the service (`malformed`). An
@@ -159,9 +209,10 @@ Five independent mechanisms:
 4. **No refresh.** The identity function refuses refresh token issues, so an
    access token (60 minutes) cannot be extended.
 5. **Alarm.** Each sweep run writes one EMF log line with
-   `OldestItemAgeSeconds`, `SweepFailed` and `SweepIncomplete`. The alarms on
-   them (oldest item at 60 minutes or more, a failed run) belong to the stack
-   template.
+   `OldestItemAgeSeconds`, `SweepFailed` and `SweepIncomplete`. The
+   `oldest-item-age` alarm fires above 3600 seconds or when the sweep reports
+   nothing, and `sweep-failed` on a failed run (see "Alarms"). `web-status`
+   flags 3600 seconds or more, one second earlier than the alarm.
 
 A second sign-in within the same hour is cut early: the user created by the
 first one keeps its creation date.
@@ -248,6 +299,23 @@ failed AWS call exits with code 1 and prints only its error code.
 
 Changing the configuration is a write in the environment's table: in
 production it is a production change.
+
+The template defines no operator role: the commands run with the operator's
+own credentials, which need exactly these actions (none reads a parameter
+value, so no KMS permission is needed):
+
+| Action | Resource | Used by |
+|---|---|---|
+| `dynamodb:GetItem` (consistent) | the web table | `web-status`, `web-stats`, `web-config` |
+| `dynamodb:UpdateItem` | the web table | `web-config --yes` only |
+| `cognito-idp:ListUserPools` | `*` (no resource-level permissions) | `web-status` |
+| `cognito-idp:ListUsers` | the web user pool | `web-status` |
+| `ssm:DescribeParameters` | `*` (no resource-level permissions; metadata only) | `web-status` |
+
+The commands do not read the stack outputs (`UserPoolId`, `TableName`); they
+derive the same names from the code. If two pools carry the web pool name (for
+example a retained prod pool next to a recreated one), `web-status` fails
+instead of guessing.
 
 ## How it is tested
 
