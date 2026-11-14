@@ -374,6 +374,9 @@ def fixed_documents() -> dict[str, str]:
         # Parameterized templates: synthetic parameter values live in the deploy CLI, not here.
         documents[f"multiuser_{multiuser_env}_artifacts"] = json.dumps(build_artifacts_template(multiuser_env))
         documents[f"multiuser_{multiuser_env}_stack"] = json.dumps(build_multiuser_template(multiuser_env))
+    from scripts.build_public_web_stack import build_public_web_template
+    for web_env in ("dev", "prod"):
+        documents[f"public_web_{web_env}_stack"] = json.dumps(build_public_web_template(web_env))
     return documents
 
 
