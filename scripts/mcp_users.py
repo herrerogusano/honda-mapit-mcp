@@ -319,6 +319,9 @@ def main(argv: list[str] | None = None, *, clients: Clients | None = None,
         except (web_admin.WebAdminError, MultiuserError, ValueError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
+        except Exception as error:  # AWS failure: print only its code, never the message
+            print(f"error: AWS call failed ({_code(error) or type(error).__name__})", file=sys.stderr)
+            return 1
     admin = UserAdmin(args.env, clients or default_clients(), out=out)
     try:
         if args.command == "invite":

@@ -224,7 +224,8 @@ All in `scripts/mcp_users.py` (implemented in `scripts/mcp_users_web.py`),
 with `--env dev|prod`. Names come from the code above: the table and session
 prefix from `public_web.py`, the pool found by its exact name with
 `ListUserPools` (exactly one match, or the command fails). Output never holds
-a user name, email, tenant id, pool id, parameter name or fingerprint.
+a user name, email, tenant id, pool id, parameter name or fingerprint. A
+failed AWS call exits with code 1 and prints only its error code.
 
 - `web-status` (read only): the interpreted configuration row (or
   `MALFORMED` with the attribute names present), the breaker state and the

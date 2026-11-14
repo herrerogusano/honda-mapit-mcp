@@ -391,6 +391,18 @@ def test_web_status_fails_closed_when_the_config_read_fails(capsys):
     assert "config read failed (ResourceNotFoundException)" in capsys.readouterr().err
 
 
+def test_web_status_reports_aws_failures_by_code_only(capsys):
+    with _WebClients() as c:
+        c.get(web.config_key())
+        c.breakers()
+        c.pools()
+        c.cognito_stub.add_client_error("list_users", "AccessDeniedException", service_message=WEB_POOL)
+        assert c.run("web-status") == 1
+        c.verify()
+    err = capsys.readouterr().err
+    assert "error: AWS call failed (AccessDeniedException)" in err and WEB_POOL not in err
+
+
 def test_web_stats_reads_day_and_month_rows_across_a_year_change():
     with _WebClients() as c:
         c.get(web.day_key(WEB_NOW), {**web.day_key(WEB_NOW), "logins": {"N": "7"}, "new_people": {"N": "2"},
