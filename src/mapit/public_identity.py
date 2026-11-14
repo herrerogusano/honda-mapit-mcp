@@ -231,12 +231,21 @@ def _breaker_open(state: Mapping[str, Any], now: int) -> bool:
     return current is not None and web.breaker_tripped(max(base._n(current, "rejections") or 0, 0))
 
 
-def _pass_valid(row: Mapping[str, Any] | None) -> bool:
-    # _read already dropped a row past expires_at.
-    return row is not None and (base._n(row, "attempts_left") or 0) > 0
+def _recent_migration_spend(row: Mapping[str, Any] | None, now: int) -> bool:
+    spent = base._n(row, "migration_spent_at") if isinstance(row, Mapping) else None
+    return spent is not None and now - MIGRATION_SPEND_GRACE_SECONDS <= spent <= now
 
 
-def _gate(state: Mapping[str, Any], now: int) -> web.WebConfig:
+def _pass_valid(row: Mapping[str, Any] | None, now: int, *, grace: bool) -> bool:
+    # _read already dropped a row past expires_at. With ``grace`` (pre-auth of
+    # an existing user) a pass whose last attempt the migration of this same
+    # sign-in just spent still counts; _spend_for_pre_auth then spends nothing.
+    if row is None:
+        return False
+    return (base._n(row, "attempts_left") or 0) > 0 or (grace and _recent_migration_spend(row, now))
+
+
+def _gate(state: Mapping[str, Any], now: int, *, grace: bool = False) -> web.WebConfig:
     """Refusals before MAPIT. A full cap is never checked here."""
     config = web.parse_web_config(state["config"])
     if not config.accepting(now):
@@ -246,7 +255,7 @@ def _gate(state: Mapping[str, Any], now: int) -> web.WebConfig:
     attempts = state["attempts"]
     if attempts is not None and (base._n(attempts, "locked_until") or 0) > now:
         raise _Stop("locked", MSG_LOCKED)
-    if config.pass_required and not _pass_valid(state["pass"]):
+    if config.pass_required and not _pass_valid(state["pass"], now, grace=grace):
         raise _Stop("pass_missing", MSG_START_FROM_WEB)
     return config
 
@@ -290,10 +299,8 @@ def _spend_for_pre_auth(env: str, email_fp: str, now: int, deadline: float) -> N
         if exc.provider_code != "ConditionalCheckFailedException":
             raise
         old = getattr(exc, "old_item", None)
-        spent = base._n(old, "migration_spent_at") if isinstance(old, Mapping) else None
         expires = base._n(old, web.TTL_ATTRIBUTE) if isinstance(old, Mapping) else None
-        if (spent is not None and now - MIGRATION_SPEND_GRACE_SECONDS <= spent <= now
-                and expires is not None and expires > now):
+        if _recent_migration_spend(old, now) and expires is not None and expires > now:
             return
         raise _Stop("pass_missing", MSG_START_FROM_WEB) from None
 
@@ -474,7 +481,7 @@ def _pre_authentication(event: dict[str, Any], context: Any, started: float,
     email_fp = _email_fp(env, email, deadline)
     now = base._now()
     state = _read(env, _login_keys(email_fp, web.breaker_window(now), person=False), now, deadline)
-    config = _gate(state, now)
+    config = _gate(state, now, grace=not not_found)
     if not not_found and config.pass_required:
         # The user exists: Cognito checks the password and no migration runs,
         # so this attempt is spent here, unless the migration of this same

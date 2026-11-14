@@ -600,21 +600,26 @@ def test_pre_auth_absent_user_checks_but_never_spends(fakes):
     _fails(_pre_auth(True), public.MSG_START_FROM_WEB)
 
 
+@pytest.mark.parametrize("attempts", [3, 1])
 @pytest.mark.parametrize("order", ["pre_auth_first", "migration_first"])
 @pytest.mark.parametrize("outcome", ["reject", "ok"])
-def test_one_sign_in_spends_at_most_one_attempt_in_either_order(fakes, order, outcome):
+def test_one_sign_in_spends_at_most_one_attempt_in_either_order(fakes, order, outcome, attempts):
     table, _, mapit = fakes
     mapit.mode = outcome
+    table.put(f"pass#{FP}", attempts_left=attempts, issued_at=NOW - 60, expires_at=NOW + 240)
     steps = [lambda: identity.handler(_pre_auth(order == "pre_auth_first"), Context()),
              lambda: identity.handler(_migration(), Context())]
+    errors: list[str] = []
     for step in steps if order == "pre_auth_first" else steps[::-1]:
         try:
             step()
-        except identity.IdentityError:
+        except identity.IdentityError as exc:
+            errors.append(str(exc))
             break  # Cognito stops the sign-in at the first error
     # Spent once by the migration; a pre-authentication of the user it just
-    # created spends nothing more.
-    assert table.n(f"pass#{FP}", "attempts_left") == 2
+    # created spends nothing more, even when that was the last attempt.
+    assert table.n(f"pass#{FP}", "attempts_left") == attempts - 1
+    assert errors == ([public.MSG_BAD_CREDENTIALS] if outcome == "reject" else [])
 
 
 def test_pre_auth_spends_again_once_the_migration_grace_is_over(fakes, monkeypatch):
@@ -625,6 +630,14 @@ def test_pre_auth_spends_again_once_the_migration_grace_is_over(fakes, monkeypat
     monkeypatch.setattr(identity, "_wall_clock", lambda: float(later))
     identity.handler(_pre_auth(False), Context())
     assert table.n(f"pass#{FP}", "attempts_left") == 1
+
+
+def test_grace_is_only_for_an_existing_user(fakes):
+    table, _, _ = fakes
+    table.put(f"pass#{FP}", attempts_left=0, expires_at=NOW + 240, migration_spent_at=NOW - 1)
+    _fails(_pre_auth(True), public.MSG_START_FROM_WEB)  # absent user: the next migration could not spend
+    identity.handler(_pre_auth(False), Context())        # existing user: same sign-in, no second spend
+    assert table.n(f"pass#{FP}", "attempts_left") == 0
 
 
 @pytest.mark.parametrize("spent_at, expires_at", [
