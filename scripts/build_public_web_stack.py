@@ -69,9 +69,16 @@ PASS_CLOUDFLARE_CODES = (
     "turnstile_response_malformed", "turnstile_failed_unexpected", "turnstile_secret_rejected",
     "turnstile_secret_missing", "turnstile_secret_read_failed", "turnstile_secret_invalid",
 )
-# Identity step codes that mean a fault of the service (not an expected refusal
-# such as a wrong password, a lock, a missing pass or a full cap). Lambda
-# ``Errors`` cannot be used for this function: Cognito refusals are raised.
+# Identity step codes (logged by ``public_identity._run`` and ``_log``) that are
+# expected refusals: a wrong password, a lock, a missing pass, a full cap, bad
+# user input. Every other code it can log is a fault of the service and feeds
+# the ``identity-faults`` alarm; a test checks that both lists together are
+# exactly the codes the module can write. Lambda ``Errors`` cannot be used for
+# this function: Cognito refusals are raised.
+IDENTITY_REFUSAL_CODES = (
+    "mapit_rejected", "pass_missing", "locked", "closed", "breaker_open", "cap_full", "cap_full_race",
+    "daily_limit", "refresh_refused", "person_absent", "email_invalid", "request_invalid",
+)
 IDENTITY_FAULT_CODES = (
     "config_invalid", "unexpected", "trigger_unknown", "deadline_passed", "state_unprocessed", "state_malformed",
     "state_read_no_time", "state_read_failed", "rejection_write_no_time", "rejection_write_failed",
@@ -80,7 +87,13 @@ IDENTITY_FAULT_CODES = (
     "fingerprint_key_read_failed", "fingerprint_key_write_failed", "fingerprint_key_invalid",
     "fingerprint_key_unavailable", "fingerprint_key_write_unconfirmed", "fingerprint_key_generation_failed",
     "mapit_failed", "mapit_malformed", "tenant_invalid",
+    # PublicWebError codes of the shared base module, also logged by _run.
+    "config_malformed", "count_invalid", "fingerprint_domain_invalid", "fingerprint_invalid",
+    "fingerprint_value_invalid", "function_role_invalid", "ip_invalid", "result_invalid", "time_invalid",
+    "web_mode_invalid", "window_invalid",
 )
+# IAM condition: PutParameter only with Overwrite=false (condition key ssm:Overwrite).
+_NO_OVERWRITE = {"StringEquals": {"ssm:Overwrite": "false"}}
 
 _LOGICAL = {"identity": "Identity", "mcp": "Mcp", "pass": "Pass", "sweep": "Sweep"}
 _RESOURCE_URL = {"Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/mcp"}
@@ -144,8 +157,11 @@ def _web_function(env: str, role: str, handler: str, variables: dict[str, Any]) 
     return function
 
 
-def _statement(sid: str, actions: list[str], resource: Any) -> dict[str, Any]:
-    return {"Sid": sid, "Effect": "Allow", "Action": actions, "Resource": resource}
+def _statement(sid: str, actions: list[str], resource: Any, condition: dict[str, Any] | None = None) -> dict[str, Any]:
+    statement = {"Sid": sid, "Effect": "Allow", "Action": actions, "Resource": resource}
+    if condition is not None:
+        statement["Condition"] = copy.deepcopy(condition)
+    return statement
 
 
 def _roles(env: str) -> dict[str, Any]:
@@ -157,9 +173,10 @@ def _roles(env: str) -> dict[str, Any]:
         "IdentityRole": _role(env, [
             _statement("WebTableLogin", ["dynamodb:BatchGetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"],
                        _TABLE_ARN),
-            _statement("WriteWebSessions", ["ssm:PutParameter"], sessions),
-            # The only role that may create the fingerprint key (never overwrite: the code uses Overwrite=False).
-            _statement("FingerprintKeyReadCreate", ["ssm:GetParameter", "ssm:PutParameter"], key),
+            _statement("WriteWebSessions", ["ssm:PutParameter"], sessions, _NO_OVERWRITE),
+            _statement("FingerprintKeyRead", ["ssm:GetParameter"], key),
+            # The only role that may create the fingerprint key, and never overwrite it.
+            _statement("FingerprintKeyCreate", ["ssm:PutParameter"], key, _NO_OVERWRITE),
             _kms_via_ssm(["kms:Encrypt", "kms:Decrypt"]),
             _log_statement(name["identity"]),
         ]),
@@ -512,7 +529,7 @@ def build_public_web_template(env: str) -> dict[str, Any]:
 
 
 __all__ = [
-    "CORS_ALLOW_HEADERS", "CORS_ALLOW_METHODS", "DEV_CALLBACK_URL", "IDENTITY_FAULT_CODES", "PASS_CLOUDFLARE_CODES",
+    "CORS_ALLOW_HEADERS", "CORS_ALLOW_METHODS", "DEV_CALLBACK_URL", "IDENTITY_FAULT_CODES", "IDENTITY_REFUSAL_CODES", "PASS_CLOUDFLARE_CODES",
     "PASS_HANDLER", "PROD_CALLBACK_PATTERN", "ROUTE_THROTTLES", "SWEEP_HANDLER", "SWEEP_SCHEDULE",
     "TIMEOUTS", "build_public_web_template", "log_metric_namespace",
 ]

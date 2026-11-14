@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from mapit import public_identity, public_pass, public_sweep, public_web
-from mapit import multiuser_entrypoint, multiuser_identity
+from mapit import multiuser_common, multiuser_entrypoint, multiuser_identity
 from scripts import build_multiuser_stack as invitation
 from scripts import build_public_web_stack as stack
 
@@ -316,8 +316,59 @@ def test_fingerprint_key_and_turnstile_secret_permissions(env):
 def test_roles_never_touch_invitation_resources(env):
     text = json.dumps(stack.build_public_web_template(env))
     for forbidden in (f"honda-mapit-mcp-{env}-users\"", f"/honda-mapit-mcp/{env}/users/", "InvitationsTable",
-                      "/multiuser/", f"honda-mapit-mcp-{env}-multiuser-invitations"):
+                      "/multiuser/", multiuser_common.table_name(env)):
         assert forbidden not in text
+
+
+def _raw_statements(env, role):
+    return _resources(env)[role]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+
+
+def _listed(value):
+    return value if isinstance(value, list) else [value]
+
+
+def test_every_table_and_pool_grant_is_exactly_this_stack(env):
+    for role in EXPECTED_ACTIONS:
+        for statement in _raw_statements(env, role):
+            services = {action.split(":")[0] for action in _listed(statement["Action"])}
+            if services & {"dynamodb", "cognito-idp"}:
+                assert len(services) == 1, (role, statement["Sid"])
+            if services == {"dynamodb"}:
+                assert statement["Resource"] == {"Fn::GetAtt": ["WebStateTable", "Arn"]}, (role, statement["Sid"])
+            if services == {"cognito-idp"}:
+                assert statement["Resource"] == {"Fn::GetAtt": ["UserPool", "Arn"]}, (role, statement["Sid"])
+
+
+def test_every_ssm_grant_is_in_the_exact_list_of_its_role(env):
+    root = f"arn:aws:ssm:eu-west-1:123456789012:parameter/honda-mapit-mcp/{env}/web/"
+    sessions, key, secret = root + "sessions/*", root + "fingerprint-key", root + "turnstile-secret"
+    expected = {
+        "IdentityRole": {("ssm:PutParameter", sessions), ("ssm:GetParameter", key), ("ssm:PutParameter", key)},
+        "McpRole": {("ssm:GetParameter", sessions), ("ssm:DeleteParameter", sessions)},
+        "PassRole": {("ssm:GetParameter", key), ("ssm:GetParameter", secret)},
+        "SweepRole": {("ssm:DescribeParameters", "*"), ("ssm:DeleteParameter", sessions)},
+    }
+    for role, grants in expected.items():
+        assert {(a, r) for a, r in _grants(env, role) if a.startswith("ssm:")} == grants, role
+
+
+def test_put_parameter_requires_no_overwrite_in_iam(env):
+    for role in EXPECTED_ACTIONS:
+        for statement in _raw_statements(env, role):
+            if "ssm:PutParameter" in _listed(statement["Action"]):
+                assert _listed(statement["Action"]) == ["ssm:PutParameter"]
+                assert statement["Condition"] == {"StringEquals": {"ssm:Overwrite": "false"}}
+
+
+def test_retention_and_deletion_protection_by_environment(env):
+    resources = _resources(env)
+    prod = env == "prod"
+    retained = "Retain" if prod else "Delete"
+    for name in ("UserPool", "WebStateTable"):
+        assert resources[name]["DeletionPolicy"] == resources[name]["UpdateReplacePolicy"] == retained
+    assert resources["UserPool"]["Properties"]["DeletionProtection"] == ("ACTIVE" if prod else "INACTIVE")
+    assert resources["WebStateTable"]["Properties"]["DeletionProtectionEnabled"] is prod
 
 
 # --- alarms ----------------------------------------------------------------------
@@ -395,13 +446,18 @@ def test_filter_codes_are_codes_the_modules_write(env):
     assert '"breaker_open"' in identity_source and filters["IdentityBreakerFilter"]["FilterPattern"] == "breaker_open"
     faults = filters["IdentityFaultsFilter"]["FilterPattern"].split(" ")
     assert [term.removeprefix("?") for term in faults] == list(stack.IDENTITY_FAULT_CODES)
-    for code in stack.IDENTITY_FAULT_CODES:
-        # Literal codes, or "<step>_no_time" / "<step>_failed" built by _call("<step>", ...).
-        base = re.sub(r"_(no_time|failed)$", "", code)
-        assert f'"{code}"' in identity_source + web_source or f'_call("{base}"' in identity_source, code
-    # Expected refusals never count as faults.
+    # Every code public_identity can log is classified exactly once: fault or expected refusal.
+    logged = set(re.findall(r'_Stop\("([a-z_]+)"', identity_source))
+    logged |= set(re.findall(r'_log\([^,]+, "([a-z_]+)"', identity_source))
+    logged |= {f"{step}_{suffix}" for step in re.findall(r'_call\("([a-z_]+)"', identity_source)
+               for suffix in ("no_time", "failed")}
+    logged |= set(re.findall(r'PublicWebError\("([a-z_]+)"', web_source))  # logged by _run as exc.code
+    assert 'raise _Stop(f"{step}_no_time")' in identity_source and 'raise _Stop(f"{step}_failed"' in identity_source
+    faults, refusals = set(stack.IDENTITY_FAULT_CODES), set(stack.IDENTITY_REFUSAL_CODES)
+    assert len(faults) == len(stack.IDENTITY_FAULT_CODES) and not faults & refusals
+    assert faults | refusals == logged, (sorted(logged - faults - refusals), sorted(faults | refusals - logged))
     for refusal in ("mapit_rejected", "pass_missing", "locked", "closed", "cap_full", "daily_limit", "breaker_open"):
-        assert refusal not in stack.IDENTITY_FAULT_CODES
+        assert refusal in refusals
 
 
 def test_filter_patterns_fit_cloudwatch_limits(env):
