@@ -52,7 +52,9 @@ from .public_web import (
     web_session_parameter_name,
     web_session_parameter_prefix,
     web_stack_name,
+    web_table_name,
 )
+from .public_web import CONFIG_SOURCE_ROW, KIND_PERSON, PARTITION_KEY, TTL_ATTRIBUTE, config_key, parse_web_config
 
 ENV_VARIABLE = "MAPIT_MCP_ENV"
 POOL_VARIABLE = "MAPIT_WEB_USER_POOL_ID"
@@ -69,6 +71,10 @@ SESSION_PAGE_SIZE = 50
 USER_PAGE_SIZE = 60
 CLOCK_SKEW_SECONDS = 300          # a date further in the future is invalid
 
+RECOUNT_WINDOW_START = 3 * 3600   # seconds after 00:00 UTC
+RECOUNT_WINDOW_SECONDS = 300      # one 5-minute run falls in it per day
+MAX_RECOUNT_PAGES = 200
+
 _POOL_RE = re.compile(r"^eu-west-1_[0-9A-Za-z]{9,45}$")
 _TOKEN_MAX = 4096
 _USERNAME_MAX = 128
@@ -80,6 +86,11 @@ def web_user_pool_name(env: str) -> str:
     from the invitation stack pool ``honda-mapit-mcp-{env}-users``.
     """
     return f"{web_stack_name(env)}-users"
+
+
+def in_recount_window(now: int) -> bool:
+    """True for the one daily run that recounts seats (03:00-03:05 UTC)."""
+    return 0 <= now % 86400 - RECOUNT_WINDOW_START < RECOUNT_WINDOW_SECONDS
 
 
 STATUS_OK = "ok"
@@ -102,6 +113,10 @@ class SweepResult:
     invalid_dates: int = 0
     oldest_session_age: int = 0
     oldest_user_age: int = 0
+    recount_ran: bool = False
+    persons_counted: int = 0
+    seats_corrected: int = 0
+    recount_conflict: bool = False
 
     def fail(self, code: str) -> None:
         if code not in self.codes:
@@ -147,13 +162,16 @@ class Sweeper:
     """One sweep run against injected SSM and Cognito clients."""
 
     def __init__(self, *, env: str, user_pool_id: str, ssm: Any, cognito: Any,
-                 now: Callable[[], float], remaining_ms: Callable[[], int]) -> None:
+                 now: Callable[[], float], remaining_ms: Callable[[], int],
+                 dynamodb: Any = None) -> None:
         self._env = validate_environment(env)
         if type(user_pool_id) is not str or not _POOL_RE.fullmatch(user_pool_id):
             raise PublicWebError("sweep_config_invalid")
         self._pool = user_pool_id
         self._ssm = ssm
         self._cognito = cognito
+        self._dynamodb = dynamodb
+        self._table = web_table_name(self._env)
         self._now = now
         self._remaining_ms = remaining_ms
         self._prefix = web_session_parameter_prefix(self._env)
@@ -171,7 +189,98 @@ class Sweeper:
             return result
         self._sweep_sessions(result)
         self._sweep_users(result)
+        if self._dynamodb is not None and in_recount_window(int(self._now())):
+            self._recount_seats(result)
         return result
+
+    # --- Daily seat recount ------------------------------------------------
+
+    def _recount_seats(self, result: SweepResult) -> None:
+        """Set ``occupied`` to the number of unexpired ``person#`` rows.
+
+        Writes only if the scan finished in time, the config row exists and is
+        valid, and ``occupied`` still has the value read before the scan (a
+        seat claimed meanwhile makes the write a no-op until the next day).
+        """
+        now = int(self._now())
+        if not self._time_left():
+            result.incomplete = True
+            return
+        try:
+            item = self._dynamodb.get_item(
+                TableName=self._table, Key=config_key(), ConsistentRead=True).get("Item")
+        except Exception:
+            result.fail("sweep_recount_read_failed")
+            return
+        if item is None:
+            return  # no row: defaults apply and there is nothing to correct
+        if parse_web_config(item).source != CONFIG_SOURCE_ROW:
+            result.fail("sweep_recount_config_invalid")
+            return
+        previous = item.get("occupied")
+        count = self._count_persons(result, now)
+        if count is None:
+            return
+        result.recount_ran, result.persons_counted = True, count
+        before = int(previous["N"]) if previous is not None else 0
+        if count == before:
+            return
+        if not self._time_left():
+            result.incomplete = True
+            return
+        if previous is None:
+            condition, values = "attribute_exists(#pk) AND attribute_not_exists(#occ)", {}
+        else:
+            condition, values = "attribute_exists(#pk) AND #occ = :prev", {":prev": previous}
+        try:
+            self._dynamodb.update_item(
+                TableName=self._table, Key=config_key(), UpdateExpression="SET #occ = :count",
+                ConditionExpression=condition,
+                ExpressionAttributeNames={"#pk": PARTITION_KEY, "#occ": "occupied"},
+                ExpressionAttributeValues={":count": {"N": str(count)}, **values})
+        except Exception as exc:
+            if _provider_code(exc) == "ConditionalCheckFailedException":
+                result.recount_conflict = True
+            else:
+                result.fail("sweep_recount_write_failed")
+            return
+        result.seats_corrected = before - count
+
+    def _count_persons(self, result: SweepResult, now: int) -> int | None:
+        total = 0
+        start: Any = None
+        for _ in range(MAX_RECOUNT_PAGES):
+            if not self._time_left():
+                result.incomplete = True
+                return None
+            request: dict[str, Any] = {
+                "TableName": self._table, "Select": "COUNT", "ConsistentRead": True,
+                # A person row without expires_at is counted (fewer free seats).
+                "FilterExpression": "begins_with(#pk, :person) AND "
+                                    "(attribute_not_exists(#exp) OR #exp > :now)",
+                "ExpressionAttributeNames": {"#pk": PARTITION_KEY, "#exp": TTL_ATTRIBUTE},
+                "ExpressionAttributeValues": {":person": {"S": f"{KIND_PERSON}#"},
+                                              ":now": {"N": str(now)}},
+            }
+            if start is not None:
+                request["ExclusiveStartKey"] = start
+            try:
+                response = self._dynamodb.scan(**request)
+            except Exception:
+                result.fail("sweep_recount_scan_failed")
+                return None
+            count = response.get("Count") if isinstance(response, Mapping) else None
+            following = response.get("LastEvaluatedKey") if isinstance(response, Mapping) else None
+            if (type(count) is not int or count < 0
+                    or (following is not None and (not isinstance(following, Mapping) or following == start))):
+                result.fail("sweep_recount_scan_malformed")
+                return None
+            total += count
+            if following is None:
+                return total
+            start = following
+        result.incomplete = True
+        return None
 
     # --- Pool check --------------------------------------------------------
 
@@ -337,7 +446,11 @@ _METRICS = (
     ("SweepFailed", "Count"),
     ("SweepIncomplete", "Count"),
     ("InvalidDates", "Count"),
+    ("RecountRan", "Count"),
+    ("RecountConflict", "Count"),
 )
+# Only in the line of a run that finished the daily recount.
+_RECOUNT_METRICS = (("PersonsCounted", "Count"), ("SeatsCorrected", "Count"))
 
 
 def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict[str, Any]:
@@ -349,7 +462,8 @@ def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict
             "CloudWatchMetrics": [{
                 "Namespace": METRIC_NAMESPACE,
                 "Dimensions": [[METRIC_DIMENSION]],
-                "Metrics": [{"Name": name, "Unit": unit} for name, unit in _METRICS],
+                "Metrics": [{"Name": name, "Unit": unit} for name, unit in
+                            _METRICS + (_RECOUNT_METRICS if result.recount_ran else ())],
             }],
         },
         METRIC_DIMENSION: environment,
@@ -361,6 +475,8 @@ def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict
         "SweepFailed": 1 if failed else 0,
         "SweepIncomplete": 1 if result.incomplete else 0,
         "InvalidDates": result.invalid_dates,
+        "RecountRan": 1 if result.recount_ran else 0,
+        "RecountConflict": 1 if result.recount_conflict else 0,
         "event": "web_sweep",
         "status": result.status,
         "codes": list(result.codes),
@@ -369,6 +485,9 @@ def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict
         "users_seen": result.users_seen,
         "users_already_gone": result.users_gone,
     }
+    if result.recount_ran:
+        record["PersonsCounted"] = result.persons_counted
+        record["SeatsCorrected"] = result.seats_corrected
     if failed:
         record["error"] = FAILURE_CODE
     return record
@@ -379,7 +498,7 @@ def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict
 def _make_client(service: str) -> Any:
     # Only the execution role's short-lived credentials, one attempt, short
     # timeouts; explicit kwargs prevent any profile/IMDS fallback.
-    if service not in {"ssm", "cognito-idp"}:
+    if service not in {"ssm", "cognito-idp", "dynamodb"}:
         raise PublicWebError("client_invalid")
     keys = [os.environ.get(name) for name in
             ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")]
@@ -428,12 +547,13 @@ def run_sweep(environ: Mapping[str, str], context: Any) -> SweepResult:
         return result
     try:
         ssm, cognito = _client_factory("ssm"), _client_factory("cognito-idp")
+        dynamodb = _client_factory("dynamodb")
     except Exception:
         result.fail("sweep_clients_unavailable")
         return result
     try:
         return Sweeper(env=env, user_pool_id=pool, ssm=ssm, cognito=cognito, now=time.time,
-                       remaining_ms=_remaining(context, started)).run()
+                       remaining_ms=_remaining(context, started), dynamodb=dynamodb).run()
     except Exception:
         result.fail("sweep_internal_error")
         return result
@@ -455,5 +575,6 @@ __all__ = [
     "ENV_VARIABLE", "POOL_VARIABLE", "MODE_VARIABLE", "FAILURE_CODE", "METRIC_NAMESPACE",
     "METRIC_DIMENSION", "DEADLINE_MARGIN_MS", "MAX_SESSION_PAGES", "MAX_USER_PAGES",
     "STATUS_OK", "STATUS_INCOMPLETE", "STATUS_FAILED", "SweepResult", "Sweeper",
-    "emf_record", "run_sweep", "handler", "web_user_pool_name",
+    "emf_record", "run_sweep", "handler", "web_user_pool_name", "in_recount_window",
+    "RECOUNT_WINDOW_START", "RECOUNT_WINDOW_SECONDS", "MAX_RECOUNT_PAGES",
 ]

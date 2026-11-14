@@ -64,6 +64,25 @@ def test_describe_user_pool_error_with_real_model_deletes_nothing():
     assert result.codes == ["sweep_pool_check_failed"]
 
 
+def test_seat_recount_with_real_dynamodb_model():
+    now = int(NOW) // 86400 * 86400 + 3 * 3600 + 60
+    ssm, ssm_stub = _client("ssm")
+    cognito, cognito_stub = _pool_client()
+    dynamodb, dynamodb_stub = _client("dynamodb")
+    table, key = "honda-mapit-mcp-dev-web-state", {"pk": {"S": "config"}}
+    ssm_stub.add_response("describe_parameters", {"Parameters": []}, DESCRIBE)
+    cognito_stub.add_response("list_users", {"Users": []})
+    dynamodb_stub.add_response("get_item", {"Item": {**key, "occupied": {"N": "7"}}},
+                               {"TableName": table, "Key": key, "ConsistentRead": True})
+    dynamodb_stub.add_response("scan", {"Count": 3, "ScannedCount": 8})
+    dynamodb_stub.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400)
+    with ssm_stub, cognito_stub, dynamodb_stub:
+        result = sweep.Sweeper(env="dev", user_pool_id=POOL, ssm=ssm, cognito=cognito, now=lambda: now,
+                               remaining_ms=lambda: 60_000, dynamodb=dynamodb).run()
+    dynamodb_stub.assert_no_pending_responses()
+    assert result.status == sweep.STATUS_OK and result.recount_conflict and result.persons_counted == 3
+
+
 def _meta(name: str, when: datetime) -> dict:
     return {"Name": name, "Type": "SecureString", "LastModifiedDate": when, "Version": 1,
             "Tier": "Standard", "DataType": "text"}

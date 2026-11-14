@@ -102,9 +102,42 @@ class FakeCognito:
         return {}
 
 
-def sweeper(ssm, cognito, remaining=lambda: 60_000, pool=POOL):
+class FakeDynamo:
+    """GetItem of the config row, Scan with Select=COUNT, conditional UpdateItem."""
+
+    def __init__(self, config=None, pages=None, update_error=None, get_error=None) -> None:
+        self.config = config
+        self.pages = list(pages or [])
+        self.update_error = update_error
+        self.get_error = get_error
+        self.calls: list[tuple[str, dict]] = []
+
+    def get_item(self, **kwargs):
+        self.calls.append(("get_item", kwargs))
+        if self.get_error is not None:
+            raise self.get_error
+        return {} if self.config is None else {"Item": self.config}
+
+    def scan(self, **kwargs):
+        self.calls.append(("scan", kwargs))
+        page = self.pages.pop(0)
+        if isinstance(page, Exception):
+            raise page
+        return page
+
+    def update_item(self, **kwargs):
+        self.calls.append(("update_item", kwargs))
+        if self.update_error is not None:
+            raise self.update_error
+        return {}
+
+    def ops(self) -> list[str]:
+        return [name for name, _ in self.calls]
+
+
+def sweeper(ssm, cognito, remaining=lambda: 60_000, pool=POOL, dynamodb=None, now=NOW):
     return sweep.Sweeper(env=ENV, user_pool_id=pool, ssm=ssm, cognito=cognito,
-                         now=lambda: NOW, remaining_ms=remaining)
+                         now=lambda: now, remaining_ms=remaining, dynamodb=dynamodb)
 
 
 def empty_users():
@@ -436,7 +469,8 @@ def factory(monkeypatch):
 
     def make(service):
         made[service] = {"ssm": FakeSsm([{"Parameters": [session(T1, OLD)]}]),
-                         "cognito-idp": FakeCognito([{"Users": [user("u-secret", OLD)]}])}[service]
+                         "cognito-idp": FakeCognito([{"Users": [user("u-secret", OLD)]}]),
+                         "dynamodb": FakeDynamo()}[service]
         return made[service]
 
     monkeypatch.setattr(sweep, "_client_factory", make)
@@ -480,7 +514,7 @@ def test_client_failure_and_internal_error_are_coded(monkeypatch):
 
 def test_make_client_refuses_other_services_and_missing_credentials(monkeypatch):
     with pytest.raises(web.PublicWebError):
-        sweep._make_client("dynamodb")
+        sweep._make_client("lambda")
     monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
     with pytest.raises(web.PublicWebError):
         sweep._make_client("ssm")
@@ -495,7 +529,8 @@ def test_run_sweep_with_the_real_clock_keeps_a_one_minute_item(monkeypatch):
     ]}])
     cognito = FakeCognito([{"Users": [{"Username": "young", "UserCreateDate": young},
                                       {"Username": "old", "UserCreateDate": old}]}])
-    monkeypatch.setattr(sweep, "_client_factory", {"ssm": ssm, "cognito-idp": cognito}.__getitem__)
+    monkeypatch.setattr(sweep, "_client_factory",
+                        {"ssm": ssm, "cognito-idp": cognito, "dynamodb": FakeDynamo()}.__getitem__)
     result = sweep.run_sweep(ENVIRON, Context())
     assert result.status == sweep.STATUS_OK and result.invalid_dates == 0
     assert ssm.deleted == [web.web_session_parameter_name(ENV, T2)]
@@ -565,3 +600,149 @@ def test_sweep_age_is_below_the_service_cut_and_token_life():
     assert web.SWEEP_AGE_SECONDS < web.SESSION_MAX_AGE_SECONDS < 60 * 60
     # Worst case: an item just under 50 min is swept on the next 5-minute run.
     assert web.SWEEP_AGE_SECONDS + 5 * 60 <= web.SESSION_MAX_AGE_SECONDS
+
+
+# --- Daily seat recount ----------------------------------------------------
+
+DAY = int(NOW) // 86400 * 86400
+IN_WINDOW = DAY + 3 * 3600 + 60
+TABLE = "honda-mapit-mcp-dev-web-state"
+
+
+def config_row(occupied: str | None = "7") -> dict:
+    row = {"pk": {"S": "config"}, "open": {"BOOL": True}, "cap": {"N": "100"}}
+    if occupied is not None:
+        row["occupied"] = {"N": occupied}
+    return row
+
+
+def recount(dynamodb, remaining=lambda: 60_000, now=IN_WINDOW):
+    return sweeper(empty_sessions(), empty_users(), remaining=remaining, dynamodb=dynamodb, now=now).run()
+
+
+def test_recount_window_is_once_a_day_for_any_schedule_phase():
+    assert sweep.in_recount_window(DAY + 3 * 3600) and sweep.in_recount_window(DAY + 3 * 3600 + 299)
+    assert not sweep.in_recount_window(DAY + 3 * 3600 + 300)
+    assert not sweep.in_recount_window(DAY + 3 * 3600 - 1)
+    for phase in range(0, 300, 7):
+        runs = [DAY + phase + 300 * k for k in range(288)]
+        assert sum(sweep.in_recount_window(t) for t in runs) == 1
+
+
+def test_recount_writes_the_number_of_unexpired_person_rows():
+    dynamodb = FakeDynamo(config_row("7"), [{"Count": 2, "ScannedCount": 9, "LastEvaluatedKey": {"pk": {"S": "k"}}},
+                                            {"Count": 3, "ScannedCount": 4}])
+    result = recount(dynamodb)
+    assert dynamodb.ops() == ["get_item", "scan", "scan", "update_item"]
+    assert dynamodb.calls[0][1] == {"TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True}
+    assert dynamodb.calls[1][1] == {
+        "TableName": TABLE, "Select": "COUNT", "ConsistentRead": True,
+        "FilterExpression": "begins_with(#pk, :person) AND (attribute_not_exists(#exp) OR #exp > :now)",
+        "ExpressionAttributeNames": {"#pk": "pk", "#exp": "expires_at"},
+        "ExpressionAttributeValues": {":person": {"S": "person#"}, ":now": {"N": str(IN_WINDOW)}},
+    }
+    assert dynamodb.calls[2][1]["ExclusiveStartKey"] == {"pk": {"S": "k"}}
+    assert dynamodb.calls[3][1] == {
+        "TableName": TABLE, "Key": {"pk": {"S": "config"}}, "UpdateExpression": "SET #occ = :count",
+        "ConditionExpression": "attribute_exists(#pk) AND #occ = :prev",
+        "ExpressionAttributeNames": {"#pk": "pk", "#occ": "occupied"},
+        "ExpressionAttributeValues": {":count": {"N": "5"}, ":prev": {"N": "7"}},
+    }
+    assert result.status == sweep.STATUS_OK
+    assert (result.recount_ran, result.persons_counted, result.seats_corrected) == (True, 5, 2)
+    record = sweep.emf_record(result, "dev", 1)
+    names = [m["Name"] for m in record["_aws"]["CloudWatchMetrics"][0]["Metrics"]]
+    assert {"PersonsCounted", "SeatsCorrected", "RecountRan"} <= set(names)
+    assert (record["PersonsCounted"], record["SeatsCorrected"], record["RecountRan"]) == (5, 2, 1)
+
+
+def test_recount_with_absent_occupied_requires_it_still_absent():
+    dynamodb = FakeDynamo(config_row(None), [{"Count": 4}])
+    recount(dynamodb)
+    update = dynamodb.calls[-1][1]
+    assert update["ConditionExpression"] == "attribute_exists(#pk) AND attribute_not_exists(#occ)"
+    assert update["ExpressionAttributeValues"] == {":count": {"N": "4"}}
+
+
+def test_recount_equal_count_writes_nothing():
+    dynamodb = FakeDynamo(config_row("5"), [{"Count": 5}])
+    result = recount(dynamodb)
+    assert dynamodb.ops() == ["get_item", "scan"] and result.recount_ran and result.seats_corrected == 0
+
+
+def test_recount_outside_the_window_or_without_table_client_does_nothing():
+    dynamodb = FakeDynamo(config_row(), [{"Count": 1}])
+    result = recount(dynamodb, now=NOW)
+    assert dynamodb.calls == [] and not result.recount_ran
+    assert "PersonsCounted" not in sweep.emf_record(result, "dev", 1)
+    assert sweeper(empty_sessions(), empty_users(), now=IN_WINDOW).run().status == sweep.STATUS_OK
+
+
+def test_recount_without_config_row_writes_nothing_and_is_not_an_error():
+    dynamodb = FakeDynamo(None)
+    result = recount(dynamodb)
+    assert dynamodb.ops() == ["get_item"] and result.status == sweep.STATUS_OK
+
+
+@pytest.mark.parametrize("row", [
+    {**config_row(), "extra": {"S": "x"}}, {**config_row(), "occupied": {"N": "1.5"}},
+    {**config_row(), "pk": {"S": "other"}},
+])
+def test_recount_with_malformed_config_row_writes_nothing(row):
+    dynamodb = FakeDynamo(row, [{"Count": 1}])
+    result = recount(dynamodb)
+    assert dynamodb.ops() == ["get_item"] and result.codes == ["sweep_recount_config_invalid"]
+
+
+def test_recount_read_failure_is_coded():
+    result = recount(FakeDynamo(config_row(), get_error=AwsError("ProvisionedThroughputExceededException")))
+    assert result.codes == ["sweep_recount_read_failed"]
+
+
+def test_recount_that_does_not_finish_in_time_writes_nothing():
+    # pool, sessions list, users list, recount read, first scan page, then no margin
+    budget = iter([60_000] * 5 + [1_000])
+    dynamodb = FakeDynamo(config_row("9"), [{"Count": 2, "LastEvaluatedKey": {"pk": {"S": "k"}}},
+                                            {"Count": 2}])
+    result = recount(dynamodb, remaining=lambda: next(budget, 0))
+    assert dynamodb.ops() == ["get_item", "scan"]
+    assert result.incomplete and not result.recount_ran and result.codes == []
+
+
+def test_recount_no_time_before_the_write_writes_nothing():
+    budget = iter([60_000] * 5 + [1_000])
+    dynamodb = FakeDynamo(config_row("9"), [{"Count": 2}])
+    result = recount(dynamodb, remaining=lambda: next(budget, 0))
+    assert dynamodb.ops() == ["get_item", "scan"] and result.incomplete
+
+
+def test_recount_page_cap_writes_nothing(monkeypatch):
+    monkeypatch.setattr(sweep, "MAX_RECOUNT_PAGES", 2)
+    dynamodb = FakeDynamo(config_row("9"), [{"Count": 1, "LastEvaluatedKey": {"pk": {"S": "a"}}},
+                                            {"Count": 1, "LastEvaluatedKey": {"pk": {"S": "b"}}}])
+    result = recount(dynamodb)
+    assert "update_item" not in dynamodb.ops() and result.incomplete
+
+
+@pytest.mark.parametrize("pages, code", [
+    ([AwsError("AccessDeniedException")], "sweep_recount_scan_failed"),
+    ([{}], "sweep_recount_scan_malformed"),
+    ([{"Count": -1}], "sweep_recount_scan_malformed"),
+    ([{"Count": "3"}], "sweep_recount_scan_malformed"),
+    ([{"Count": 1, "LastEvaluatedKey": "k"}], "sweep_recount_scan_malformed"),
+    ([{"Count": 1, "LastEvaluatedKey": {"pk": {"S": "k"}}},
+      {"Count": 1, "LastEvaluatedKey": {"pk": {"S": "k"}}}], "sweep_recount_scan_malformed"),
+])
+def test_recount_scan_failures_write_nothing(pages, code):
+    dynamodb = FakeDynamo(config_row("9"), pages)
+    result = recount(dynamodb)
+    assert "update_item" not in dynamodb.ops() and result.codes == [code]
+
+
+def test_recount_conflict_is_not_an_error_and_other_write_errors_are():
+    result = recount(FakeDynamo(config_row("9"), [{"Count": 2}],
+                                update_error=AwsError("ConditionalCheckFailedException")))
+    assert result.status == sweep.STATUS_OK and result.recount_conflict and result.seats_corrected == 0
+    assert sweep.emf_record(result, "dev", 1)["RecountConflict"] == 1
+    result = recount(FakeDynamo(config_row("9"), [{"Count": 2}], update_error=AwsError("ThrottlingException")))
+    assert result.codes == ["sweep_recount_write_failed"]
