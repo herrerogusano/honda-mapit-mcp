@@ -217,3 +217,287 @@ def test_cli_main_dispatch(capsys):
     assert "error:" in capsys.readouterr().err
     assert mcp_users.main(["--env", "dev", "revoke", "a@example.com"], clients=clients, out=lines.append) == 0
     assert dynamo.items == {}
+
+
+# --- web-* commands, against the real botocore models (Stubber, offline) ------------------
+
+from datetime import datetime, timezone  # noqa: E402
+
+from botocore.session import get_session  # noqa: E402
+from botocore.stub import ANY, Stubber  # noqa: E402
+
+from mapit import public_web as web  # noqa: E402
+from scripts import mcp_users_web  # noqa: E402
+
+WEB_NOW = 1_800_000_000  # 2027-01-15T08:00:00Z
+WEB_TABLE = "honda-mapit-mcp-dev-web-state"
+WEB_POOL = "eu-west-1_WebPool123"
+OTHER_POOL = "eu-west-1_Invites12"
+SESSION_PATH = "/honda-mapit-mcp/dev/web/sessions"
+USER_NAME = "c0ffee00-0000-4000-8000-000000000001"
+SESSION_NAME = f"{SESSION_PATH}/{'d' * 32}/mapit-refresh-token"
+
+
+def _stubbed(service):
+    client = get_session().create_client(service, region_name="eu-west-1",
+                                         aws_access_key_id="testing", aws_secret_access_key="testing")
+    return client, Stubber(client)
+
+
+class _WebClients:
+    def __init__(self):
+        self.dynamodb, self.dynamo_stub = _stubbed("dynamodb")
+        self.cognito, self.cognito_stub = _stubbed("cognito-idp")
+        self.ssm, self.ssm_stub = _stubbed("ssm")
+        self.lines: list[str] = []
+
+    def __enter__(self):
+        for stub in (self.dynamo_stub, self.cognito_stub, self.ssm_stub):
+            stub.activate()
+        return self
+
+    def __exit__(self, *exc):
+        for stub in (self.dynamo_stub, self.cognito_stub, self.ssm_stub):
+            stub.deactivate()
+
+    def verify(self):
+        for stub in (self.dynamo_stub, self.cognito_stub, self.ssm_stub):
+            stub.assert_no_pending_responses()
+
+    def run(self, *argv):
+        clients = mcp_users.Clients(None, self.dynamodb, self.cognito, self.ssm)
+        return mcp_users.main(["--env", "dev", *argv], clients=clients, out=self.lines.append,
+                              clock=lambda: WEB_NOW)
+
+    def get(self, key, item=None):
+        response = {"Item": item} if item is not None else {}
+        self.dynamo_stub.add_response("get_item", response,
+                                      {"TableName": WEB_TABLE, "Key": key, "ConsistentRead": True})
+
+    def breakers(self, current=None, *older):
+        window = web.breaker_window(WEB_NOW)
+        rows = [current, *older, None, None][:3]
+        for back, item in enumerate(rows):
+            self.get(web.breaker_key(window - back), item)
+
+    def pools(self):
+        self.cognito_stub.add_response("list_user_pools", {"UserPools": [
+            {"Id": OTHER_POOL, "Name": "honda-mapit-mcp-dev-users"},
+            {"Id": WEB_POOL, "Name": "honda-mapit-mcp-dev-web-users"}]}, {"MaxResults": 60})
+
+    def users(self, *ages):
+        self.cognito_stub.add_response("list_users", {"Users": [
+            {"Username": f"{USER_NAME[:-1]}{index}", "UserCreateDate": _date(age)}
+            for index, age in enumerate(ages)]},
+            {"UserPoolId": WEB_POOL, "AttributesToGet": [], "Limit": 60})
+
+    def sessions(self, *ages):
+        self.ssm_stub.add_response("describe_parameters", {"Parameters": [
+            {"Name": SESSION_NAME, "LastModifiedDate": _date(age)} for age in ages]},
+            {"ParameterFilters": [{"Key": "Path", "Option": "Recursive", "Values": [SESSION_PATH]}],
+             "MaxResults": 50})
+
+    @property
+    def text(self):
+        return "\n".join(self.lines)
+
+
+def _date(age):
+    return datetime.fromtimestamp(WEB_NOW - age, tz=timezone.utc)
+
+
+def _config(**attributes):
+    item = dict(web.config_key())
+    for name, value in attributes.items():
+        item[name] = {"BOOL": value} if type(value) is bool else {"N": str(value)}
+    return item
+
+
+def _assert_no_identifiers(text):
+    for secret in (WEB_POOL, OTHER_POOL, USER_NAME[:-1], SESSION_NAME, "d" * 32):
+        assert secret not in text
+
+
+def test_web_status_reports_counts_ages_and_state_without_identifiers():
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(cap=100, occupied=3, open=True))
+        c.breakers({**web.breaker_key(web.breaker_window(WEB_NOW)), "rejections": {"N": "4"},
+                    "expires_at": {"N": str(WEB_NOW + 900)}})
+        c.pools()
+        c.users(120, 2_400)
+        c.sessions(2_400)
+        assert c.run("web-status") == 0
+        c.verify()
+    assert "config (row): open=true pause_until=none cap=100 occupied=3 pass_required=true" in c.text
+    assert "breaker: closed; MAPIT rejections in this 10-min window: 4/20" in c.text
+    assert "/estado would answer: abierto" in c.text
+    assert "users in web pool: 2, oldest 40 min 0 s (under one hour)" in c.text
+    assert "session parameters: 1, oldest 40 min 0 s (under one hour)" in c.text
+    _assert_no_identifiers(c.text)
+
+
+def test_web_status_flags_malformed_config_open_breaker_and_old_items():
+    with _WebClients() as c:
+        c.get(web.config_key(), {**_config(cap=5), "surprise": {"S": "x"}})
+        c.breakers(None, {**web.breaker_key(web.breaker_window(WEB_NOW) - 1), "rejections": {"N": "20"},
+                          "open_until": {"N": str(WEB_NOW + 60)}, "expires_at": {"N": str(WEB_NOW + 900)}})
+        c.pools()
+        c.users(3_600)
+        c.sessions()
+        assert c.run("web-status") == mcp_users.WEB_STATUS_ATTENTION
+        c.verify()
+    assert "config: MALFORMED (service closed); attributes present: cap, pk, surprise" in c.text
+    assert "breaker: OPEN" in c.text
+    assert "/estado would answer: pausa" in c.text
+    assert "users in web pool: 1, oldest 60 min 0 s (ONE HOUR OR OLDER)" in c.text
+    assert "session parameters: 0" in c.text
+
+
+def test_web_status_ignores_expired_breaker_rows_and_reads_states():
+    expired = {**web.breaker_key(web.breaker_window(WEB_NOW)), "rejections": {"N": "25"},
+               "open_until": {"N": str(WEB_NOW + 60)}, "expires_at": {"N": str(WEB_NOW)}}
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(cap=2, occupied=2))
+        c.breakers(expired)
+        c.pools()
+        c.users()
+        c.sessions()
+        assert c.run("web-status") == 0
+    assert "breaker: closed" in c.text and "/estado would answer: lleno" in c.text
+    now = WEB_NOW
+    assert mcp_users_web.public_state(web.parse_web_config(None), now, False) == "abierto"
+    assert mcp_users_web.public_state(web.parse_web_config(None), now, True) == "pausa"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(open=False)), now, True) == "cerrado"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(pause_until=now + 1)), now, False) == "pausa"
+    assert mcp_users_web.public_state(web.READ_FAILED_WEB_CONFIG, now, False) == "pausa"
+
+
+def test_web_status_fails_without_exactly_one_web_pool(capsys):
+    with _WebClients() as c:
+        c.get(web.config_key())
+        c.breakers()
+        c.cognito_stub.add_response("list_user_pools", {"UserPools": [
+            {"Id": OTHER_POOL, "Name": "honda-mapit-mcp-dev-users"}]}, {"MaxResults": 60})
+        assert c.run("web-status") == 1
+        c.verify()
+    assert "config (no row, defaults)" in c.text
+    assert "web user pool not found" in capsys.readouterr().err
+
+
+def test_web_status_fails_closed_when_the_config_read_fails(capsys):
+    with _WebClients() as c:
+        c.dynamo_stub.add_client_error("get_item", "ResourceNotFoundException")
+        assert c.run("web-status") == 1
+    assert "config read failed (ResourceNotFoundException)" in capsys.readouterr().err
+
+
+def test_web_stats_reads_day_and_month_rows_across_a_year_change():
+    with _WebClients() as c:
+        c.get(web.day_key(WEB_NOW), {**web.day_key(WEB_NOW), "logins": {"N": "7"}, "new_people": {"N": "2"},
+                                     "mapit_rejections": {"N": "3"}})
+        c.get(web.day_key(WEB_NOW - 86400))
+        c.get({"pk": {"S": "month#2027-01"}}, {"pk": {"S": "month#2027-01"}, "logins": {"N": "40"}})
+        c.get({"pk": {"S": "month#2026-12"}}, {"pk": {"S": "month#2026-12"}, "logins": {"S": "bad"}})
+        assert c.run("web-stats", "--days", "2", "--months", "2") == 0
+        c.verify()
+    rows = [line.split() for line in c.lines]
+    assert ["2027-01-15", "7", "2", "3", "0"] in rows
+    assert ["2027-01-14", "0", "0", "0", "0"] in rows
+    assert ["2027-01", "40"] in rows and ["2026-12", "?"] in rows
+
+
+def test_web_stats_bounds_its_reads(capsys):
+    with _WebClients() as c:
+        assert c.run("web-stats", "--days", "0") == 1
+        assert c.run("web-stats", "--days", str(mcp_users_web.MAX_DAYS + 1)) == 1
+        assert c.run("web-stats", "--months", "0") == 1
+    assert "--days must be between" in capsys.readouterr().err
+
+
+def test_web_config_dry_run_shows_both_values_and_writes_nothing():
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(cap=100, occupied=7))
+        assert c.run("web-config", "--cap", "200") == 0
+        c.verify()  # no update_item stubbed: a write would have raised
+    assert "current: open=true pause_until=none cap=100 occupied=7 pass_required=true" in c.text
+    assert "new:     open=true pause_until=none cap=200 occupied=7 pass_required=true" in c.text
+    assert "not written; run again with --yes to write" in c.text
+
+
+def test_web_config_writes_only_the_requested_attributes_conditionally():
+    pause = "2027-01-15T09:30:00Z"
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(cap=100, occupied=7, open=True))
+        c.dynamo_stub.add_response("update_item", {}, {
+            "TableName": WEB_TABLE, "Key": web.config_key(),
+            "UpdateExpression": "SET #a0 = :v0, #a1 = :v1, #a2 = :v2",
+            "ConditionExpression": ("attribute_exists(#pk) AND #a0 = :o0 AND #a1 = :o1 "
+                                    "AND attribute_not_exists(#a2)"),
+            "ExpressionAttributeNames": {"#pk": "pk", "#a0": "cap", "#a1": "open", "#a2": "pause_until"},
+            "ExpressionAttributeValues": {":v0": {"N": "0"}, ":o0": {"N": "100"},
+                                          ":v1": {"BOOL": False}, ":o1": {"BOOL": True},
+                                          ":v2": {"N": str(WEB_NOW + 5400)}},
+        })
+        assert c.run("web-config", "--cap", "0", "--open", "false", "--pause-until", pause, "--yes") == 0
+        c.verify()
+    assert f"new:     open=false pause_until={pause} cap=none occupied=7 pass_required=true" in c.text
+    assert c.lines[-1] == "written"
+
+
+def test_web_config_creates_an_absent_row_without_occupied():
+    with _WebClients() as c:
+        c.get(web.config_key())
+        c.dynamo_stub.add_response("update_item", {}, {
+            "TableName": WEB_TABLE, "Key": web.config_key(), "UpdateExpression": "SET #a0 = :v0",
+            "ConditionExpression": "attribute_not_exists(#pk) AND attribute_not_exists(#a0)",
+            "ExpressionAttributeNames": {"#pk": "pk", "#a0": "pass_required"},
+            "ExpressionAttributeValues": {":v0": {"BOOL": False}},
+        })
+        assert c.run("web-config", "--pass-required", "false", "--yes") == 0
+        c.verify()
+    assert "warning: without the pass" in c.text
+
+
+def test_web_config_can_repair_a_bad_value_but_not_an_unknown_attribute(capsys):
+    with _WebClients() as c:
+        c.get(web.config_key(), {**_config(occupied=1), "cap": {"S": "lots"}})
+        c.dynamo_stub.add_response("update_item", {}, {
+            "TableName": WEB_TABLE, "Key": web.config_key(), "UpdateExpression": "SET #a0 = :v0",
+            "ConditionExpression": "attribute_exists(#pk) AND #a0 = :o0",
+            "ExpressionAttributeNames": {"#pk": "pk", "#a0": "cap"},
+            "ExpressionAttributeValues": {":v0": {"N": "50"}, ":o0": {"S": "lots"}},
+        })
+        assert c.run("web-config", "--cap", "50", "--yes") == 0
+        c.get(web.config_key(), {**_config(cap=5), "surprise": {"S": "x"}})
+        assert c.run("web-config", "--cap", "50", "--yes") == 1
+        c.verify()
+    assert "current: MALFORMED (service closed)" in c.text
+    assert "the row would stay malformed" in capsys.readouterr().err
+
+
+def test_web_config_reports_a_concurrent_change(capsys):
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(cap=100))
+        c.dynamo_stub.add_client_error("update_item", "ConditionalCheckFailedException",
+                                       expected_params={"TableName": WEB_TABLE, "Key": web.config_key(),
+                                                        "UpdateExpression": ANY, "ConditionExpression": ANY,
+                                                        "ExpressionAttributeNames": ANY,
+                                                        "ExpressionAttributeValues": ANY})
+        assert c.run("web-config", "--cap", "10", "--yes") == 1
+        c.verify()
+    assert "changed while running; nothing written" in capsys.readouterr().err
+
+
+def test_web_config_rejects_bad_options_before_any_call(capsys):
+    with _WebClients() as c:
+        assert c.run("web-config") == 1
+        assert c.run("web-config", "--cap", "-1") == 1
+        assert c.run("web-config", "--cap", str(mcp_users_web.MAX_CAP + 1)) == 1
+        for bad in ("2027-01-15T07:59:59Z", "2027-01-15T09:00:00", "2027-01-15T09:00:00+01:00", "soon"):
+            assert c.run("web-config", "--pause-until", bad) == 1
+        c.verify()
+    err = capsys.readouterr().err
+    assert "give at least one of" in err and "--cap must be between" in err
+    assert "not in the future" in err and "ISO-8601 UTC" in err
+    assert mcp_users_web.parse_pause("none", WEB_NOW) == 0
+    assert mcp_users_web.parse_pause("2027-01-15T08:00:01+00:00", WEB_NOW) == WEB_NOW + 1

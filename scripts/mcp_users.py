@@ -4,6 +4,10 @@
     python -m scripts.mcp_users --env dev list
     python -m scripts.mcp_users --env dev revoke friend@example.com
     python -m scripts.mcp_users --env dev relink friend@example.com
+    python -m scripts.mcp_users --env dev web-status | web-stats | web-config ...
+
+The ``web-*`` commands act on the public web stack and live in
+:mod:`scripts.mcp_users_web`; see ``docs/public-web.md``.
 
 Stack outputs (TableName, UserPoolId, ApiBaseUrl) are read from the
 environment's multiuser CloudFormation stack. Invitation tokens are printed
@@ -31,7 +35,10 @@ from mapit.multiuser_common import (
     normalize_email, session_parameter_name, stack_name, validate_environment, validate_tenant_id,
 )
 
+from scripts import mcp_users_web as web_admin
+
 MAX_INVITE_DAYS = 60
+WEB_STATUS_ATTENTION = 3   # web-status: something is one hour old or older, or a listing was cut
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 
@@ -258,8 +265,43 @@ def default_clients() -> Clients:  # pragma: no cover - real AWS only
                    cognito=session.client("cognito-idp"), ssm=session.client("ssm"))
 
 
+def _add_web_commands(commands: Any) -> None:
+    commands.add_parser("web-status", help="read-only state of the public web stack")
+    stats = commands.add_parser("web-stats", help="read-only daily and monthly aggregates")
+    stats.add_argument("--days", type=int, default=14)
+    stats.add_argument("--months", type=int, default=3)
+    config = commands.add_parser("web-config", help="show or change the public web configuration row")
+    config.add_argument("--cap", type=int)
+    config.add_argument("--open", dest="open_", choices=["true", "false"])
+    config.add_argument("--pause-until")
+    config.add_argument("--pass-required", choices=["true", "false"])
+    config.add_argument("--yes", action="store_true")
+
+
+def _run_web(env: str, args: argparse.Namespace, clients: Clients, out: Callable[[str], None],
+             clock: Callable[[], float]) -> int:
+    admin = web_admin.WebAdmin(env, dynamodb=clients.dynamodb, cognito=clients.cognito,
+                               ssm=clients.ssm, out=out, clock=clock)
+    if args.command == "web-status":
+        return 0 if admin.status() else WEB_STATUS_ATTENTION
+    if args.command == "web-stats":
+        admin.stats(args.days, args.months)
+        return 0
+    changes: dict[str, Any] = {}
+    if args.cap is not None:
+        changes["cap"] = web_admin.parse_cap(args.cap)
+    if args.open_ is not None:
+        changes["open"] = web_admin.parse_bool(args.open_)
+    if args.pause_until is not None:
+        changes["pause_until"] = web_admin.parse_pause(args.pause_until, int(clock()))
+    if args.pass_required is not None:
+        changes["pass_required"] = web_admin.parse_bool(args.pass_required)
+    admin.configure(changes, yes=args.yes)
+    return 0
+
+
 def main(argv: list[str] | None = None, *, clients: Clients | None = None,
-         out: Callable[[str], None] = print) -> int:
+         out: Callable[[str], None] = print, clock: Callable[[], float] = time.time) -> int:
     parser = argparse.ArgumentParser(description="Manage invitation-only multiuser MCP accounts.")
     parser.add_argument("--env", required=True, choices=["dev", "prod"])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -269,7 +311,14 @@ def main(argv: list[str] | None = None, *, clients: Clients | None = None,
     commands.add_parser("list")
     for name in ("revoke", "relink"):
         commands.add_parser(name).add_argument("email")
+    _add_web_commands(commands)
     args = parser.parse_args(argv)
+    if args.command.startswith("web-"):
+        try:
+            return _run_web(args.env, args, clients or default_clients(), out, clock)
+        except (web_admin.WebAdminError, MultiuserError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
     admin = UserAdmin(args.env, clients or default_clients(), out=out)
     try:
         if args.command == "invite":

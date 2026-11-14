@@ -169,6 +169,8 @@ unchanged.
 
 ## Web client (Honda Ride Log)
 
+The public web mode, a separate stack without invitations, is described in `docs/public-web.md`.
+
 Approved by the owner on 2026-11-09 (vault decision D-078). The web is a static
 single-page site in the separate repository `honda-ride-log`; nothing of it is
 built or stored here, and nothing new is stored in AWS. It is one more client
