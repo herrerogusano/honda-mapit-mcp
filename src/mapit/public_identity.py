@@ -6,10 +6,11 @@ nothing here runs. It serves four Cognito triggers and one HTTP route:
 
 * ``UserMigration_Authentication``: one consistent read of the web table
   (config, person, attempts, pass, breaker), refusals that never call MAPIT
-  (closed or paused, breaker open, email locked, no valid pass), one MAPIT
-  login as in invitation mode, then either the rejection counters or the
-  admission (person row, seat, usage row) and the MAPIT session under
-  :func:`mapit.public_web.web_session_parameter_name` with a random tenant.
+  (closed or paused, breaker open, email locked, no valid pass), the pass
+  attempt spent conditionally, one MAPIT login as in invitation mode, then
+  either the rejection counters or the MAPIT session under
+  :func:`mapit.public_web.web_session_parameter_name` with a random tenant
+  followed by the admission (person row, seat, usage row).
   A full cap is checked only after MAPIT accepted the password, so the answer
   never tells whether an email signed in before.
 * ``PreAuthentication_Authentication``: the same refusals, before Cognito
@@ -17,14 +18,17 @@ nothing here runs. It serves four Cognito triggers and one HTTP route:
 * ``TokenGeneration_*``: refresh is refused; every other issue counts one
   sign-in per person and day (at most ``DAILY_LOGINS_PER_PERSON``) and the
   day and month aggregates, then adds the tenant claim.
-* ``GET /estado``: fixed public JSON, ``abierto``, ``lleno`` or ``pausa``.
+* ``GET /estado``: fixed public JSON, ``abierto``, ``lleno``, ``cerrado`` or
+  ``pausa``.
 
-A pass attempt is spent in exactly one place per sign-in: in the migration
-when MAPIT rejects the password (user absent from the pool), or in the
-pre-authentication step when the user exists (Cognito checks the password
-itself and no migration runs). A pre-authentication call for an absent user
-(``userNotFound``) only checks the pass. Whatever order Cognito runs the two
-steps in, one attempt is spent at most once.
+A pass attempt is spent once per sign-in: in the migration before MAPIT is
+called, whatever MAPIT answers (the conditional decrement is what lets only
+one of several racing migrations through), or in the pre-authentication step
+when the user exists (Cognito checks the password itself and no migration
+runs). A pre-authentication call for an absent user (``userNotFound``) only
+checks the pass, and one for an existing user right after a migration of the
+same email (``MIGRATION_SPEND_GRACE_SECONDS``) spends nothing more. Whatever
+order Cognito runs the two steps in, one attempt is spent once.
 
 Failures are logged as one JSON line with a fixed step code, the exception
 class name and the AWS error code; never the event, email, password, token,
@@ -72,8 +76,11 @@ USER_MESSAGES = frozenset({
 
 STATUS_OPEN = "abierto"
 STATUS_FULL = "lleno"
+STATUS_CLOSED = "cerrado"
 STATUS_PAUSED = "pausa"
 STATUS_DEADLINE_SECONDS = 3.0
+# Both steps of one sign-in run within one Cognito request (each under 5 s).
+MIGRATION_SPEND_GRACE_SECONDS = 10
 
 _LOG = logging.getLogger("mapit.public_identity")
 _KEY_STORE = "web_fingerprint_key"
@@ -86,6 +93,9 @@ class _Stop(web.PublicWebError):
     def __init__(self, code: str, message: str = MSG_GENERIC, cause: BaseException | None = None) -> None:
         super().__init__(code, cause=cause)
         self.message = message
+        # ALL_OLD item of a ConditionalCheckFailedException (never logged).
+        response = getattr(cause, "response", None)
+        self.old_item = response.get("Item") if isinstance(response, Mapping) else None
 
 
 def _log(trigger: str, code: str, error_type: str | None, provider_code: str | None) -> None:
@@ -241,24 +251,64 @@ def _gate(state: Mapping[str, Any], now: int) -> web.WebConfig:
     return config
 
 
-def _spend_pass(env: str, email_fp: str, now: int, deadline: float) -> None:
-    """Conditional decrement; ConditionalCheckFailed means no attempt left."""
-    _call("pass_spend", deadline, base._dynamodb().update_item,
-          TableName=web.web_table_name(env), Key=web.pass_key(email_fp),
-          UpdateExpression="SET attempts_left = attempts_left - :one",
-          ConditionExpression="attempts_left > :zero AND expires_at > :now",
-          ExpressionAttributeValues={":one": _num(1), ":zero": _num(0), ":now": _num(now)})
+def _spend_for_migration(env: str, email_fp: str, now: int, deadline: float) -> None:
+    """Spend one pass attempt before MAPIT, whatever MAPIT answers.
+
+    The conditional decrement is the gate: of several migrations racing on a
+    pass with one attempt left, only one reaches MAPIT. It also records
+    ``migration_spent_at`` so that a pre-authentication step that Cognito may
+    run right after this migration does not spend a second attempt.
+    """
+    try:
+        _call("pass_spend", deadline, base._dynamodb().update_item,
+              TableName=web.web_table_name(env), Key=web.pass_key(email_fp),
+              UpdateExpression="SET attempts_left = attempts_left - :one, migration_spent_at = :now",
+              ConditionExpression="attempts_left > :zero AND expires_at > :now",
+              ExpressionAttributeValues={":one": _num(1), ":zero": _num(0), ":now": _num(now)})
+    except _Stop as exc:
+        if exc.provider_code == "ConditionalCheckFailedException":
+            raise _Stop("pass_missing", MSG_START_FROM_WEB) from None
+        raise
+
+
+def _spend_for_pre_auth(env: str, email_fp: str, now: int, deadline: float) -> None:
+    """Spend one pass attempt for an existing user, unless a migration just did.
+
+    A migration of the same sign-in that ran less than
+    ``MIGRATION_SPEND_GRACE_SECONDS`` ago already spent this attempt.
+    """
+    try:
+        _call("pass_spend", deadline, base._dynamodb().update_item,
+              TableName=web.web_table_name(env), Key=web.pass_key(email_fp),
+              UpdateExpression="SET attempts_left = attempts_left - :one",
+              ConditionExpression=("attempts_left > :zero AND expires_at > :now AND "
+                                   "(attribute_not_exists(migration_spent_at) OR migration_spent_at < :recent)"),
+              ExpressionAttributeValues={":one": _num(1), ":zero": _num(0), ":now": _num(now),
+                                         ":recent": _num(now - MIGRATION_SPEND_GRACE_SECONDS)},
+              ReturnValuesOnConditionCheckFailure="ALL_OLD")
+    except _Stop as exc:
+        if exc.provider_code != "ConditionalCheckFailedException":
+            raise
+        old = getattr(exc, "old_item", None)
+        spent = base._n(old, "migration_spent_at") if isinstance(old, Mapping) else None
+        expires = base._n(old, web.TTL_ATTRIBUTE) if isinstance(old, Mapping) else None
+        if (spent is not None and now - MIGRATION_SPEND_GRACE_SECONDS <= spent <= now
+                and expires is not None and expires > now):
+            return
+        raise _Stop("pass_missing", MSG_START_FROM_WEB) from None
 
 
 # --- UserMigration_Authentication ------------------------------------------------
 
-def _record_rejection(env: str, email_fp: str, state: Mapping[str, Any], config: web.WebConfig,
+def _record_rejection(env: str, email_fp: str, state: Mapping[str, Any],
                       now: int, deadline: float) -> bool:
     """Count one MAPIT rejection once: attempts and breaker in one transaction.
 
     Returns True when this rejection locks the email. The lock is decided from
     the value read before the login (no extra read); two racing rejections may
-    both add instead of locking, and then the next rejection locks.
+    both add instead of locking, and then the next rejection locks. Racing
+    migrations are bounded first by the pass (spent before MAPIT) and by the
+    function's reserved concurrency.
     """
     table = web.web_table_name(env)
     attempts = state["attempts"]
@@ -286,11 +336,6 @@ def _record_rejection(env: str, email_fp: str, state: Mapping[str, Any], config:
         {"Update": {"TableName": table, "Key": web.day_key(now), "UpdateExpression": "ADD mapit_rejections :one",
                     "ExpressionAttributeValues": {":one": _num(1)}}},
     ])
-    if config.pass_required and state["pass"] is not None and base._has_sdk_time(deadline):
-        try:
-            _spend_pass(env, email_fp, now, deadline)
-        except _Stop as exc:  # the counters above are what bounds MAPIT calls
-            _log("UserMigration_Authentication", exc.code, exc.cause_type, exc.provider_code)
     return locks
 
 
@@ -366,12 +411,14 @@ def _user_migration(event: dict[str, Any], context: Any, started: float,
     state = _read(env, _login_keys(email_fp, window, person=True), now, deadline)
     state["window"] = window
     config = _gate(state, now)
+    if config.pass_required:
+        _spend_for_migration(env, email_fp, now, deadline)
 
     try:
         refresh_token = base._mapit_login(mapit_config, typed.strip(), password,
                                           deadline - base.POST_LOGIN_RESERVE_SECONDS)
     except base.MapitCredentialsRejected:
-        locked = _record_rejection(env, email_fp, state, config, base._now(), deadline)
+        locked = _record_rejection(env, email_fp, state, base._now(), deadline)
         raise _Stop("mapit_rejected", MSG_LOCKED if locked else MSG_BAD_CREDENTIALS) from None
     except Exception as exc:
         raise _Stop("mapit_failed", MSG_GENERIC, exc) from None
@@ -388,15 +435,17 @@ def _user_migration(event: dict[str, Any], context: Any, started: float,
             and (base._n(person, "login_day_count") or 0) >= web.DAILY_LOGINS_PER_PERSON):
         raise _Stop("daily_limit", MSG_DAILY_LIMIT)
     tenant = validate_tenant_id(_token_hex(16))
-    _admit(env, email_fp, state, tenant, now, deadline)
+    # Session first, admission second. After MAPIT only one SDK call is
+    # guaranteed (POST_LOGIN_RESERVE_SECONDS); if the admission then fails or
+    # has no time, no seat, person or usage row was written, and the stored
+    # session belongs to a random tenant that no token ever carries: the sweep
+    # deletes it by age (SWEEP_AGE_SECONDS) like any other session. The reverse
+    # order could take a seat for a sign-in that never got its session.
     _call("session_write", deadline, base._ssm().put_parameter,
           Name=web.web_session_parameter_name(env, tenant), Value=refresh_token,
           Type="SecureString", Overwrite=False, Tier="Standard")
     del refresh_token
-    # Past the deadline no SDK call fits, so a session stored just above is not
-    # deleted here. It belongs to a random tenant that no token ever carries,
-    # and the sweep deletes every parameter under the sessions prefix by age
-    # (SWEEP_AGE_SECONDS), as for any other session. Its usage row expires.
+    _admit(env, email_fp, state, tenant, base._now(), deadline)
     if base._monotonic() >= deadline:
         raise _Stop("deadline_passed")
     event["response"] = {
@@ -428,13 +477,9 @@ def _pre_authentication(event: dict[str, Any], context: Any, started: float,
     config = _gate(state, now)
     if not not_found and config.pass_required:
         # The user exists: Cognito checks the password and no migration runs,
-        # so this attempt is spent here (and only here).
-        try:
-            _spend_pass(env, email_fp, now, deadline)
-        except _Stop as exc:
-            if exc.provider_code == "ConditionalCheckFailedException":
-                raise _Stop("pass_missing", MSG_START_FROM_WEB, None) from None
-            raise
+        # so this attempt is spent here, unless the migration of this same
+        # sign-in just spent it.
+        _spend_for_pre_auth(env, email_fp, now, deadline)
     event["response"] = {}
     return event
 
@@ -533,11 +578,17 @@ def _status(environ: Mapping[str, str]) -> dict[str, Any]:
         deadline = base._monotonic() + STATUS_DEADLINE_SECONDS
         state = _read(env, {"config": web.config_key(), **_breaker_keys(web.breaker_window(now))},
                       now, deadline)
+    except web.PublicWebError as exc:
+        _log("http_status", exc.code, exc.cause_type, exc.provider_code)
+        return _json(503, STATUS_PAUSED)
     except Exception as exc:
-        code = exc.code if isinstance(exc, web.PublicWebError) else "unexpected"
-        _log("http_status", code, type(exc).__name__, None)
+        _log("http_status", "unexpected", type(exc).__name__, None)
         return _json(503, STATUS_PAUSED)
     config = web.parse_web_config(state["config"])
+    if config.source == web.CONFIG_SOURCE_MALFORMED:
+        return _json(200, STATUS_PAUSED)
+    if not config.open:
+        return _json(200, STATUS_CLOSED)
     if not config.accepting(now) or _breaker_open(state, now):
         return _json(200, STATUS_PAUSED)
     return _json(200, STATUS_OPEN if config.has_room() else STATUS_FULL)
@@ -556,5 +607,6 @@ def http_request(event: Mapping[str, Any], environ: Mapping[str, str]) -> dict[s
 __all__ = [
     "PUBLIC_CONSENT_VERSION", "USER_MESSAGES", "MSG_BAD_CREDENTIALS", "MSG_START_FROM_WEB",
     "MSG_PAUSED", "MSG_FULL", "MSG_DAILY_LIMIT", "MSG_SESSION_ENDED", "MSG_FORGOT_PASSWORD",
-    "STATUS_OPEN", "STATUS_FULL", "STATUS_PAUSED", "cognito_trigger", "http_request",
+    "STATUS_OPEN", "STATUS_FULL", "STATUS_CLOSED", "STATUS_PAUSED", "MIGRATION_SPEND_GRACE_SECONDS",
+    "cognito_trigger", "http_request",
 ]

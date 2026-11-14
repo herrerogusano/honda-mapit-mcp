@@ -74,14 +74,22 @@ def _mapit(monkeypatch, mode: str = "ok") -> None:
     monkeypatch.setattr(identity, "_mapit_login", login)
 
 
+MIGRATION_SPEND = {
+    "TableName": TABLE, "Key": web.pass_key(FP),
+    "UpdateExpression": "SET attempts_left = attempts_left - :one, migration_spent_at = :now",
+    "ConditionExpression": "attempts_left > :zero AND expires_at > :now",
+    "ExpressionAttributeValues": {":one": {"N": "1"}, ":zero": {"N": "0"}, ":now": {"N": str(NOW)}}}
+SESSION_PUT = {"Name": SESSION_PARAMETER, "Value": REFRESH, "Type": "SecureString", "Overwrite": False,
+               "Tier": "Standard"}
+
+
 def test_admission_requests_match_the_models(stubs):
     dynamo, ssm, monkeypatch = stubs
     _mapit(monkeypatch)
     _read(dynamo, PASS_ROW)
+    dynamo.add_response("update_item", {}, expected_params=MIGRATION_SPEND)
+    ssm.add_response("put_parameter", {"Version": 1, "Tier": "Standard"}, expected_params=SESSION_PUT)
     dynamo.add_response("transact_write_items", {})
-    ssm.add_response("put_parameter", {"Version": 1, "Tier": "Standard"}, expected_params={
-        "Name": SESSION_PARAMETER, "Value": REFRESH, "Type": "SecureString", "Overwrite": False,
-        "Tier": "Standard"})
     result = identity.handler(_migration(), Context())
     assert result["response"]["userAttributes"]["custom:tenant_id"] == TENANT
 
@@ -90,20 +98,37 @@ def test_rejection_requests_match_the_models(stubs):
     dynamo, _, monkeypatch = stubs
     _mapit(monkeypatch, "reject")
     _read(dynamo, PASS_ROW)
+    dynamo.add_response("update_item", {}, expected_params=MIGRATION_SPEND)
     dynamo.add_response("transact_write_items", {})
-    dynamo.add_response("update_item", {}, expected_params={
-        "TableName": TABLE, "Key": web.pass_key(FP),
-        "UpdateExpression": "SET attempts_left = attempts_left - :one",
-        "ConditionExpression": "attempts_left > :zero AND expires_at > :now",
-        "ExpressionAttributeValues": {":one": {"N": "1"}, ":zero": {"N": "0"}, ":now": {"N": str(NOW)}}})
     with pytest.raises(identity.IdentityError, match="^" + public.MSG_BAD_CREDENTIALS + "$"):
         identity.handler(_migration(), Context())
 
 
-def test_modelled_seat_cancellation_says_full(stubs):
+def test_modelled_spent_pass_refuses_before_mapit(stubs):
     dynamo, _, monkeypatch = stubs
+    monkeypatch.setattr(identity, "_mapit_login", lambda *a: pytest.fail("MAPIT must not be called"))
+    _read(dynamo, PASS_ROW)
+    dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
+                            expected_params=MIGRATION_SPEND)
+    with pytest.raises(identity.IdentityError, match="^" + public.MSG_START_FROM_WEB + "$"):
+        identity.handler(_migration(), Context())
+
+
+def test_modelled_pre_auth_grace_from_the_returned_item(stubs):
+    dynamo, _, _ = stubs
+    _read(dynamo, PASS_ROW)
+    old = {**PASS_ROW, "attempts_left": {"N": "2"}, "migration_spent_at": {"N": str(NOW - 1)}}
+    dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
+                            modeled_fields={"Item": old})
+    assert identity.handler(_pre_auth(False), Context())["response"] == {}
+
+
+def test_modelled_seat_cancellation_says_full(stubs):
+    dynamo, ssm, monkeypatch = stubs
     _mapit(monkeypatch)
     _read(dynamo, PASS_ROW)
+    dynamo.add_response("update_item", {}, expected_params=MIGRATION_SPEND)
+    ssm.add_response("put_parameter", {"Version": 1, "Tier": "Standard"}, expected_params=SESSION_PUT)
     dynamo.add_client_error("transact_write_items", "TransactionCanceledException", http_status_code=400,
                             modeled_fields={"CancellationReasons": [
                                 {"Code": "None"}, {"Code": "None"},

@@ -117,6 +117,7 @@ class FakeTable:
         self.items: dict[str, dict] = {}
         self.calls: list[tuple[str, Any]] = []
         self.before_transact: Any = None
+        self.before_update: Any = None  # runs once, before the next update_item
         self.fail: set[str] = set()
 
     def put(self, pk: str, **attrs: Any) -> None:
@@ -175,8 +176,14 @@ class FakeTable:
         self.calls.append(("update_item", copy.deepcopy(kwargs)))
         if "update_item" in self.fail:
             raise ClientError("InternalServerError")
+        if self.before_update:
+            hook, self.before_update = self.before_update, None
+            hook(self)
         if not self._ok(kwargs):
-            raise ClientError("ConditionalCheckFailedException")
+            pk = self._pk(kwargs)
+            extra = ({"Item": copy.deepcopy(self.items[pk])}
+                     if kwargs.get("ReturnValuesOnConditionCheckFailure") == "ALL_OLD" and pk in self.items else {})
+            raise ClientError("ConditionalCheckFailedException", **extra)
         self._apply("Update", kwargs)
         return {}
 
@@ -323,7 +330,10 @@ def test_new_person_is_admitted_with_usage_row_and_session(fakes):
         "calls": {"N": "0"}, "expires_at": {"N": str(web.session_usage_expires_at(NOW))}}
     assert table.n("config", "occupied") == 1
     assert table.n(f"day#{TODAY}", "new_people") == 1
-    assert table.n(f"pass#{FP}", "attempts_left") == 3  # success spends nothing
+    assert table.n(f"pass#{FP}", "attempts_left") == 2  # spent before MAPIT, whatever it answers
+    assert table.n(f"pass#{FP}", "migration_spent_at") == NOW
+    writes = [c[0] for c in table.writes()]
+    assert writes == ["update_item", "transact_write_items"]  # pass spend, then admission
     reads = [c for c in table.calls if c[0] == "batch_get_item"]
     assert len(reads) == 1 and len(reads[0][1]["RequestItems"][TABLE]["Keys"]) == 7
     assert EMAIL not in json.dumps(table.items) and "Rider" not in json.dumps(table.items)
@@ -366,12 +376,42 @@ def test_cap_zero_means_no_cap(fakes):
     assert table.n("config", "occupied") == 501 and ssm.puts
 
 
-def test_seat_taken_by_a_racing_login_says_full_and_stores_nothing(fakes):
+def test_seat_taken_by_a_racing_login_says_full_and_takes_nothing(fakes):
     table, ssm, _ = fakes
     table.put("config", cap=100, occupied=99)
     table.before_transact = lambda t: t.put("config", cap=100, occupied=100)
     _fails(_migration(), public.MSG_FULL)
-    assert ssm.puts == [] and f"usage#{TENANT}" not in table.items and f"person#{FP}" not in table.items
+    # The session was stored first under a random tenant no token carries;
+    # the sweep deletes it by age. No person, usage row or seat.
+    assert [p["Name"] for p in ssm.puts] == [SESSION_PARAMETER]
+    assert f"usage#{TENANT}" not in table.items and f"person#{FP}" not in table.items
+    assert table.n("config", "occupied") == 100
+
+
+class _Budget:
+    """_has_sdk_time that says no once ``cut`` becomes true."""
+
+    def __init__(self, cut: Any) -> None:
+        self.cut = cut
+
+    def __call__(self, deadline: float) -> bool:
+        return not self.cut()
+
+
+def test_no_time_for_the_session_stores_nothing(fakes, monkeypatch):
+    table, ssm, mapit = fakes
+    monkeypatch.setattr(identity, "_has_sdk_time", _Budget(lambda: bool(mapit.calls)))
+    _fails(_migration(), public.MSG_GENERIC)
+    assert ssm.puts == [] and f"person#{FP}" not in table.items and "config" not in table.items
+
+
+def test_no_time_for_the_admission_takes_no_seat(fakes, monkeypatch):
+    table, ssm, _ = fakes
+    monkeypatch.setattr(identity, "_has_sdk_time", _Budget(lambda: bool(ssm.puts)))
+    _fails(_migration(), public.MSG_GENERIC)
+    assert [p["Name"] for p in ssm.puts] == [SESSION_PARAMETER]  # left to the sweep
+    assert f"person#{FP}" not in table.items and f"usage#{TENANT}" not in table.items
+    assert "config" not in table.items and f"day#{TODAY}" not in table.items
 
 
 def test_expired_person_row_counts_as_new(fakes):
@@ -491,19 +531,33 @@ def test_twentieth_rejection_opens_the_breaker(fakes):
     assert len(mapit.calls) == 1
 
 
-def test_rejection_with_no_pass_attempt_left_still_counts(fakes):
+@pytest.mark.parametrize("outcome", ["reject", "ok"])
+def test_racing_migrations_on_a_one_attempt_pass_reach_mapit_once(fakes, outcome):
     table, _, mapit = fakes
-    mapit.mode = "reject"
-    table.before_transact = lambda t: t.put(f"pass#{FP}", attempts_left=0, expires_at=NOW + 240)
-    _fails(_migration(), public.MSG_BAD_CREDENTIALS)
-    assert table.n(f"attempts#{FP}", "failed_logins") == 1 and table.n(f"pass#{FP}", "attempts_left") == 0
+    mapit.mode = outcome
+    table.put(f"pass#{FP}", attempts_left=1, expires_at=NOW + 240)
+    results: list[str] = []
+
+    def other_migration(_table: FakeTable) -> None:
+        # B read the pass as valid too, before either spent it, and spends first.
+        try:
+            identity.handler(_migration(), Context())
+            results.append("ok")
+        except identity.IdentityError as exc:
+            results.append(str(exc))
+
+    table.before_update = other_migration  # runs just before A's spend
+    _fails(_migration(), public.MSG_START_FROM_WEB)
+    assert len(mapit.calls) == 1 and len(results) == 1
+    assert table.n(f"pass#{FP}", "attempts_left") == 0
 
 
 def test_mapit_transport_failure_is_generic_and_not_counted(fakes):
     table, _, mapit = fakes
     mapit.mode = "timeout"
     _fails(_migration(), public.MSG_GENERIC)
-    assert table.writes() == []
+    assert [c[1]["Key"] for c in table.writes()] == [web.pass_key(FP)]  # only the pass spend
+    assert f"attempts#{FP}" not in table.items and f"breaker#{WINDOW}" not in table.items
 
 
 # --- PreAuthentication_Authentication ----------------------------------------------------
@@ -558,10 +612,32 @@ def test_one_sign_in_spends_at_most_one_attempt_in_either_order(fakes, order, ou
             step()
         except identity.IdentityError:
             break  # Cognito stops the sign-in at the first error
-    # Spent once on a rejection, or by the pre-authentication of the user the
-    # migration just created; never twice.
-    expected = 3 if (outcome, order) == ("ok", "pre_auth_first") else 2
-    assert table.n(f"pass#{FP}", "attempts_left") == expected
+    # Spent once by the migration; a pre-authentication of the user it just
+    # created spends nothing more.
+    assert table.n(f"pass#{FP}", "attempts_left") == 2
+
+
+def test_pre_auth_spends_again_once_the_migration_grace_is_over(fakes, monkeypatch):
+    table, _, _ = fakes
+    identity.handler(_migration(), Context())
+    assert table.n(f"pass#{FP}", "attempts_left") == 2
+    later = NOW + public.MIGRATION_SPEND_GRACE_SECONDS + 1
+    monkeypatch.setattr(identity, "_wall_clock", lambda: float(later))
+    identity.handler(_pre_auth(False), Context())
+    assert table.n(f"pass#{FP}", "attempts_left") == 1
+
+
+@pytest.mark.parametrize("spent_at, expires_at", [
+    (NOW - public.MIGRATION_SPEND_GRACE_SECONDS - 1, NOW + 240),  # an older migration: no grace
+    (NOW - 1, NOW),                                                  # recent, but the pass expired
+], ids=["old_migration", "expired"])
+def test_grace_does_not_revive_a_used_up_pass(fakes, spent_at, expires_at):
+    table, _, _ = fakes
+    table.put(f"pass#{FP}", attempts_left=1, expires_at=NOW + 240, migration_spent_at=spent_at)
+    # Read as valid; another sign-in spends the last attempt before this spend.
+    table.before_update = lambda t: t.put(f"pass#{FP}", attempts_left=0, expires_at=expires_at,
+                                          migration_spent_at=spent_at)
+    _fails(_pre_auth(False), public.MSG_START_FROM_WEB)
 
 
 def test_pre_auth_without_pass_requirement_spends_nothing(fakes):
@@ -620,19 +696,26 @@ def test_forgot_password_and_unknown_trigger(fakes):
 
 # --- configuration, logs ------------------------------------------------------------------
 
-def test_invitation_table_variable_in_public_mode_fails_closed(fakes, monkeypatch):
-    table, _, mapit = fakes
+TRIGGERS = [_migration, lambda: _pre_auth(False), lambda: _pre_auth(True), _token,
+            lambda: _token("TokenGeneration_RefreshTokens")]
+
+
+@pytest.mark.parametrize("event", TRIGGERS[:4], ids=["migration", "pre_auth", "pre_auth_absent", "token"])
+def test_invitation_table_variable_in_public_mode_fails_closed(fakes, monkeypatch, event):
+    table, ssm, mapit = fakes
     monkeypatch.setenv("MULTIUSER_TABLE", "honda-mapit-mcp-dev-invitations")
-    _fails(_migration(), public.MSG_GENERIC)
-    assert table.calls == [] and mapit.calls == []
+    with pytest.raises(identity.IdentityError):
+        identity.handler(event(), Context())
+    assert table.calls == [] and mapit.calls == [] and ssm.puts == []
 
 
-def test_invalid_mode_value_fails_closed(fakes, monkeypatch):
-    table, _, _ = fakes
+@pytest.mark.parametrize("event", TRIGGERS, ids=["migration", "pre_auth", "pre_auth_absent", "token", "refresh"])
+def test_invalid_mode_value_fails_closed(fakes, monkeypatch, event):
+    table, ssm, mapit = fakes
     monkeypatch.setenv("MAPIT_WEB_MODE", "Public")
-    _fails(_migration(), identity.MSG_GENERIC)
+    _fails(event(), identity.MSG_GENERIC)
     assert identity.handler(_http("GET", "/estado"), None)["statusCode"] == 503
-    assert table.calls == []
+    assert table.calls == [] and mapit.calls == [] and ssm.puts == []
 
 
 def test_state_read_failure_is_generic(fakes):
@@ -657,6 +740,35 @@ def test_logs_carry_step_codes_only(fakes, caplog):
         assert secret not in text
 
 
+DETAIL = "detail-with-rider@example.com"
+
+
+def test_unexpected_and_status_logs_carry_no_exception_text(fakes, caplog, monkeypatch):
+    table, _, _ = fakes
+    caplog.set_level(logging.WARNING, logger="mapit.public_identity")
+
+    def boom(_n: int) -> str:
+        raise RuntimeError(DETAIL)
+    monkeypatch.setattr(public, "_token_hex", boom)
+    _fails(_migration(), public.MSG_GENERIC)
+
+    class Odd(Exception):
+        def __init__(self) -> None:
+            super().__init__(DETAIL)
+            self.response = {"Error": {"Code": "InternalServerError", "Message": DETAIL}}
+
+    def failing(**_kwargs: Any) -> dict:
+        raise Odd()
+    monkeypatch.setattr(table, "batch_get_item", failing)
+    assert identity.handler(_http("GET", "/estado"), None)["statusCode"] == 503
+    lines = [json.loads(r.getMessage()) for r in caplog.records]
+    assert [(line["trigger"], line["step"], line["error_type"]) for line in lines] == [
+        ("UserMigration_Authentication", "unexpected", "RuntimeError"),
+        ("http_status", "state_read_failed", "Odd")]
+    assert lines[1]["provider_code"] == "InternalServerError"
+    assert DETAIL not in caplog.text and "rider" not in caplog.text.lower()
+
+
 # --- HTTP --------------------------------------------------------------------------------
 
 def _http(method: str, path: str) -> dict:
@@ -668,10 +780,12 @@ def _http(method: str, path: str) -> dict:
     (lambda t: None, "abierto"),
     (lambda t: t.put("config", cap=3, occupied=3), "lleno"),
     (lambda t: t.put("config", cap=0, occupied=3), "abierto"),
-    (lambda t: t.put("config", open=False, cap=3, occupied=3), "pausa"),
+    (lambda t: t.put("config", open=False, cap=3, occupied=3), "cerrado"),
+    (lambda t: t.put("config", open=False, pause_until=NOW + 1), "cerrado"),
     (lambda t: t.put("config", pause_until=NOW + 1), "pausa"),
     (lambda t: t.put(f"breaker#{WINDOW}", rejections=1, open_until=NOW + 1, expires_at=NOW + 900), "pausa"),
-], ids=["no_row", "full", "no_cap", "closed", "paused", "breaker"])
+    (lambda t: t.put("config", open="yes"), "pausa"),
+], ids=["no_row", "full", "no_cap", "closed", "closed_and_paused", "paused", "breaker", "malformed"])
 def test_status_endpoint(fakes, setup, state):
     table, _, _ = fakes
     setup(table)
