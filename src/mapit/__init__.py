@@ -18,7 +18,7 @@ from .codex_cli_backend import (
     CodexRunner,
     build_codex_child_env,
 )
-from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTransportError
+from .client import MapitClient, MapitHTTPError, MapitResponseError, MapitResponseTooLarge, MapitTimeout, MapitTransportError
 from .config import MapitConfig, RuntimeConfig, discover_runtime_config
 from .realtime import (
     RealtimeClient,
@@ -84,6 +84,7 @@ __all__ = [
     "MapitClient",
     "MapitConfig",
     "MapitHTTPError",
+    "MapitTimeout",
     "MapitTransportError",
     "MapitResponseError",
     "MapitResponseTooLarge",

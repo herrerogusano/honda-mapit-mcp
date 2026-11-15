@@ -47,8 +47,10 @@ repeat past work. Every rule below traces to that file; dates are decision dates
 - Route-list tools read each requested period (at most 366 days) with one
   bounded `from`/`to` request under the 2 MiB ceiling, and split it at
   calendar-month boundaries only when a response exceeds the ceiling or
-  carries a cursor; one month is never split (2026-11-11, replaces the fixed
-  month-by-month read; `docs/phase-1-mcp-contracts.md`, "Period reads").
+  carries a cursor; a read timeout on a multi-month window falls back to its
+  single months; one month is never split, and connection or HTTP errors never
+  split (2026-11-11 and 2026-11-13, replaces the fixed month-by-month read;
+  `docs/phase-1-mcp-contracts.md`, "Period reads").
 - Distance ledger (2026-09-30): local SQLite and alias key outside Git and
   OneDrive; pseudonymous aliases, UTC day/native distance, no coordinates,
   streets or secrets; no automatic collection; ignore `complete` for admission
