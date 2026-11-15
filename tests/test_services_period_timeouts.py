@@ -127,6 +127,16 @@ def test_timeout_inside_a_size_split_falls_back_only_for_that_half():
     assert len(result.routes) == 11
 
 
+def test_timeout_on_a_366_day_period_touching_14_months_costs_15_reads():
+    mapit = SlowMapit([])
+
+    MapitServices(mapit).list_routes("2025-01-31T12:00:00Z", "2026-02-01T12:00:00Z")
+
+    assert len(mapit.windows) == 1 + 14 == 15
+    assert mapit.windows[1] == ("2025-01-31T12:00:00.000Z", "2025-02-01T00:00:00.000Z")
+    assert mapit.windows[-1] == ("2026-02-01T00:00:00.000Z", "2026-02-01T12:00:00.000Z")
+
+
 def test_worst_case_timeouts_on_the_maximum_period_cost_one_plus_months_reads():
     mapit = SlowMapit([])
 

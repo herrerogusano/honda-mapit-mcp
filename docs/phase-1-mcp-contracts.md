@@ -50,11 +50,12 @@ contract. Inputs may be `YYYY-MM-DD` (UTC midnight) or a timezone-aware ISO
 8601 datetime. Naive datetimes, reversed/empty periods, and periods longer than
 366 days are rejected before a MAPIT data call.
 
-The normalized interval is converted to UTC and split at UTC month boundaries.
-One period therefore makes at most 13 Geo route-list requests; a comparison of
-two maximum periods makes at most 26. The upstream inclusivity and timezone
-semantics remain unconfirmed, so duplicate route IDs across adjacent windows
-are removed and completeness is never inferred.
+The normalized interval is converted to UTC. A period of at most 366 days
+touches at most 14 calendar months in UTC (for example
+`2025-01-31T12:00Z` to `2026-02-01T12:00Z`); "Period reads" below gives the
+route-list read bounds. The upstream inclusivity and timezone semantics remain
+unconfirmed, so duplicate route IDs across adjacent windows are removed and
+completeness is never inferred.
 
 ## Tools
 
@@ -142,14 +143,21 @@ order, fields and truncation do not depend on how the period was split. A
 period whose list fits in one response costs one route-list read instead of
 one per month. Bounds per period of `n` months:
 
-- the worst case over all causes stays `2n - 1` route-list reads (25 for a
-  366-day period): falling back to months after a timeout never reads more
-  than halving would;
-- a timeout on the whole period costs `1 + n` route-list reads (14 for a
+- the worst case over all causes stays `2n - 1` route-list reads (27 for a
+  366-day period, which touches at most 14 calendar months): falling back to
+  months after a timeout never reads more than halving would;
+- a timeout on the whole period costs `1 + n` route-list reads (15 for a
   366-day period) and one wasted wait of at most `http_timeout`;
 - halving after a timeout was rejected because each halving level could spend
   another full timeout, which a multi-month request may not afford inside its
   per-request deadline (14 s and 24 attempts in the multiuser runtime).
+
+These are read bounds, not time bounds: they do not guarantee that a period
+completes inside the 14 s deadline. Single months can also exceed the read
+timeout or the request deadline. When the deadline expires before the next
+read, the cloud transport raises its own deadline error and the call fails
+with `internal_error`. When it shortens a socket wait that then times out, the
+call fails with `mapit_unavailable`. Both stop without a partial result.
 
 Observed in a test deployment: a six-month window starting months before the
 first route sometimes exceeded a 2 s timeout. That is the case the timeout
@@ -194,7 +202,7 @@ counts are: `get_vehicle_status` 1, `get_vehicle_details` 2,
 `get_route_extremes`, `geographic_summary`, `summer_geographic_summary`) 2, and
 each two-period comparison 4. Before this change a single-period route tool
 cost one account-summary read plus one read per calendar month (7 for a
-semester, up to 14 for 366 days).
+semester, up to 15 for 366 days).
 
 These fields must not be relabelled as kilometres or complete history without
 new primary evidence and a separately reviewed contract change.

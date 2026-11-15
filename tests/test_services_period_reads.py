@@ -293,6 +293,17 @@ def test_invalid_shape_in_a_chunk_is_not_split():
     assert len(mapit.windows) == 1
 
 
+def test_366_day_period_can_touch_14_months_and_needs_27_reads_at_worst():
+    # 2025-01-31T12:00Z + 366 days = 2026-02-01T12:00Z: 14 calendar-month windows.
+    mapit = ForcedMonthlyMapit([])
+
+    MapitServices(mapit).list_routes("2025-01-31T12:00:00Z", "2026-02-01T12:00:00Z")
+
+    assert len(mapit.windows) == 2 * 14 - 1 == 27
+    assert ("2025-01-31T12:00:00.000Z", "2025-02-01T00:00:00.000Z") in mapit.windows
+    assert mapit.windows[-1] == ("2026-02-01T00:00:00.000Z", "2026-02-01T12:00:00.000Z")
+
+
 def test_maximum_period_needs_at_most_two_reads_per_month_minus_one():
     # Every multi-month window is refused: 13 month windows -> 2*13-1 route reads.
     mapit = ForcedMonthlyMapit([])
