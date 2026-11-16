@@ -92,6 +92,15 @@ class MapitTransportError(RuntimeError):
         super().__init__("MAPIT transport failed")
 
 
+class MapitTimeout(MapitTransportError):
+    """MAPIT accepted the connection but did not answer within the read timeout.
+
+    Raised only for a timeout while waiting for the response or its body, never
+    for a connect timeout (``URLError`` wrapping a timeout), which signals an
+    unreachable service rather than a slow answer.
+    """
+
+
 class MapitResponseError(RuntimeError):
     """A MAPIT response could not be decoded as the expected JSON."""
 
@@ -229,7 +238,9 @@ class MapitClient:
             except urllib.error.HTTPError as exc:
                 # HTTPError inherits URLError, so this must remain first.
                 raise MapitHTTPError(exc.code, url) from None
-            except (urllib.error.URLError, TimeoutError, OSError):
+            except TimeoutError:
+                raise MapitTimeout() from None
+            except (urllib.error.URLError, OSError):
                 raise MapitTransportError("MAPIT transport failed") from None
             except (UnicodeError, json.JSONDecodeError):
                 raise MapitResponseError("MAPIT response is invalid JSON") from None
@@ -245,7 +256,9 @@ class MapitClient:
         except urllib.error.HTTPError as exc:
             # HTTPError inherits URLError, so this must remain first.
             raise MapitHTTPError(exc.code, url) from None
-        except (urllib.error.URLError, TimeoutError, OSError):
+        except TimeoutError:
+            raise MapitTimeout() from None
+        except (urllib.error.URLError, OSError):
             raise MapitTransportError("MAPIT transport failed") from None
         except (UnicodeError, json.JSONDecodeError):
             raise MapitResponseError("MAPIT response is invalid JSON") from None
