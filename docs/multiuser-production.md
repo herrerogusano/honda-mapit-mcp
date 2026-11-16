@@ -182,7 +182,9 @@ fits in one response: status 1, vehicle details 2, each period route list 2,
 each opened route 2. A page load that asks for status, vehicle details and N
 period route lists therefore costs `3 + 2N` reads (15 for six semesters).
 Before period reads, each route list cost one read per calendar month plus one
-(7 per semester, 45 for the same six-semester load).
+(7 per semester, 45 for the same six-semester load). A period list that times
+out falls back to single months and costs `2 + months` reads instead of 2
+(8 for a semester).
 
 Status: template, runtime and tests are offline work. Nothing is deployed; a
 real browser sign-in and the deployed CORS behaviour are **not verified**.
