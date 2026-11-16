@@ -687,18 +687,24 @@ def count_daily_call_update(table_name: str, now: int) -> dict[str, Any]:
     """``update_item`` arguments that count one admitted ``/mcp`` call.
 
     Atomic: adds 1 to ``mcp_calls`` of ``day#<UTC day of now>`` only while it
-    is below :data:`DAILY_CALL_LIMIT` (a failed condition means the ceiling is
-    reached) and returns the new value, so the call that reaches the ceiling
-    can be told apart.
+    is absent or a number from 0 to below :data:`DAILY_CALL_LIMIT`, so a
+    negative counter can never let calls past the ceiling. It returns the new
+    value, so the call that reaches the ceiling can be told apart, and on a
+    failed condition the old row, so the caller can tell the ceiling from an
+    invalid counter. DynamoDB cannot test for an integer: a fractional counter
+    passes the condition, and the caller must refuse when the returned value
+    is not a non-negative integer.
     """
     return {
         "TableName": table_name,
         "Key": day_key(now),
         "UpdateExpression": "ADD #c :one",
-        "ConditionExpression": "attribute_not_exists(#c) OR #c < :max",
+        "ConditionExpression": "attribute_not_exists(#c) OR (#c >= :zero AND #c < :max)",
         "ExpressionAttributeNames": {"#c": DAY_CALLS_ATTRIBUTE},
-        "ExpressionAttributeValues": {":one": {"N": "1"}, ":max": {"N": str(DAILY_CALL_LIMIT)}},
+        "ExpressionAttributeValues": {":one": {"N": "1"}, ":zero": {"N": "0"},
+                                      ":max": {"N": str(DAILY_CALL_LIMIT)}},
         "ReturnValues": "UPDATED_NEW",
+        "ReturnValuesOnConditionCheckFailure": "ALL_OLD",
     }
 
 

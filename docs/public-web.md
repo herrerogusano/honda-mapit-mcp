@@ -183,7 +183,11 @@ this document before every stack creation:
    email spent one in the last 10 seconds. For an absent user it only checks
    the pass.
 5. **Token issue** (`TokenGeneration_*`). Refresh is refused. Every other issue
-   counts one sign-in on the person row (at most 10 per UTC day) and on the
+   first reads the config and day rows again in one consistent
+   `BatchGetItem`, because they may have changed after the password was
+   checked (for example another session reached the daily ceiling): closed,
+   paused or the ceiling refuse with the pause text, an unreadable counter
+   with the generic one. Then it counts one sign-in on the person row (at most 10 per UTC day) and on the
    day and month rows (`logins`). Then, once per person and UTC month, one
    transaction creates `month_person#YYYY-MM#<email fp>` only if it does not
    exist and adds 1 to the month's `people`: both or neither, so `people` is
@@ -289,7 +293,7 @@ personal data. The same words are used by the pass endpoint and by
 |---|---|
 | `abierto` | open, not paused, breaker closed, room left (or no cap) |
 | `lleno` | open but the cap is reached; people who signed in before can still enter |
-| `cerrado` | `open = false` or no configuration row: no sign-ins; sessions already open continue |
+| `cerrado` | `open = false`, no `open` attribute or no configuration row: no sign-ins; sessions already open continue (closing sign-ups cuts nobody off; only a pause stops calls) |
 | `pausa` | `pause_until` in the future, breaker open, the daily call ceiling reached, a malformed configuration row or a day counter that cannot be read (HTTP 200); a failed read (HTTP 503). A pause also stops every `/mcp` call |
 
 ## Error codes
@@ -318,12 +322,18 @@ The log line of each refusal carries a fixed step code (for example
 `service_unavailable`, `logout_failed`, `delete_failed`.
 
 The `/mcp` gate, per tool call and before any MAPIT read: session age, the
-configuration row (a pause stops the call; `open = false` or an absent row
-does not), the session's own counters, and then the day counter. The last one
-is one conditional `UpdateItem` that adds 1 to the day's `mcp_calls` only
-while it is below the ceiling; when the condition fails the call answers
-`service_paused` with the pause text, and if the write fails the call answers
-`service_unavailable` (closed). Only calls admitted by the session counters
+configuration row, the session's own counters, and then the day counter.
+Closing sign-ups never cuts a session: with `open = false`, without the `open`
+attribute or without the configuration row, sessions already open keep
+working until they expire; only a pause (`pause_until` or the daily ceiling),
+a malformed row or a failed read stops calls. The day counter is one
+conditional `UpdateItem` that adds 1 to the day's `mcp_calls` only while it is
+absent or a number from 0 to below the ceiling. When the condition fails and
+the returned old row holds a valid counter at the ceiling, the call answers
+`service_paused` with the pause text; a counter that is negative, of the wrong
+type or, in the returned new value, not a non-negative integer (DynamoDB
+cannot test for an integer, so a fraction passes the condition) answers
+`service_unavailable`, and so does a failed write (closed). Only calls admitted by the session counters
 reach it, so a session refused for its own limits cannot pause everybody; a
 call refused by the ceiling has already counted against its session. The
 ceiling is derived from the counter only: nothing is written to the
@@ -456,6 +466,14 @@ locally against the DEV web stack:
   the same, whatever MAPIT reads it causes. Calls of one day can be at most
   the ceiling; a burst of parallel calls cannot pass it (the condition is
   atomic).
-- **Monthly people after a deletion.** `borrar_mis_datos` deletes the month
-  marker without decreasing `people`, so a person who deletes their data and
-  signs in again in the same month is counted twice.
+- **Monthly people are not exact in two cases.** `people` can miss a person
+  whose month transaction failed and who does not sign in again that month,
+  and counts twice a person who deletes their data (`borrar_mis_datos` deletes
+  the month marker without decreasing `people`) and signs in again in the
+  same month.
+- **Deleting one's data also resets the personal sign-in limit.** The person
+  row goes, so the 10 sign-ins a day start again: 800 calls per account and
+  day is not a limit that resists deleting and signing in again.
+- **A pause without its alarm.** If the answer or the log line of the call
+  that reaches the ceiling is lost, the service pauses without the
+  `daily-ceiling` alarm firing.

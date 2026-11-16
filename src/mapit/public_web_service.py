@@ -22,7 +22,9 @@ Per tool call, before any MAPIT read, :meth:`PublicSessionGate.admit`:
    ``DAILY_CALL_LIMIT`` the condition fails and the call is refused as a pause
    (``service_paused``) until the next UTC day; the call whose increment
    reaches the limit logs the fixed event :data:`EVENT_DAILY_CEILING_REACHED`.
-   A failed write refuses (closed). Only calls admitted by step 3 are counted,
+   A failed write, or a counter that is not a non-negative integer (in the
+   returned new value or, on a failed condition, in the returned old row),
+   refuses as ``service_unavailable`` (closed). Only calls admitted by step 3 are counted,
    so refused calls of one session cannot pause everybody; a session refused
    here has already spent one of its own calls.
 
@@ -274,11 +276,22 @@ class PublicSessionGate:
         try:
             response = self._client("dynamodb").update_item(**count_daily_call_update(self._table, now))
         except Exception as exc:
-            if _provider_code(exc) == "ConditionalCheckFailedException":
+            if _provider_code(exc) != "ConditionalCheckFailedException":
+                raise PublicSessionRefused(REFUSED_UNAVAILABLE, "day_write_failed", cause=exc) from None
+            # A pause only for a valid counter at the ceiling; anything else
+            # (negative, wrong type, no row returned) is an invalid counter.
+            failure = getattr(exc, "response", None)
+            old = failure.get("Item") if isinstance(failure, Mapping) else None
+            calls = _number(old, DAY_CALLS_ATTRIBUTE)
+            if calls is not None and calls >= DAILY_CALL_LIMIT:
                 raise PublicSessionRefused(REFUSED_PAUSED, "daily_ceiling") from None
-            raise PublicSessionRefused(REFUSED_UNAVAILABLE, "day_write_failed", cause=exc) from None
+            raise PublicSessionRefused(REFUSED_UNAVAILABLE, "day_counter_invalid") from None
         attributes = response.get("Attributes") if isinstance(response, Mapping) else None
-        if _number(attributes, DAY_CALLS_ATTRIBUTE) == DAILY_CALL_LIMIT:
+        calls = _number(attributes, DAY_CALLS_ATTRIBUTE)
+        if calls is None or calls < 1:
+            # Not a non-negative integer (for example a fractional counter): closed.
+            raise PublicSessionRefused(REFUSED_UNAVAILABLE, "day_counter_invalid")
+        if calls == DAILY_CALL_LIMIT:
             try:
                 self._log(json.dumps({"event": EVENT_DAILY_CEILING_REACHED}, separators=(",", ":")))
             except Exception:  # noqa: BLE001

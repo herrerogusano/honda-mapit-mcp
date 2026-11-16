@@ -712,6 +712,41 @@ def test_unreadable_day_counter_fails_closed(fakes, caplog):
 
 # --- token generation --------------------------------------------------------------------
 
+@pytest.mark.parametrize("setup", [
+    lambda t: t.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT),
+    lambda t: t.put("config", open=False),
+    lambda t: t.put("config", cap=100),                    # row without open
+    lambda t: t.items.pop("config"),
+    lambda t: t.put("config", open=True, pause_until=NOW + 60),
+], ids=["daily_ceiling", "closed", "row_without_open", "no_row", "paused"])
+def test_token_issue_rechecks_configuration_and_ceiling_before_counting(fakes, setup):
+    """The ceiling can be reached between the pre-login checks and the token issue."""
+    table, _, _ = fakes
+    _person(table)
+    setup(table)
+    before = {pk: dict(item) for pk, item in table.items.items()}
+    _fails(_token(), public.MSG_PAUSED)
+    assert table.writes() == [] and table.items == before
+    reads = [c for c in table.calls if c[0] == "batch_get_item"]
+    assert [k["pk"]["S"] for k in reads[0][1]["RequestItems"][TABLE]["Keys"]] == ["config", f"day#{TODAY}"]
+
+
+def test_token_issue_with_an_unreadable_day_counter_fails_closed(fakes):
+    table, _, _ = fakes
+    _person(table)
+    table.put(f"day#{TODAY}", mcp_calls="x")
+    _fails(_token(), public.MSG_GENERIC)
+    assert table.writes() == []
+
+
+def test_token_issue_just_below_the_ceiling_is_counted(fakes):
+    table, _, _ = fakes
+    _person(table)
+    table.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT - 1)
+    identity.handler(_token(), Context())
+    assert table.n(f"day#{TODAY}", "logins") == 1
+
+
 def test_token_issue_counts_the_person_once_per_month(fakes):
     table, _, _ = fakes
     _person(table)

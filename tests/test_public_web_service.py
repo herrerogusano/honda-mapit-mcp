@@ -108,7 +108,7 @@ class Aws:
             ddb.add_client_error("update_item", error, http_status_code=400, expected_params=params,
                                  modeled_fields={"Item": old})
 
-    def day(self, now=NOW, error=None, calls=1):
+    def day(self, now=NOW, error=None, calls=1, old=None):
         """The day counter write that follows an admitted session count."""
         params = web.count_daily_call_update(TABLE, now if now is not None else NOW)
         if now is None:
@@ -116,8 +116,11 @@ class Aws:
         ddb = self.stubbers["dynamodb"]
         if error is None:
             ddb.add_response("update_item", {"Attributes": {"mcp_calls": {"N": str(calls)}}}, params)
-        else:
+        elif old is None:
             ddb.add_client_error("update_item", error, http_status_code=400, expected_params=params)
+        else:
+            ddb.add_client_error("update_item", error, http_status_code=400, expected_params=params,
+                                 modeled_fields={"Item": old})
 
     def markers(self, now=NOW):
         """borrar_mis_datos: the month markers of this and the previous UTC month."""
@@ -246,7 +249,7 @@ def test_daily_ceiling_reached_refuses_as_pause_after_the_session_count():
     with Aws() as aws:
         aws.config()
         aws.count(day=False)
-        aws.day(error="ConditionalCheckFailedException")
+        aws.day(error="ConditionalCheckFailedException", old={"mcp_calls": {"N": str(web.DAILY_CALL_LIMIT)}})
         error = refused(aws.gate())
     aws.done()
     assert (error.code, error.step) == (REFUSED_PAUSED, "daily_ceiling")
@@ -265,6 +268,35 @@ def test_only_the_call_that_reaches_the_ceiling_logs_the_event(calls, events):
         assert aws.gate().admit(TENANT_A, USER, NOW - 600) is None
     aws.done()
     assert [json.loads(line) for line in aws.lines] == [{"event": event} for event in events]
+
+
+@pytest.mark.parametrize("calls", ["1.5", "-9999", "3000.5", "01"])
+def test_invalid_counter_returned_by_the_write_fails_closed(calls):
+    with Aws() as aws:
+        aws.config()
+        aws.count(day=False)
+        aws.day(calls=calls)
+        error = refused(aws.gate())
+    aws.done()
+    assert (error.code, error.step) == (REFUSED_UNAVAILABLE, "day_counter_invalid")
+    assert "public_daily_ceiling_reached" not in "".join(aws.lines)
+
+
+@pytest.mark.parametrize(("old", "code", "step"), [
+    ({"pk": {"S": "day#2027-01-15"}, "mcp_calls": {"N": "3000"}}, REFUSED_PAUSED, "daily_ceiling"),
+    ({"pk": {"S": "day#2027-01-15"}, "mcp_calls": {"N": "3007"}}, REFUSED_PAUSED, "daily_ceiling"),
+    ({"pk": {"S": "day#2027-01-15"}, "mcp_calls": {"N": "-10000"}}, REFUSED_UNAVAILABLE, "day_counter_invalid"),
+    ({"pk": {"S": "day#2027-01-15"}, "mcp_calls": {"S": "x"}}, REFUSED_UNAVAILABLE, "day_counter_invalid"),
+    (None, REFUSED_UNAVAILABLE, "day_counter_invalid"),
+])
+def test_failed_day_condition_is_a_pause_only_with_a_valid_counter_at_the_ceiling(old, code, step):
+    with Aws() as aws:
+        aws.config()
+        aws.count(day=False)
+        aws.day(error="ConditionalCheckFailedException", old=old)
+        error = refused(aws.gate())
+    aws.done()
+    assert (error.code, error.step) == (code, step)
 
 
 def test_day_counter_write_failure_fails_closed():
@@ -555,7 +587,7 @@ def test_public_daily_ceiling_message_is_the_pause_text(keys):
     with Aws() as aws:
         aws.config()
         aws.count(now=None, day=False)
-        aws.day(now=None, error="ConditionalCheckFailedException")
+        aws.day(now=None, error="ConditionalCheckFailedException", old={"mcp_calls": {"N": "3000"}})
         harness = PublicHarness(keys, aws)
         assert text(harness.call(public_token(keys))) == (True, f"service_paused: {MSG_PUBLIC_PAUSED}")
     aws.done()

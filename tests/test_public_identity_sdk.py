@@ -150,6 +150,7 @@ def test_modelled_conditional_failure_on_pre_auth_spend(stubs):
 
 def test_modelled_daily_limit_from_cancellation_item(stubs):
     dynamo, _, _ = stubs
+    _read(dynamo)  # config and day rows, read again before counting
     old = {"pk": {"S": f"person#{FP}"}, "expires_at": {"N": str(NOW + 100)},
            "login_day": {"S": "2027-01-15"}, "login_day_count": {"N": "10"}}
     for _ in range(2):
@@ -171,6 +172,7 @@ def test_modelled_month_people_count_and_already_counted(stubs):
                         "ExpressionAttributeNames": {"#p": "people"},
                         "ExpressionAttributeValues": {":one": {"N": "1"}}}}
     for already in (False, True):
+        _read(dynamo)
         dynamo.add_response("transact_write_items", {}, {"TransactItems": [person, ANY, ANY]})
         if already:
             dynamo.add_client_error("transact_write_items", "TransactionCanceledException", http_status_code=400,
@@ -188,3 +190,13 @@ def test_modelled_daily_ceiling_refuses_before_mapit(stubs):
     _read(dynamo, PASS_ROW, {**web.day_key(NOW), "mcp_calls": {"N": str(web.DAILY_CALL_LIMIT)}})
     with pytest.raises(identity.IdentityError, match="^" + public.MSG_PAUSED + "$"):
         identity.handler(_migration(), Context())
+
+
+def test_modelled_token_issue_rereads_config_and_day_and_refuses_at_the_ceiling(stubs):
+    dynamo, _, _ = stubs
+    dynamo.add_response("batch_get_item", {"Responses": {TABLE: [
+        OPEN, {**web.day_key(NOW), "mcp_calls": {"N": str(web.DAILY_CALL_LIMIT)}}]}, "UnprocessedKeys": {}},
+        expected_params={"RequestItems": {TABLE: {"Keys": [web.config_key(), web.day_key(NOW)],
+                                                  "ConsistentRead": True}}})
+    with pytest.raises(identity.IdentityError, match="^" + public.MSG_PAUSED + "$"):
+        identity.handler(_token(), Context())

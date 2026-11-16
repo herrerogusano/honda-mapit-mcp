@@ -16,7 +16,9 @@ nothing here runs. It serves four Cognito triggers and one HTTP route:
   never tells whether an email signed in before.
 * ``PreAuthentication_Authentication``: the same refusals, before Cognito
   checks the password of a user that still exists.
-* ``TokenGeneration_*``: refresh is refused; every other issue counts one
+* ``TokenGeneration_*``: refresh is refused; every other issue first reads
+  the config and day rows again (closed, paused or the daily ceiling refuse,
+  since they may have changed after the password was checked), then counts one
   sign-in per person and day (at most ``DAILY_LOGINS_PER_PERSON``) and the
   day and month aggregates, then the person once per UTC month in the
   month's distinct ``people`` (a ``month_person`` marker created only if
@@ -593,7 +595,15 @@ def _token_generation(event: dict[str, Any], context: Any, started: float,
     except MultiuserError:
         raise _Stop("tenant_invalid") from None
     email_fp = _email_fp(env, _email(attributes.get("email")), deadline)
-    _count_login(env, email_fp, base._now(), deadline)
+    now = base._now()
+    # The configuration or the daily ceiling may have changed since the checks
+    # before the password: check them again before counting and issuing.
+    state = _read(env, {"config": web.config_key(), "day": web.day_key(now)}, now, deadline)
+    if not web.parse_web_config(state["config"]).accepting(now):
+        raise _Stop("closed", MSG_PAUSED)
+    if web.daily_ceiling_reached(state["day"]):  # unreadable: day_malformed, closed
+        raise _Stop("daily_ceiling", MSG_PAUSED)
+    _count_login(env, email_fp, now, deadline)
     return base._token_generation(event)
 
 

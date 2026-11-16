@@ -580,10 +580,11 @@ def test_count_daily_call_update_is_one_conditional_add_on_the_utc_day():
     update = web.count_daily_call_update("t", NOW)
     assert update == {
         "TableName": "t", "Key": {"pk": {"S": f"day#{datetime.fromtimestamp(NOW, tz=timezone.utc):%Y-%m-%d}"}},
-        "UpdateExpression": "ADD #c :one", "ConditionExpression": "attribute_not_exists(#c) OR #c < :max",
+        "UpdateExpression": "ADD #c :one",
+        "ConditionExpression": "attribute_not_exists(#c) OR (#c >= :zero AND #c < :max)",
         "ExpressionAttributeNames": {"#c": "mcp_calls"},
-        "ExpressionAttributeValues": {":one": {"N": "1"}, ":max": {"N": "3000"}},
-        "ReturnValues": "UPDATED_NEW",
+        "ExpressionAttributeValues": {":one": {"N": "1"}, ":zero": {"N": "0"}, ":max": {"N": "3000"}},
+        "ReturnValues": "UPDATED_NEW", "ReturnValuesOnConditionCheckFailure": "ALL_OLD",
     }
     # One second before 00:00 UTC and at 00:00 UTC land on different rows.
     midnight = 1_800_057_600  # 2027-01-16T00:00:00Z
