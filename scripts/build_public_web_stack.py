@@ -33,6 +33,7 @@ from typing import Any
 from mapit.multiuser_common import validate_environment
 from mapit.public_pass import turnstile_secret_parameter_name
 from mapit.public_sweep import METRIC_DIMENSION, METRIC_NAMESPACE, web_user_pool_name
+from mapit.public_web_service import EVENT_DAILY_CEILING_REACHED
 from mapit.public_web import (
     MODE_PUBLIC, MODE_VARIABLE, fingerprint_key_parameter_name, web_function_name,
     web_session_parameter_prefix, web_stack_name, web_table_name,
@@ -77,7 +78,7 @@ PASS_CLOUDFLARE_CODES = (
 # this function: Cognito refusals are raised.
 IDENTITY_REFUSAL_CODES = (
     "mapit_rejected", "pass_missing", "locked", "closed", "breaker_open", "cap_full", "cap_full_race",
-    "daily_limit", "refresh_refused", "person_absent", "email_invalid", "request_invalid",
+    "daily_limit", "refresh_refused", "person_absent", "email_invalid", "request_invalid", "daily_ceiling",
 )
 IDENTITY_FAULT_CODES = (
     "config_invalid", "unexpected", "trigger_unknown", "deadline_passed", "state_unprocessed", "state_malformed",
@@ -86,11 +87,11 @@ IDENTITY_FAULT_CODES = (
     "session_write_failed", "count_no_time", "count_failed", "cap_count_failed", "fingerprint_key_no_time",
     "fingerprint_key_read_failed", "fingerprint_key_write_failed", "fingerprint_key_invalid",
     "fingerprint_key_unavailable", "fingerprint_key_write_unconfirmed", "fingerprint_key_generation_failed",
-    "mapit_failed", "mapit_malformed", "tenant_invalid",
+    "mapit_failed", "mapit_malformed", "tenant_invalid", "month_people_no_time", "month_people_failed",
     # PublicWebError codes of the shared base module, also logged by _run.
     "config_malformed", "count_invalid", "fingerprint_domain_invalid", "fingerprint_invalid",
     "fingerprint_value_invalid", "function_role_invalid", "ip_invalid", "result_invalid", "time_invalid",
-    "web_mode_invalid", "window_invalid",
+    "web_mode_invalid", "window_invalid", "day_malformed",
 )
 # IAM condition: PutParameter only with Overwrite=false (condition key ssm:Overwrite).
 _NO_OVERWRITE = {"StringEquals": {"ssm:Overwrite": "false"}}
@@ -297,6 +298,14 @@ def _observability(env: str) -> dict[str, Any]:
                                        **at_least_one),
         "IdentityFaultsFilter": _metric_filter("IdentityLogGroup", " ".join(f"?{code}" for code in IDENTITY_FAULT_CODES),
                                                "IdentityFaults", env),
+        # Fixed event of the /mcp call that reaches the daily ceiling: from then
+        # until 00:00 UTC every call and new sign-in is refused as a pause.
+        "McpDailyCeilingFilter": _metric_filter("McpLogGroup", '{ $.event = "%s" }' % EVENT_DAILY_CEILING_REACHED,
+                                                "McpDailyCeilingReached", env),
+        "McpDailyCeilingAlarm": _alarm(env, "daily-ceiling", "The day's /mcp call ceiling was reached: calls and "
+                                       "new sign-ins are paused until 00:00 UTC.", namespace=logs,
+                                       metric="McpDailyCeilingReached", depends="McpDailyCeilingFilter",
+                                       **at_least_one),
         "IdentityFaultsAlarm": _alarm(env, "identity-faults", "The identity function failed for a reason other "
                                       "than an expected refusal.", namespace=logs, metric="IdentityFaults",
                                       depends="IdentityFaultsFilter", **at_least_one),

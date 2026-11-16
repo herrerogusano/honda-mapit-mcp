@@ -57,8 +57,11 @@ def stubs(monkeypatch: pytest.MonkeyPatch):
     identity.reset_clients()
 
 
+OPEN = {"pk": {"S": "config"}, "open": {"BOOL": True}}
+
+
 def _read(stub, *items: dict) -> None:
-    stub.add_response("batch_get_item", {"Responses": {TABLE: list(items)}, "UnprocessedKeys": {}},
+    stub.add_response("batch_get_item", {"Responses": {TABLE: [OPEN, *items]}, "UnprocessedKeys": {}},
                       expected_params={"RequestItems": {TABLE: {"Keys": ANY, "ConsistentRead": True}}})
 
 
@@ -156,3 +159,32 @@ def test_modelled_daily_limit_from_cancellation_item(stubs):
                                     {"Code": "None"}]})
     with pytest.raises(identity.IdentityError, match="^" + public.MSG_DAILY_LIMIT + "$"):
         identity.handler(_token(), Context())
+
+
+def test_modelled_month_people_count_and_already_counted(stubs):
+    dynamo, _, _ = stubs
+    person = {"Update": ANY}
+    marker = {"Put": {"TableName": TABLE, "Item": {
+        **web.month_person_key(NOW, FP), "expires_at": {"N": str(web.month_person_expires_at(NOW))}},
+        "ConditionExpression": "attribute_not_exists(pk)"}}
+    month = {"Update": {"TableName": TABLE, "Key": web.month_key(NOW), "UpdateExpression": "ADD #p :one",
+                        "ExpressionAttributeNames": {"#p": "people"},
+                        "ExpressionAttributeValues": {":one": {"N": "1"}}}}
+    for already in (False, True):
+        dynamo.add_response("transact_write_items", {}, {"TransactItems": [person, ANY, ANY]})
+        if already:
+            dynamo.add_client_error("transact_write_items", "TransactionCanceledException", http_status_code=400,
+                                    expected_params={"TransactItems": [marker, month]},
+                                    modeled_fields={"CancellationReasons": [
+                                        {"Code": "ConditionalCheckFailed"}, {"Code": "None"}]})
+        else:
+            dynamo.add_response("transact_write_items", {}, {"TransactItems": [marker, month]})
+        assert identity.handler(_token(), Context())["response"]["claimsAndScopeOverrideDetails"]
+
+
+def test_modelled_daily_ceiling_refuses_before_mapit(stubs):
+    dynamo, _, monkeypatch = stubs
+    monkeypatch.setattr(identity, "_mapit_login", lambda *a: pytest.fail("MAPIT must not be called"))
+    _read(dynamo, PASS_ROW, {**web.day_key(NOW), "mcp_calls": {"N": str(web.DAILY_CALL_LIMIT)}})
+    with pytest.raises(identity.IdentityError, match="^" + public.MSG_PAUSED + "$"):
+        identity.handler(_migration(), Context())

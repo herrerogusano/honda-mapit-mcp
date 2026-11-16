@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import re
+from datetime import datetime, timezone
 
 import pytest
 
@@ -130,7 +131,7 @@ def test_every_kind_has_a_distinct_prefix_and_a_documented_lifetime():
     prefixes = [
         web.config_key(), web.person_key(FP), web.attempts_key(FP), web.pass_key(FP),
         web.used_result_key(FP), web.ip_passes_key(FP, 1), web.breaker_key(1),
-        web.session_usage_key(TENANT), web.day_key(NOW), web.month_key(NOW),
+        web.session_usage_key(TENANT), web.day_key(NOW), web.month_key(NOW), web.month_person_key(NOW, FP),
     ]
     kinds = [key["pk"]["S"].split("#")[0] for key in prefixes]
     assert kinds == list(web.ROW_KINDS)
@@ -461,12 +462,15 @@ def test_errors_never_contain_the_key_or_inputs():
 
 # --- Configuration row ------------------------------------------------------
 
-def test_config_absent_uses_the_decided_defaults():
+def test_config_absent_is_closed():
     config = web.parse_web_config(None)
     assert (config.open, config.pause_until, config.cap, config.occupied, config.pass_required) == (
-        True, 0, 100, 0, True)
-    assert config.source == web.CONFIG_SOURCE_DEFAULT
-    assert config.accepting(NOW) and config.has_room()
+        False, 0, 100, 0, True)
+    assert config == web.MISSING_WEB_CONFIG
+    assert config.source == web.CONFIG_SOURCE_MISSING == "missing"
+    assert not config.accepting(NOW)
+    assert web.CONFIG_SOURCE_MISSING not in (web.CONFIG_SOURCE_ROW, web.CONFIG_SOURCE_MALFORMED,
+                                              web.CONFIG_SOURCE_READ_FAILED)
 
 
 def test_config_full_row():
@@ -528,7 +532,60 @@ def test_config_malformed_fails_closed(item):
 
 def test_config_accepting_rejects_bad_time():
     with pytest.raises(web.PublicWebError, match="^time_invalid$"):
-        web.DEFAULT_WEB_CONFIG.accepting(1.5)
+        web.ATTRIBUTE_DEFAULTS.accepting(1.5)
+
+
+# --- Daily call ceiling and monthly people -------------------------------------
+
+def test_daily_call_limit_is_the_initial_value():
+    assert web.DAILY_CALL_LIMIT == 3000
+    assert web.DAY_CALLS_ATTRIBUTE == "mcp_calls" and web.MONTH_PEOPLE_ATTRIBUTE == "people"
+
+
+@pytest.mark.parametrize(("item", "calls"), [
+    (None, 0), ({"pk": {"S": "day#2027-01-15"}}, 0), ({"pk": {"S": "day#2027-01-15"}, "logins": {"N": "9"}}, 0),
+    ({"mcp_calls": {"N": "0"}}, 0), ({"mcp_calls": {"N": "2999"}}, 2999), ({"mcp_calls": {"N": "3000"}}, 3000),
+    ({"mcp_calls": {"N": "3001"}}, 3001),
+])
+def test_daily_calls_reads_the_counter(item, calls):
+    assert web.daily_calls(item) == calls
+    assert web.daily_ceiling_reached(item) is (calls >= 3000)
+
+
+@pytest.mark.parametrize("item", [
+    {"mcp_calls": {"S": "1"}}, {"mcp_calls": {"N": "-1"}}, {"mcp_calls": {"N": "01"}}, {"mcp_calls": {"N": "1.5"}},
+    {"mcp_calls": {"N": 1}}, {"mcp_calls": {"N": "1", "S": "1"}}, {"mcp_calls": None}, [], "day",
+])
+def test_daily_calls_malformed_fails_closed(item):
+    with pytest.raises(web.PublicWebError, match="^day_malformed$"):
+        web.daily_ceiling_reached(item)
+
+
+def test_count_daily_call_update_is_one_conditional_add_on_the_utc_day():
+    update = web.count_daily_call_update("t", NOW)
+    assert update == {
+        "TableName": "t", "Key": {"pk": {"S": f"day#{datetime.fromtimestamp(NOW, tz=timezone.utc):%Y-%m-%d}"}},
+        "UpdateExpression": "ADD #c :one", "ConditionExpression": "attribute_not_exists(#c) OR #c < :max",
+        "ExpressionAttributeNames": {"#c": "mcp_calls"},
+        "ExpressionAttributeValues": {":one": {"N": "1"}, ":max": {"N": "3000"}},
+        "ReturnValues": "UPDATED_NEW",
+    }
+    # One second before 00:00 UTC and at 00:00 UTC land on different rows.
+    midnight = 1_800_057_600  # 2027-01-16T00:00:00Z
+    assert web.count_daily_call_update("t", midnight - 1)["Key"] != web.count_daily_call_update("t", midnight)["Key"]
+
+
+@pytest.mark.parametrize(("now", "month", "expires"), [
+    (1_800_000_000, "2027-01", "2027-02-01T00:00:00"),
+    (1_798_761_599, "2026-12", "2027-01-01T00:00:00"),  # 2026-12-31T23:59:59Z: year change
+    (1_798_761_600, "2027-01", "2027-02-01T00:00:00"),
+])
+def test_month_person_key_and_expiry(now, month, expires):
+    assert web.month_person_key(now, FP) == {"pk": {"S": f"month_person#{month}#{FP}"}}
+    assert datetime.fromtimestamp(web.month_person_expires_at(now), tz=timezone.utc).isoformat() == expires + "+00:00"
+    assert web.month_person_expires_at(now) > now
+    with pytest.raises(web.PublicWebError, match="^fingerprint_invalid$"):
+        web.month_person_key(now, "x")
 
 
 # --- Module hygiene ---------------------------------------------------------

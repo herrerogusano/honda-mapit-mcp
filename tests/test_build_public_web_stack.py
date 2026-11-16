@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from mapit import public_identity, public_pass, public_sweep, public_web
+from mapit import public_identity, public_pass, public_sweep, public_web, public_web_service
 from mapit import multiuser_common, multiuser_entrypoint, multiuser_identity
 from scripts import build_multiuser_stack as invitation
 from scripts import build_public_web_stack as stack
@@ -384,7 +384,7 @@ def test_alarm_set_and_thresholds(env):
         "SweepFailedAlarm", "OldestItemAgeAlarm", "InvalidDatesAlarm", "PassCloudflareAlarm", "PassKeyMissingAlarm",
         "IdentityKeyCreatedAlarm", "IdentityBreakerAlarm", "IdentityFaultsAlarm", "McpErrorsAlarm",
         "PassErrorsAlarm", "SweepErrorsAlarm", "IdentityTimeoutAlarm", "McpTimeoutAlarm", "PassTimeoutAlarm",
-        "SweepTimeoutAlarm"}
+        "SweepTimeoutAlarm", "McpDailyCeilingAlarm"}
     for alarm in alarms.values():
         assert alarm["AlarmActions"] == [{"Ref": "AlarmTopic"}]
     oldest = alarms["OldestItemAgeAlarm"]
@@ -458,6 +458,48 @@ def test_filter_codes_are_codes_the_modules_write(env):
     assert faults | refusals == logged, (sorted(logged - faults - refusals), sorted(faults | refusals - logged))
     for refusal in ("mapit_rejected", "pass_missing", "locked", "closed", "cap_full", "daily_limit", "breaker_open"):
         assert refusal in refusals
+
+
+def test_daily_ceiling_alarm_counts_the_fixed_event_of_the_service(env):
+    filters, alarms = _filters(env), _alarms(env)
+    ceiling = filters["McpDailyCeilingFilter"]
+    assert ceiling["LogGroupName"] == {"Ref": "McpLogGroup"}
+    assert ceiling["FilterPattern"] == '{ $.event = "public_daily_ceiling_reached" }'
+    assert public_web_service.EVENT_DAILY_CEILING_REACHED == "public_daily_ceiling_reached"
+    service_source = (ROOT / "src/mapit/public_web_service.py").read_text(encoding="utf-8")
+    assert '{"event": EVENT_DAILY_CEILING_REACHED}' in service_source
+    alarm = alarms["McpDailyCeilingAlarm"]
+    assert alarm["AlarmName"] == f"honda-mapit-mcp-{env}-web-daily-ceiling"
+    assert (alarm["MetricName"], alarm["Namespace"]) == ("McpDailyCeilingReached", stack.log_metric_namespace(env))
+    assert (alarm["Statistic"], alarm["Threshold"], alarm["ComparisonOperator"]) == (
+        "Sum", 1, "GreaterThanOrEqualToThreshold")
+    assert alarm["TreatMissingData"] == "notBreaching"
+    assert _resources(env)["McpDailyCeilingAlarm"]["DependsOn"] == ["McpDailyCeilingFilter"]
+
+
+def test_daily_ceiling_filter_matches_the_line_the_service_writes(env):
+    """The JSON line the gate logs, parsed as CloudWatch would for ``{ $.event = "..." }``."""
+    import json as _json
+
+    from mapit.public_web_service import PublicSessionGate
+
+    lines = []
+
+    class _Dynamo:
+        def get_item(self, **kwargs):
+            return {"Item": {"pk": {"S": "config"}, "open": {"BOOL": True}}}
+
+        def update_item(self, **kwargs):
+            if kwargs["Key"]["pk"]["S"].startswith("day#"):
+                return {"Attributes": {"mcp_calls": {"N": str(public_web.DAILY_CALL_LIMIT)}}}
+            return {}
+
+    gate = PublicSessionGate(env=env, pool="eu-west-1_Pool12345", client=lambda name: _Dynamo(),
+                             clock=lambda: 1_800_000_000, log=lines.append)
+    gate.admit("a" * 32, "user", 1_800_000_000 - 60)
+    (line,) = lines
+    wanted = re.fullmatch(r'\{ \$\.event = "([a-z_]+)" \}', _filters(env)["McpDailyCeilingFilter"]["FilterPattern"])
+    assert _json.loads(line)["event"] == wanted.group(1)
 
 
 def test_filter_patterns_fit_cloudwatch_limits(env):

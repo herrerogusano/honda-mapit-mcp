@@ -38,6 +38,7 @@ MINUTE = NOW // 60
 TABLE = web.web_table_name("dev")
 PARAM = web.web_session_parameter_name("dev", TENANT_A)
 FP = "c" * 64
+PREVIOUS_MONTH = 1_798_761_599  # 2026-12-31T23:59:59Z; NOW is in 2027-01
 USER = "user-a"
 WEB_TOOLS = ["borrar_mis_datos", "cerrar_sesion", "get_route_detail", "get_vehicle_details",
              "get_vehicle_status", "list_routes"]
@@ -82,7 +83,7 @@ class Aws:
         self.stubbers["dynamodb"].add_response("get_item", response, {
             "TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True})
 
-    def count(self, now=NOW, error=None, old=None):
+    def count(self, now=NOW, error=None, old=None, day=True):
         params = {
             "TableName": TABLE, "Key": {"pk": {"S": f"usage#{TENANT_A}"}},
             "UpdateExpression": "SET #c = #c + :one, #m = if_not_exists(#m, :zero) + :one REMOVE #p",
@@ -99,11 +100,30 @@ class Aws:
         ddb = self.stubbers["dynamodb"]
         if error is None:
             ddb.add_response("update_item", {}, params)
+            if day:
+                self.day(now)
         elif old is None:
             ddb.add_client_error("update_item", error, http_status_code=400, expected_params=params)
         else:
             ddb.add_client_error("update_item", error, http_status_code=400, expected_params=params,
                                  modeled_fields={"Item": old})
+
+    def day(self, now=NOW, error=None, calls=1):
+        """The day counter write that follows an admitted session count."""
+        params = web.count_daily_call_update(TABLE, now if now is not None else NOW)
+        if now is None:
+            params = {**params, "Key": stub.ANY}
+        ddb = self.stubbers["dynamodb"]
+        if error is None:
+            ddb.add_response("update_item", {"Attributes": {"mcp_calls": {"N": str(calls)}}}, params)
+        else:
+            ddb.add_client_error("update_item", error, http_status_code=400, expected_params=params)
+
+    def markers(self, now=NOW):
+        """borrar_mis_datos: the month markers of this and the previous UTC month."""
+        for moment in (now, PREVIOUS_MONTH) if now is not None else (None, None):
+            key = stub.ANY if moment is None else web.month_person_key(moment, FP)
+            self.stubbers["dynamodb"].add_response("delete_item", {}, {"TableName": TABLE, "Key": key})
 
     def deletes(self, ssm_error=None, user_error=None, user=USER):
         if ssm_error:
@@ -211,6 +231,64 @@ def test_pause_stops_calls_and_closed_signups_do_not():
     aws.done()
 
 
+def test_absent_config_row_closes_sign_ups_only():
+    with Aws() as aws:
+        aws.config(None)  # GetItem without Item: source "missing", open false
+        aws.count()
+        aws.gate().admit(TENANT_A, USER, NOW - 600)
+    aws.done()
+    assert aws.lines == []
+
+
+# -- daily ceiling --------------------------------------------------------------
+
+def test_daily_ceiling_reached_refuses_as_pause_after_the_session_count():
+    with Aws() as aws:
+        aws.config()
+        aws.count(day=False)
+        aws.day(error="ConditionalCheckFailedException")
+        error = refused(aws.gate())
+    aws.done()
+    assert (error.code, error.step) == (REFUSED_PAUSED, "daily_ceiling")
+    # Not a session problem: nothing is deleted (an attempted deletion would be unstubbed).
+    assert [json.loads(line)["event"] for line in aws.lines] == ["public_call_refused"]
+
+
+@pytest.mark.parametrize(("calls", "events"), [
+    (1, []), (web.DAILY_CALL_LIMIT - 1, []), (web.DAILY_CALL_LIMIT, ["public_daily_ceiling_reached"]),
+])
+def test_only_the_call_that_reaches_the_ceiling_logs_the_event(calls, events):
+    with Aws() as aws:
+        aws.config()
+        aws.count(day=False)
+        aws.day(calls=calls)
+        assert aws.gate().admit(TENANT_A, USER, NOW - 600) is None
+    aws.done()
+    assert [json.loads(line) for line in aws.lines] == [{"event": event} for event in events]
+
+
+def test_day_counter_write_failure_fails_closed():
+    with Aws() as aws:
+        aws.config()
+        aws.count(day=False)
+        aws.day(error="ProvisionedThroughputExceededException")
+        error = refused(aws.gate())
+    aws.done()
+    assert (error.code, error.step, error.provider_code) == (
+        REFUSED_UNAVAILABLE, "day_write_failed", "ProvisionedThroughputExceededException")
+
+
+def test_the_day_counter_uses_the_utc_day_of_the_call():
+    midnight = 1_800_057_600  # 2027-01-16T00:00:00Z
+    with Aws() as aws:
+        for now in (midnight - 1, midnight):
+            aws.config()
+            aws.count(now=now, day=False)
+            aws.day(now=now)
+            aws.gate(clock=lambda now=now: now).admit(TENANT_A, USER, now - 600)
+    aws.done()
+
+
 @pytest.mark.parametrize("item", [{"open": {"S": "yes"}}, {"unknown": {"N": "1"}}])
 def test_malformed_config_refuses(item):
     with Aws() as aws:
@@ -286,6 +364,7 @@ def test_delete_account_deletes_person_and_frees_the_seat_in_one_transaction():
     with Aws() as aws:
         _usage_read(usage())(aws)
         _transaction(aws)
+        aws.markers()
         aws.deletes()
         assert aws.gate().delete_account(TENANT_A, USER) == DELETE_DONE
     aws.done()
@@ -296,7 +375,8 @@ def test_delete_account_person_already_gone_frees_no_seat():
     with Aws() as aws:
         _usage_read(usage())(aws)
         _transaction(aws, "TransactionCanceledException", ["ConditionalCheckFailed", "None"])
-        aws.deletes()  # no plain delete and no counter update: they would be unstubbed calls
+        aws.markers()
+        aws.deletes()  # no plain person delete and no counter update: they would be unstubbed calls
         assert aws.gate().delete_account(TENANT_A, USER) == DELETE_DONE
     aws.done()
     assert aws.lines == []
@@ -307,10 +387,25 @@ def test_delete_account_with_occupied_zero_deletes_the_row_without_the_counter()
         _usage_read(usage())(aws)
         _transaction(aws, "TransactionCanceledException", ["None", "ConditionalCheckFailed"])
         aws.stubbers["dynamodb"].add_response("delete_item", {}, {"TableName": TABLE, "Key": PERSON_KEY})
+        aws.markers()
         aws.deletes()
         assert aws.gate().delete_account(TENANT_A, USER) == DELETE_DONE
     aws.done()
     assert aws.lines == []
+
+
+def test_delete_account_month_marker_failure_keeps_the_session_for_a_retry():
+    with Aws() as aws:
+        _usage_read(usage())(aws)
+        _transaction(aws)
+        ddb = aws.stubbers["dynamodb"]
+        ddb.add_response("delete_item", {}, {"TableName": TABLE, "Key": web.month_person_key(NOW, FP)})
+        ddb.add_client_error("delete_item", "InternalServerError", http_status_code=500, expected_params={
+            "TableName": TABLE, "Key": web.month_person_key(PREVIOUS_MONTH, FP)})
+        assert aws.gate().delete_account(TENANT_A, USER) == DELETE_FAILED
+    aws.done()  # no session deletion: those calls would be unstubbed
+    assert [json.loads(line)["step"] for line in aws.lines] == ["month_marker"]
+    assert FP not in "".join(aws.lines)
 
 
 @pytest.mark.parametrize(("item", "step"), [
@@ -456,6 +551,17 @@ def test_public_pause_and_age_messages(keys):
     assert harness.created == []
 
 
+def test_public_daily_ceiling_message_is_the_pause_text(keys):
+    with Aws() as aws:
+        aws.config()
+        aws.count(now=None, day=False)
+        aws.day(now=None, error="ConditionalCheckFailedException")
+        harness = PublicHarness(keys, aws)
+        assert text(harness.call(public_token(keys))) == (True, f"service_paused: {MSG_PUBLIC_PAUSED}")
+    aws.done()
+    assert harness.created == []
+
+
 def test_public_missing_mapit_session_ends_the_session(keys):
     with Aws() as aws:
         aws.config()
@@ -479,6 +585,7 @@ def test_logout_and_delete_tools(keys):
         live = usage(expires_at={"N": str(int(time.time()) + 3600)})
         _usage_read(live)(aws)
         _transaction(aws)
+        aws.markers(now=None)
         aws.deletes()
         done = harness.call(public_token(keys), name="borrar_mis_datos", arguments={"confirmar": True})
         assert text(done) == (False, MSG_PUBLIC_DELETE_DONE)

@@ -123,9 +123,9 @@ def test_load_config_reads_consistently():
     assert dynamo.calls == [{"TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True}]
 
 
-def test_load_config_without_item_uses_the_defaults():
+def test_load_config_without_item_is_closed():
     config = web.load_web_config(FakeDynamo({"ResponseMetadata": {"HTTPStatusCode": 200}}), TABLE)
-    assert config == web.DEFAULT_WEB_CONFIG
+    assert config == web.MISSING_WEB_CONFIG and not config.open and config.source == "missing"
 
 
 @pytest.mark.parametrize("dynamo", [
@@ -242,7 +242,7 @@ def test_reference_evaluator_semantics():
 
 
 @pytest.mark.parametrize(("item", "admitted"), [
-    ({}, True),                                  # row absent: default cap, nobody yet
+    ({}, False),                                 # row absent: a claim never creates it
     (_row(occupied=99), True),                   # default cap 100
     (_row(occupied=100), False),
     (_row(cap=0, occupied=5000), True),          # 0 = no cap
@@ -260,7 +260,7 @@ def test_claim_seat_condition(item, admitted):
     assert _claims(item) is admitted
     # The condition agrees with WebConfig.has_room on every well-typed row.
     parsed = web.parse_web_config(item or None)
-    if parsed.source != web.CONFIG_SOURCE_MALFORMED:
+    if parsed.source == web.CONFIG_SOURCE_ROW:
         assert parsed.has_room() is admitted
 
 
