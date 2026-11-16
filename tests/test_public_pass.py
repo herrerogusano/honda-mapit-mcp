@@ -213,7 +213,8 @@ def test_email_is_normalized_before_the_fingerprint(world):
 
 
 def test_full_cap_and_pass_not_required_still_issue(world):
-    world.dynamo.items["config"] = {"pk": {"S": "config"}, "cap": {"N": "1"}, "occupied": {"N": "1"},
+    world.dynamo.items["config"] = {"pk": {"S": "config"}, "open": {"BOOL": True}, "cap": {"N": "1"},
+                                    "occupied": {"N": "1"},
                                     "pass_required": {"BOOL": False}}
     assert world.call()[0] == 200
 
@@ -331,7 +332,8 @@ def test_ip_row_uses_the_base_fingerprint_of_the_address(world):
 
 @pytest.mark.parametrize("item,expected,code", [
     ({"pk": {"S": "config"}, "open": {"BOOL": False}}, {"estado": "cerrado"}, "web_closed"),
-    ({"pk": {"S": "config"}, "pause_until": {"N": str(NOW + 1)}}, {"estado": "pausa"}, "web_paused"),
+    ({"pk": {"S": "config"}, "open": {"BOOL": True}, "pause_until": {"N": str(NOW + 1)}}, {"estado": "pausa"},
+     "web_paused"),
     ({"pk": {"S": "config"}, "open": {"S": "yes"}}, {"estado": "pausa"}, "config_malformed"),
     ({"pk": {"S": "config"}, "open": {"BOOL": False}, "pause_until": {"N": str(NOW + 1)}},
      {"estado": "cerrado"}, "web_closed"),
@@ -341,6 +343,12 @@ def test_closed_or_paused_answers_like_estado_without_cloudflare(world, item, ex
     assert world.call() == (503, expected)
     assert world.transport.calls == [] and world.ssm.calls == []
     assert world.dynamo.writes() == [] and world.codes == [code]
+
+
+def test_config_row_without_open_answers_cerrado(world):
+    world.dynamo.items["config"] = {"pk": {"S": "config"}, "cap": {"N": "100"}}
+    assert world.call() == (503, {"estado": "cerrado"})
+    assert world.transport.calls == [] and world.codes == ["web_closed"]
 
 
 def test_absent_config_row_answers_cerrado_without_cloudflare(world):
@@ -383,7 +391,7 @@ def test_day_read_failure_answers_pausa(world):
 
 
 def test_pause_over_issues_again(world):
-    world.dynamo.items["config"] = {"pk": {"S": "config"}, "pause_until": {"N": str(NOW)}}
+    world.dynamo.items["config"] = {"pk": {"S": "config"}, "open": {"BOOL": True}, "pause_until": {"N": str(NOW)}}
     assert world.call()[0] == 200
 
 

@@ -541,9 +541,10 @@ class WebConfig:
         return self.cap == 0 or self.occupied < self.cap
 
 
-# Value of an attribute missing from a present row (``source="row"``).
+# Value of an attribute missing from a present row (``source="row"``). ``open``
+# defaults to false: the web is open only when someone wrote ``open = true``.
 ATTRIBUTE_DEFAULTS = WebConfig(
-    open=True, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
+    open=False, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
     source=CONFIG_SOURCE_ROW)
 MISSING_WEB_CONFIG = WebConfig(
     open=False, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
@@ -583,7 +584,8 @@ def parse_web_config(item: object) -> WebConfig:
     ``source="missing"``) until an operator writes the row. A failed or
     unreadable read must never be passed here as ``None``; it must become a
     closed config (:func:`load_web_config` does that). In a present row,
-    missing attributes take :data:`ATTRIBUTE_DEFAULTS`. Unknown attributes,
+    missing attributes take :data:`ATTRIBUTE_DEFAULTS` (``open`` absent is
+    closed). Unknown attributes,
     wrong types or a wrong key: :data:`CLOSED_WEB_CONFIG`.
     """
     if item is None:

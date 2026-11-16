@@ -227,7 +227,8 @@ absent row is closed (`source` `missing`, `open = false`): no sign-ins and no
 passes, `/estado` answers `cerrado`, sessions already open continue. That is
 the state of a new stack until an operator writes the row with `web-config`
 (see "Deployment"). In a present row, an absent attribute takes its default:
-open, no pause, cap 100, pass required. A failed read also closes
+closed (the web is open only when `open = true` was written), no pause, cap
+100, pass required. A failed read also closes
 (`read_failed`). The seat claim never creates the row: it is conditional on
 the row existing. `occupied` is written only by the seat claim,
 by `borrar_mis_datos` (which frees the seat) and by the sweep's daily recount

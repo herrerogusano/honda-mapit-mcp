@@ -307,7 +307,7 @@ class WebAdmin:
             self.out(f"current: {describe_config(current)}")
         if item is None:
             # A new row states every attribute, so nothing relies on the
-            # defaults of a present row (which would be open).
+            # defaults of a present row.
             changes = {"open": current.open, "pause_until": current.pause_until, "cap": current.cap,
                        "pass_required": current.pass_required, **changes}
             new_item = dict(web.config_key())

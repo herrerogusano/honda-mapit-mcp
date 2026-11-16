@@ -360,7 +360,7 @@ def test_web_status_ignores_expired_breaker_rows_and_reads_states():
     expired = {**web.breaker_key(web.breaker_window(WEB_NOW)), "rejections": {"N": "25"},
                "open_until": {"N": str(WEB_NOW + 60)}, "expires_at": {"N": str(WEB_NOW)}}
     with _WebClients() as c:
-        c.get(web.config_key(), _config(cap=2, occupied=2))
+        c.get(web.config_key(), _config(cap=2, occupied=2, open=True))
         c.breakers(expired)
         c.pools()
         c.users()
@@ -370,10 +370,12 @@ def test_web_status_ignores_expired_breaker_rows_and_reads_states():
     now = WEB_NOW
     assert mcp_users_web.public_state(web.parse_web_config(None), now, False) == "cerrado"
     assert mcp_users_web.public_state(web.parse_web_config(None), now, True, True) == "cerrado"
-    assert mcp_users_web.public_state(web.parse_web_config(_config()), now, False) == "abierto"
-    assert mcp_users_web.public_state(web.parse_web_config(_config()), now, False, True) == "pausa"
+    assert mcp_users_web.public_state(web.parse_web_config(_config()), now, False) == "cerrado"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(open=True)), now, False) == "abierto"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(open=True)), now, False, True) == "pausa"
     assert mcp_users_web.public_state(web.parse_web_config(_config(open=False)), now, True) == "cerrado"
-    assert mcp_users_web.public_state(web.parse_web_config(_config(pause_until=now + 1)), now, False) == "pausa"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(open=True, pause_until=now + 1)), now,
+                                      False) == "pausa"
     assert mcp_users_web.public_state(web.READ_FAILED_WEB_CONFIG, now, False) == "pausa"
 
 
@@ -436,7 +438,7 @@ def test_web_stats_bounds_its_reads(capsys):
 
 def test_web_config_dry_run_shows_both_values_and_writes_nothing():
     with _WebClients() as c:
-        c.get(web.config_key(), _config(cap=100, occupied=7))
+        c.get(web.config_key(), _config(cap=100, occupied=7, open=True))
         assert c.run("web-config", "--cap", "200") == 0
         c.verify()  # no update_item stubbed: a write would have raised
     assert "current: open=true pause_until=none cap=100 occupied=7 pass_required=true" in c.text
@@ -486,7 +488,7 @@ def test_web_config_creates_an_absent_row_without_occupied():
         assert c.run("web-config", "--pass-required", "false", "--yes") == 0
         c.verify()
     assert "warning: without the pass" in c.text
-    # Without --open the new row stays closed: it never relies on the open default of a present row.
+    # Without --open the new row stays closed and states open=false explicitly.
     assert "new:     open=false pause_until=none cap=100 occupied=0 pass_required=false" in c.text
 
 
@@ -513,6 +515,19 @@ def test_web_config_create_refuses_if_the_row_appeared_meanwhile(capsys):
         assert c.run("web-config", "--open", "true", "--yes") == 1
         c.verify()
     assert "changed while running; nothing written" in capsys.readouterr().err
+
+
+def test_web_status_row_without_open_is_closed():
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(cap=100, occupied=2))
+        c.breakers()
+        c.pools()
+        c.users()
+        c.sessions()
+        assert c.run("web-status") == 0
+        c.verify()
+    assert "config (row): open=false pause_until=none cap=100 occupied=2 pass_required=true" in c.text
+    assert "/estado would answer: cerrado" in c.text
 
 
 @pytest.mark.parametrize(("item", "verdict", "state"), [

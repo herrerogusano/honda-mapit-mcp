@@ -487,7 +487,22 @@ def test_config_full_row():
 def test_config_partial_row_takes_defaults():
     config = web.parse_web_config({"pk": {"S": "config"}, "occupied": {"N": "7"}})
     assert (config.open, config.cap, config.occupied, config.pass_required, config.source) == (
-        True, 100, 7, True, web.CONFIG_SOURCE_ROW)
+        False, 100, 7, True, web.CONFIG_SOURCE_ROW)
+    opened = web.parse_web_config({"pk": {"S": "config"}, "open": {"BOOL": True}, "occupied": {"N": "7"}})
+    assert (opened.open, opened.cap, opened.pass_required) == (True, 100, True)
+
+
+@pytest.mark.parametrize("item", [
+    {"pk": {"S": "config"}},
+    {"pk": {"S": "config"}, "occupied": {"N": "7"}},
+    {"pk": {"S": "config"}, "cap": {"N": "50"}, "pause_until": {"N": "0"}, "pass_required": {"BOOL": True}},
+])
+def test_config_row_without_open_is_closed(item):
+    """The web is open only when someone wrote open = true."""
+    config = web.parse_web_config(item)
+    assert config.source == web.CONFIG_SOURCE_ROW
+    assert config.open is False and not config.accepting(NOW)
+    assert web.ATTRIBUTE_DEFAULTS.open is False
 
 
 def test_config_cap_zero_means_no_cap():
@@ -532,7 +547,7 @@ def test_config_malformed_fails_closed(item):
 
 def test_config_accepting_rejects_bad_time():
     with pytest.raises(web.PublicWebError, match="^time_invalid$"):
-        web.ATTRIBUTE_DEFAULTS.accepting(1.5)
+        web.parse_web_config({"pk": {"S": "config"}, "open": {"BOOL": True}}).accepting(1.5)
 
 
 # --- Daily call ceiling and monthly people -------------------------------------

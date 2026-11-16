@@ -342,7 +342,7 @@ def test_new_person_is_admitted_with_usage_row_and_session(fakes):
 
 def test_returning_person_passes_with_full_cap(fakes):
     table, ssm, _ = fakes
-    table.put("config", cap=2, occupied=2)
+    table.put("config", open=True, cap=2, occupied=2)
     _person(table)
     identity.handler(_migration(), Context())
     assert table.n("config", "occupied") == 2 and f"day#{TODAY}" not in table.items
@@ -353,7 +353,7 @@ def test_returning_person_passes_with_full_cap(fakes):
 
 def test_new_person_with_full_cap_is_told_only_after_mapit(fakes):
     table, ssm, mapit = fakes
-    table.put("config", cap=2, occupied=2)
+    table.put("config", open=True, cap=2, occupied=2)
     _fails(_migration(), public.MSG_FULL)
     assert len(mapit.calls) == 1 and ssm.puts == []
     assert f"person#{FP}" not in table.items and table.n("config", "occupied") == 2
@@ -363,7 +363,7 @@ def test_new_person_with_full_cap_is_told_only_after_mapit(fakes):
 @pytest.mark.parametrize("returning", [False, True])
 def test_wrong_password_with_full_cap_says_the_same_for_any_email(fakes, returning):
     table, _, mapit = fakes
-    table.put("config", cap=1, occupied=1)
+    table.put("config", open=True, cap=1, occupied=1)
     if returning:
         _person(table)
     mapit.mode = "reject"
@@ -372,15 +372,15 @@ def test_wrong_password_with_full_cap_says_the_same_for_any_email(fakes, returni
 
 def test_cap_zero_means_no_cap(fakes):
     table, ssm, _ = fakes
-    table.put("config", cap=0, occupied=500)
+    table.put("config", open=True, cap=0, occupied=500)
     identity.handler(_migration(), Context())
     assert table.n("config", "occupied") == 501 and ssm.puts
 
 
 def test_seat_taken_by_a_racing_login_says_full_and_takes_nothing(fakes):
     table, ssm, _ = fakes
-    table.put("config", cap=100, occupied=99)
-    table.before_transact = lambda t: t.put("config", cap=100, occupied=100)
+    table.put("config", open=True, cap=100, occupied=99)
+    table.before_transact = lambda t: t.put("config", open=True, cap=100, occupied=100)
     _fails(_migration(), public.MSG_FULL)
     # The session was stored first under a random tenant no token carries;
     # the sweep deletes it by age. No person, usage row or seat.
@@ -452,7 +452,7 @@ WINDOW = web.breaker_window(NOW)
 
 @pytest.mark.parametrize("setup, message", [
     (lambda t: t.put("config", open=False), public.MSG_PAUSED),
-    (lambda t: t.put("config", pause_until=NOW + 60), public.MSG_PAUSED),
+    (lambda t: t.put("config", open=True, pause_until=NOW + 60), public.MSG_PAUSED),
     (lambda t: t.put("config", open="yes"), public.MSG_PAUSED),  # malformed row: closed
     (lambda t: t.put(f"breaker#{WINDOW - 1}", rejections=20, open_until=NOW + 60, expires_at=NOW + 900),
      public.MSG_PAUSED),
@@ -480,7 +480,7 @@ def test_pass_for_another_email_does_not_count(fakes):
 def test_switch_off_pass_requirement(fakes):
     table, _, mapit = fakes
     table.items.pop(f"pass#{FP}")
-    table.put("config", pass_required=False)
+    table.put("config", open=True, pass_required=False)
     identity.handler(_migration(), Context())
     assert len(mapit.calls) == 1
 
@@ -656,7 +656,7 @@ def test_grace_does_not_revive_a_used_up_pass(fakes, spent_at, expires_at):
 
 def test_pre_auth_without_pass_requirement_spends_nothing(fakes):
     table, _, _ = fakes
-    table.put("config", pass_required=False)
+    table.put("config", open=True, pass_required=False)
     identity.handler(_pre_auth(False), Context())
     assert table.writes() == []
 
@@ -682,6 +682,15 @@ def test_daily_ceiling_refuses_every_sign_in_as_pause_before_mapit(fakes, event,
         _fails(event(), public.MSG_PAUSED)
     assert mapit.calls == [] and ssm.puts == [] and table.writes() == []
     assert [json.loads(r.getMessage())["step"] for r in caplog.records] == ["daily_ceiling"]
+
+
+@pytest.mark.parametrize("event", [_migration, lambda: _pre_auth(False), lambda: _pre_auth(True)],
+                         ids=["migration", "pre_auth", "pre_auth_absent"])
+def test_config_row_without_open_refuses_every_sign_in_before_mapit(fakes, event):
+    table, ssm, mapit = fakes
+    table.put("config", cap=100, occupied=3, pass_required=True)
+    _fails(event(), public.MSG_PAUSED)
+    assert mapit.calls == [] and ssm.puts == [] and table.writes() == []
 
 
 def test_daily_ceiling_is_per_utc_day_and_below_it_admits(fakes):
@@ -892,11 +901,12 @@ def _http(method: str, path: str) -> dict:
 @pytest.mark.parametrize("setup, state", [
     (lambda t: None, "abierto"),
     (lambda t: t.items.pop("config"), "cerrado"),
-    (lambda t: t.put("config", cap=3, occupied=3), "lleno"),
-    (lambda t: t.put("config", cap=0, occupied=3), "abierto"),
+    (lambda t: t.put("config", cap=3, occupied=0), "cerrado"),
+    (lambda t: t.put("config", open=True, cap=3, occupied=3), "lleno"),
+    (lambda t: t.put("config", open=True, cap=0, occupied=3), "abierto"),
     (lambda t: t.put("config", open=False, cap=3, occupied=3), "cerrado"),
     (lambda t: t.put("config", open=False, pause_until=NOW + 1), "cerrado"),
-    (lambda t: t.put("config", pause_until=NOW + 1), "pausa"),
+    (lambda t: t.put("config", open=True, pause_until=NOW + 1), "pausa"),
     (lambda t: t.put(f"breaker#{WINDOW}", rejections=1, open_until=NOW + 1, expires_at=NOW + 900), "pausa"),
     (lambda t: t.put("config", open="yes"), "pausa"),
     (lambda t: t.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT), "pausa"),
@@ -904,7 +914,7 @@ def _http(method: str, path: str) -> dict:
     (lambda t: t.put("day#2027-01-14", mcp_calls=web.DAILY_CALL_LIMIT), "abierto"),
     (lambda t: t.put(f"day#{TODAY}", mcp_calls="many"), "pausa"),
     (lambda t: (t.items.pop("config"), t.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT)), "cerrado"),
-], ids=["open_row", "no_row", "full", "no_cap", "closed", "closed_and_paused", "paused", "breaker", "malformed",
+], ids=["open_row", "no_row", "row_without_open", "full", "no_cap", "closed", "closed_and_paused", "paused", "breaker", "malformed",
         "daily_ceiling", "below_ceiling", "yesterday_ceiling", "day_malformed", "no_row_and_ceiling"])
 def test_status_endpoint(fakes, setup, state):
     table, _, _ = fakes
