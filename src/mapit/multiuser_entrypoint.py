@@ -29,12 +29,20 @@ from .multiuser_runtime import (
     JwksCache, MultiuserRuntime, TenantSessionMissing, create_multiuser_runtime,
     fetch_jwks_https, multiuser_policy,
 )
+from .public_web import (
+    MODE_VARIABLE, public_mode_enabled, web_function_name, web_session_parameter_name,
+    web_table_name,
+)
+from .public_web_service import PublicSessionGate
 
 ENV_NAMES = (
     "AWS_LAMBDA_FUNCTION_NAME", "AWS_REGION", "MAPIT_MCP_ENV", "MULTIUSER_ISSUER_URL",
     "MULTIUSER_RESOURCE_URL", "MULTIUSER_CLIENT_IDS", "MULTIUSER_USER_POOL_ID",
     "MULTIUSER_TABLE", "MAPIT_CONFIG_JSON", "MULTIUSER_GEOGRAPHY", "MULTIUSER_WEB_ORIGINS",
 )
+# The mode variable exists only in the public web stack; it is part of the
+# cache signature, not of the invitation template's variables.
+_SIGNATURE_NAMES = ENV_NAMES + (MODE_VARIABLE,)
 _POOL_RE = re.compile(r"^eu-west-1_[A-Za-z0-9]{9,64}$")
 _RESOURCE_RE = re.compile(r"^https://([a-z0-9]{10})\.execute-api\.eu-west-1\.amazonaws\.com/mcp$")
 _CLIENT_RE = re.compile(r"^[A-Za-z0-9]{1,128}$")
@@ -116,20 +124,24 @@ def _settings(environ: Mapping[str, str]) -> dict[str, Any]:
     env = environ.get("MAPIT_MCP_ENV")
     if env not in ENVIRONMENTS:
         raise _EntryError("environment_invalid")
+    # Public web mode (separate stack): own function and table names, no geography.
+    public = public_mode_enabled(environ)
+    function = web_function_name(env, "mcp") if public else f"honda-mapit-mcp-{env}-mcp"
+    table = web_table_name(env) if public else table_name(env)
     pool = environ.get("MULTIUSER_USER_POOL_ID")
     resource = environ.get("MULTIUSER_RESOURCE_URL")
     clients_raw = environ.get("MULTIUSER_CLIENT_IDS")
     match = _RESOURCE_RE.fullmatch(resource) if type(resource) is str else None
     if (
         environ.get("AWS_REGION") != REGION
-        or environ.get("AWS_LAMBDA_FUNCTION_NAME") != f"honda-mapit-mcp-{env}-mcp"
+        or environ.get("AWS_LAMBDA_FUNCTION_NAME") != function
         or type(pool) is not str
         or not _POOL_RE.fullmatch(pool)
         or environ.get("MULTIUSER_ISSUER_URL") != f"https://cognito-idp.{REGION}.amazonaws.com/{pool}"
         or match is None
         or mcp_url(match.group(1)) != resource
-        or environ.get("MULTIUSER_TABLE") != table_name(env)
-        or environ.get("MULTIUSER_GEOGRAPHY") not in {"0", "1"}
+        or environ.get("MULTIUSER_TABLE") != table
+        or environ.get("MULTIUSER_GEOGRAPHY") not in ({"0"} if public else {"0", "1"})
         or type(clients_raw) is not str
     ):
         raise _EntryError("environment_invalid")
@@ -156,7 +168,8 @@ def _settings(environ: Mapping[str, str]) -> dict[str, Any]:
     return {
         "env": env,
         "pool": pool,
-        "table": table_name(env),
+        "table": table,
+        "public": public,
         "policy": policy,
         "config": _parse_mapit_config(environ.get("MAPIT_CONFIG_JSON")),
         "geography": environ.get("MULTIUSER_GEOGRAPHY") == "1",
@@ -283,9 +296,10 @@ class _TenantSession:
 
 def _build_services_factory(settings: dict[str, Any]) -> Callable[[str, float], Any]:
     env, config = settings["env"], settings["config"]
+    parameter_name = web_session_parameter_name if settings["public"] else session_parameter_name
 
     def services_factory(tenant_id: str, deadline: float) -> _TenantSession:
-        name = session_parameter_name(env, tenant_id)
+        name = parameter_name(env, tenant_id)
         if time.monotonic() >= deadline:
             raise RuntimeError("deadline_expired")
         try:
@@ -427,7 +441,13 @@ def _build_account_actions(settings: dict[str, Any]) -> tuple[Callable[[str, str
 
 def _load_runtime(settings: dict[str, Any]) -> MultiuserRuntime:
     policy = settings["policy"]
-    relink, delete_account = _build_account_actions(settings)
+    gate = None
+    if settings["public"]:
+        # No invitation row: a rejected MAPIT session just ends the web session.
+        gate = PublicSessionGate(env=settings["env"], pool=settings["pool"], client=_client)
+        relink, delete_account = gate.end_session, gate.delete_account
+    else:
+        relink, delete_account = _build_account_actions(settings)
     return create_multiuser_runtime(
         policy,
         JwksCache(policy.issuer_url, fetcher=_jwks_fetcher),
@@ -435,6 +455,7 @@ def _load_runtime(settings: dict[str, Any]) -> MultiuserRuntime:
         relink=relink,
         delete_account=delete_account,
         geographic_queries=settings["geography"],
+        public_gate=gate,
     )
 
 
@@ -443,7 +464,7 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
     global _CACHED_RUNTIME, _CACHED_SIGNATURE
     try:
         environ = os.environ
-        signature = tuple(environ.get(name) for name in ENV_NAMES)
+        signature = tuple(environ.get(name) for name in _SIGNATURE_NAMES)
         if _CACHED_RUNTIME is None or _CACHED_SIGNATURE != signature:
             runtime = _load_runtime(_settings(environ))
             _CACHED_RUNTIME, _CACHED_SIGNATURE = runtime, signature
