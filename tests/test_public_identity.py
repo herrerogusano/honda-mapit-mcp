@@ -1108,6 +1108,17 @@ def test_token_issue_counts_sign_ins_and_caps_them_per_day(fakes):
     assert set(table.items[f"day#{TODAY}"]) == {"pk", "logins"}
 
 
+def test_token_issue_keeps_an_earlier_consent_version_and_date(fakes):
+    # Both count expressions: first sign-in of the day, then another the same day.
+    table, _, _ = fakes
+    _person(table, consent_version="web-provisional-1")
+    for source in ("TokenGeneration_HostedAuth", "TokenGeneration_Authentication"):
+        identity.handler(_token(source), Context())
+        assert table.items[f"person#{FP}"]["consent_version"] == {"S": "web-provisional-1"}
+        assert table.n(f"person#{FP}", "consent_at") == NOW - 86400
+    assert table.n(f"person#{FP}", "login_day_count") == 2
+
+
 def test_a_new_day_restarts_the_daily_count(fakes):
     table, _, _ = fakes
     _person(table, login_day="2027-01-14", login_day_count=web.DAILY_LOGINS_PER_PERSON)
