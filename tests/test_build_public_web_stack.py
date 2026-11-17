@@ -559,6 +559,108 @@ def test_filter_patterns_fit_cloudwatch_limits(env):
         assert 0 < len(item["FilterPattern"]) <= 1024
 
 
+# --- managed login style: the Ride Log look, dark only ------------------------------
+
+# Accepted extensions per asset category, from the Cognito developer guide
+# ("The branding editor and customizing managed login", Image assets).
+_ASSET_EXTENSIONS = {"FORM_LOGO": {"PNG", "SVG", "JPEG"}, "PAGE_BACKGROUND": {"PNG", "SVG", "JPEG"},
+                     "FAVICON_SVG": {"SVG"}}
+# Subset of the SVG elements and attributes that guide lists as supported.
+_SVG_ELEMENTS = {"svg", "g", "path", "polygon", "rect", "title"}
+_SVG_ATTRIBUTES = {"xmlns", "viewBox", "width", "height", "preserveAspectRatio", "points", "fill", "fill-opacity",
+                   "fill-rule", "d", "transform"}
+# CloudFormation quota for a template sent as TemplateBody (the deploy script sends it so).
+_TEMPLATE_BODY_LIMIT = 51_200
+
+
+def _branding(env):
+    return _resources(env)["WebManagedLoginBranding"]["Properties"]
+
+
+def _relative_luminance(hex_colour):
+    channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast(first, second):
+    high, low = sorted((_relative_luminance(first), _relative_luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_login_style_is_the_web_look_not_the_cognito_default(env):
+    from scripts import public_web_branding as brand
+
+    branding = _branding(env)
+    assert "UseCognitoProvidedValues" not in branding
+    assert branding["Settings"] == brand.web_branding_settings()
+    settings = branding["Settings"]
+    assert settings["categories"]["global"]["colorSchemeMode"] == "DARK"
+    components = settings["components"]
+    assert components["pageBackground"]["darkMode"]["color"] == brand.BG + "ff"
+    assert components["form"]["darkMode"]["backgroundColor"] == brand.SURFACE + "ff"
+    assert components["form"]["logo"]["enabled"] is True
+    assert components["primaryButton"]["darkMode"]["defaults"] == {"backgroundColor": brand.RED + "ff",
+                                                                   "textColor": brand.ON_RED + "ff"}
+    assert settings["componentClasses"]["link"]["darkMode"]["defaults"]["textColor"] == brand.RED_HI + "ff"
+    assert settings["componentClasses"]["buttons"]["borderRadius"] == brand.RADIUS
+    # Dark only: light mode, if Cognito ever shows it, carries the same colours.
+    for group in (settings["components"], settings["componentClasses"]):
+        for value in group.values():
+            if isinstance(value, dict) and "darkMode" in value:
+                assert value["lightMode"] == value["darkMode"]
+
+
+def test_login_style_colours_are_cognito_hex_and_text_stays_readable(env):
+    from scripts import public_web_branding as brand
+
+    text = json.dumps(_branding(env)["Settings"])
+    colours = re.findall(r'"(?:\w*[cC]olor)": "([^"]*)"', text)
+    assert colours and all(re.fullmatch(r"[0-9a-f]{8}", colour) for colour in colours)
+    # The pairs the web's own contrast test checks (text 4.5:1, control borders and focus 3:1).
+    pairs = [(fg, bg, 4.5) for fg in (brand.FG, brand.FG_2, brand.FG_3, brand.RED_HI)
+             for bg in (brand.BG, brand.SURFACE, brand.SURFACE_2)]
+    pairs += [(brand.ON_RED, brand.RED, 4.5), (brand.AMBER, brand.AMBER_BG, 4.5),
+              (brand.CONTROL_LINE, brand.BG, 3), (brand.CONTROL_LINE, brand.SURFACE, 3),
+              (brand.RED_HI, brand.SURFACE_2, 3)]
+    for foreground, background, minimum in pairs:
+        assert _contrast(foreground, background) >= minimum, (foreground, background)
+
+
+def test_login_style_assets_are_small_own_svgs(env):
+    import base64
+    import xml.etree.ElementTree as ElementTree
+
+    assets = _branding(env)["Assets"]
+    assert {asset["Category"] for asset in assets} == set(_ASSET_EXTENSIONS) and len(assets) == 3
+    for asset in assets:
+        assert set(asset) == {"Category", "ColorMode", "Extension", "Bytes"}
+        assert asset["ColorMode"] == "DYNAMIC"
+        assert asset["Extension"] in _ASSET_EXTENSIONS[asset["Category"]]
+        assert len(asset["Bytes"]) <= 1_000_000
+        svg = base64.b64decode(asset["Bytes"], validate=True).decode("utf-8")
+        lowered = svg.lower()
+        # Nothing fetched at run time, no script, no third-party name.
+        for banned in ("href", "url(", "http:", "<script", "<image", "<style", "@import", "honda", "mapit"):
+            assert banned not in lowered.replace('xmlns="http://www.w3.org/2000/svg"', ""), banned
+        root = ElementTree.fromstring(svg)
+        for element in root.iter():
+            assert element.tag.removeprefix("{http://www.w3.org/2000/svg}") in _SVG_ELEMENTS
+            assert set(element.attrib) <= _SVG_ATTRIBUTES
+
+
+def test_template_fits_a_template_body_request(env):
+    assert len(json.dumps(stack.build_public_web_template(env), separators=(",", ":"))) < _TEMPLATE_BODY_LIMIT
+
+
+def test_invitation_stack_keeps_the_cognito_default_style():
+    for env in ("dev", "prod"):
+        branding = invitation.build_multiuser_template(env)["Resources"]
+        styles = [item["Properties"] for item in branding.values() if item["Type"] == "AWS::Cognito::ManagedLoginBranding"]
+        assert styles and all(style.get("UseCognitoProvidedValues") is True and "Settings" not in style
+                              and "Assets" not in style for style in styles)
+
+
 # --- the invitation-only stack does not change ------------------------------------
 
 def test_building_the_web_template_leaves_the_invitation_template_unchanged():

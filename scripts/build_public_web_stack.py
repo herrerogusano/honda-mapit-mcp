@@ -46,6 +46,8 @@ from scripts.build_multiuser_stack import (
     _tags,
 )
 
+from scripts.public_web_branding import web_branding_assets, web_branding_settings
+
 PASS_HANDLER = "mapit.public_pass.handler"
 SWEEP_HANDLER = "mapit.public_sweep.handler"
 DEV_CALLBACK_URL = "http://localhost:5173/"
@@ -325,6 +327,16 @@ def _observability(env: str) -> dict[str, Any]:
     return resources
 
 
+def _web_branding() -> dict[str, Any]:
+    """The client's managed login style: the web's colours, logo, background and favicon (dark only)."""
+    branding = _branding("WebClient")
+    properties = branding["Properties"]
+    del properties["UseCognitoProvidedValues"]  # Cognito refuses it together with Settings or Assets.
+    properties["Settings"] = web_branding_settings()
+    properties["Assets"] = web_branding_assets()
+    return branding
+
+
 def build_public_web_template(env: str) -> dict[str, Any]:
     """Return the public web stack template for ``env``."""
     env = validate_environment(env)
@@ -390,7 +402,7 @@ def build_public_web_template(env: str) -> dict[str, Any]:
             },
         },
         "WebClient": client,
-        "WebManagedLoginBranding": _branding("WebClient"),
+        "WebManagedLoginBranding": _web_branding(),
         "IdentityCognitoInvokePermission": {
             "Type": "AWS::Lambda::Permission",
             "Condition": "SupportedDeployment",

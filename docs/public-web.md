@@ -53,6 +53,23 @@ Reserved concurrency: one optional parameter per function
 which reserves nothing. The deploy script fills them only from the optional
 `reserved_concurrency` object of its private config.
 
+### Login page style
+
+The web client's managed login style (`WebManagedLoginBranding`) carries the
+Ride Log look, dark only: the web's colour tokens as hex, 2 px corners, the
+Ride Log wordmark as form logo, a dark background with the web's slanted red
+band, and the web's favicon (`scripts/public_web_branding.py`; the images are
+SVG drawn for this project, embedded in the template, nothing fetched at run
+time). The invitation-only stack keeps the Cognito default style.
+
+What Cognito does not let a style change: the font (no font setting) and the
+page text. The text is Cognito's own; it is shown in Spanish only when the
+authorize request carries `lang=es` (Cognito then keeps the choice in a `lang`
+cookie), which is up to the web, not this template. References:
+[`AWS::Cognito::ManagedLoginBranding`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-managedloginbranding.html),
+[the branding editor and its image assets](https://docs.aws.amazon.com/cognito/latest/developerguide/managed-login-brandingeditor.html),
+[managed login localization](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-managed-login.html#managed-login-localization).
+
 ### Deployment
 
 Two separate runs of `scripts/deploy_public_web.py`, review first:
