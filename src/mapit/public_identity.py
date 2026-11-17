@@ -17,10 +17,10 @@ nothing here runs. It serves four Cognito triggers and one HTTP route:
 * ``PreAuthentication_Authentication``: for a user that still exists, the
   same refusals, before Cognito checks its password, with the email taken from
   its ``email`` attribute. For an absent user (``userNotFound``) only the
-  refusals that need no email (closed or paused, daily ceiling, breaker): AWS
-  does not document what ``userName`` holds then, and in a pool with email as
-  username attribute it is not the typed email. The lock and the pass of an
-  absent user are checked by the migration.
+  refusals that need no email (closed or paused, daily ceiling, breaker): the
+  AWS documentation does not say what ``userName`` holds then, and in DEV
+  (email as username attribute) it was observed not to be a valid email. The
+  lock and the pass of an absent user are checked by the migration.
 * ``TokenGeneration_*``: refresh is refused; every other issue first reads
   the config and day rows again (closed, paused or the daily ceiling refuse,
   since they may have changed after the password was checked), then counts one
@@ -37,16 +37,18 @@ called, whatever MAPIT answers (the conditional decrement is what lets only
 one of several racing migrations through), or in the pre-authentication step
 when the user exists (Cognito checks the password itself and no migration
 runs). A pre-authentication call for an absent user (``userNotFound``) never
-spends, and one for an existing user right after a migration of the same email
-(``MIGRATION_SPEND_GRACE_SECONDS``) spends nothing more. Whatever order
-Cognito runs the two steps in, one attempt is spent once.
+spends. Each attempt a migration spends covers one pre-authentication of an
+existing user of the same email within ``MIGRATION_SPEND_GRACE_SECONDS``, once
+(the cover is removed conditionally when used), so a sign-in whose migration
+and pre-authentication both run, in either order, spends one attempt; every
+further pre-authentication spends its own.
 
 Failures are logged as one JSON line with a fixed step code, the exception
 class name and the AWS error code; never the event, email, password, token,
-fingerprint or key. A refused or deferred event of unexpected form adds
-``event_shape`` (:func:`_event_shape`): types, lengths, whether a value parses
-as an email and the attribute names, never a value. User messages are short,
-provisional Spanish texts.
+fingerprint or key. A refused or deferred event adds ``event_shape``
+(:func:`_event_shape`): fixed type names, the length of ``userName``, whether
+a value parses as an email, attribute names from a fixed list and a count of
+the others, never a value. User messages are short, provisional Spanish texts.
 """
 
 from __future__ import annotations
@@ -128,8 +130,33 @@ def _log(trigger: str, code: str, error_type: str | None, provider_code: str | N
     _LOG.warning(json.dumps(line, sort_keys=True))
 
 
-_SHAPE_MAX_KEYS = 20
-_SHAPE_MAX_KEY_CHARS = 40
+# Attribute names that event_shape may name: the standard attributes, the
+# Cognito-generated ones and the tenant attribute. Any other key is only
+# counted (an arbitrary key could carry an email or a token).
+_SHAPE_KNOWN_ATTRIBUTES = frozenset({
+    "address", "birthdate", "email", "email_verified", "family_name", "gender", "given_name", "locale",
+    "middle_name", "name", "nickname", "phone_number", "phone_number_verified", "picture",
+    "preferred_username", "profile", "sub", "updated_at", "website", "zoneinfo",
+    "cognito:user_status", "cognito:email_alias", "cognito:phone_number_alias", "cognito:mfa_enabled",
+    TENANT_ATTRIBUTE,
+})
+
+
+def _kind(value: object) -> str:
+    """One of a fixed set of type names; never the class name of the value."""
+    if value is None:
+        return "none"
+    if type(value) is bool:
+        return "bool"
+    if type(value) is int:
+        return "int"
+    if type(value) is str:
+        return "str"
+    if isinstance(value, Mapping):
+        return "dict"
+    if isinstance(value, list):
+        return "list"
+    return "other"
 
 
 def _looks_like_email(value: object) -> bool:
@@ -143,26 +170,26 @@ def _looks_like_email(value: object) -> bool:
 def _event_shape(event: Mapping[str, Any]) -> dict[str, Any]:
     """Structure of a sign-in event, never its values.
 
-    Types, lengths, whether ``userName`` and the ``email`` attribute parse as
-    an email, and the attribute names. No email, username, sub or token.
+    Fixed type names, the length of ``userName``, whether it and the ``email``
+    attribute parse as an email, the attribute names from a fixed list and the
+    number of other keys. No email, username, sub, tenant, token or key text.
     """
     request = event.get("request")
     request = request if isinstance(request, Mapping) else {}
     name = event.get("userName")
     attributes = request.get("userAttributes")
+    not_found = request.get("userNotFound")
     shape: dict[str, Any] = {
-        "user_name_type": type(name).__name__,
-        "user_name_length": len(name) if isinstance(name, str) else None,
+        "user_name_type": _kind(name),
+        "user_name_length": len(name) if type(name) is str else None,
         "user_name_is_email": _looks_like_email(name),
-        "user_attributes_type": type(attributes).__name__,
-        "user_not_found": (request.get("userNotFound") if type(request.get("userNotFound")) is bool
-                           else type(request.get("userNotFound")).__name__),
+        "user_attributes_type": _kind(attributes),
+        "user_not_found": not_found if type(not_found) is bool else _kind(not_found),
     }
     if isinstance(attributes, Mapping):
-        keys = sorted(k[:_SHAPE_MAX_KEY_CHARS] if isinstance(k, str) else "<non-string>"
-                      for k in attributes)
-        shape["user_attribute_keys"] = keys[:_SHAPE_MAX_KEYS]
-        shape["user_attribute_count"] = len(keys)
+        known = sorted(k for k in attributes if type(k) is str and k in _SHAPE_KNOWN_ATTRIBUTES)
+        shape["user_attribute_keys"] = known
+        shape["other_attribute_count"] = len(attributes) - len(known)
         shape["email_attribute_is_email"] = _looks_like_email(attributes.get("email"))
     return shape
 
@@ -307,8 +334,8 @@ def _recent_migration_spend(row: Mapping[str, Any] | None, now: int) -> bool:
 
 def _pass_valid(row: Mapping[str, Any] | None, now: int, *, grace: bool) -> bool:
     # _read already dropped a row past expires_at. With ``grace`` (pre-auth of
-    # an existing user) a pass whose last attempt the migration of this same
-    # sign-in just spent still counts; _spend_for_pre_auth then spends nothing.
+    # an existing user) a pass whose last attempt a migration just spent still
+    # counts; _spend_for_pre_auth then uses that cover once or refuses.
     if row is None:
         return False
     return (base._n(row, "attempts_left") or 0) > 0 or (grace and _recent_migration_spend(row, now))
@@ -366,8 +393,11 @@ def _spend_for_migration(env: str, email_fp: str, now: int, deadline: float) -> 
 def _spend_for_pre_auth(env: str, email_fp: str, now: int, deadline: float) -> None:
     """Spend one pass attempt for an existing user, unless a migration just did.
 
-    A migration of the same sign-in that ran less than
-    ``MIGRATION_SPEND_GRACE_SECONDS`` ago already spent this attempt.
+    A migration that spent an attempt less than
+    ``MIGRATION_SPEND_GRACE_SECONDS`` ago covers one pre-authentication, once:
+    the cover is used by removing ``migration_spent_at`` on the condition that
+    it still holds the value read, so of several pre-authentications only one
+    goes through without spending.
     """
     try:
         _call("pass_spend", deadline, base._dynamodb().update_item,
@@ -378,14 +408,26 @@ def _spend_for_pre_auth(env: str, email_fp: str, now: int, deadline: float) -> N
               ExpressionAttributeValues={":one": _num(1), ":zero": _num(0), ":now": _num(now),
                                          ":recent": _num(now - MIGRATION_SPEND_GRACE_SECONDS)},
               ReturnValuesOnConditionCheckFailure="ALL_OLD")
+        return
     except _Stop as exc:
         if exc.provider_code != "ConditionalCheckFailedException":
             raise
         old = getattr(exc, "old_item", None)
         expires = base._n(old, web.TTL_ATTRIBUTE) if isinstance(old, Mapping) else None
-        if _recent_migration_spend(old, now) and expires is not None and expires > now:
-            return
-        raise _Stop("pass_missing", MSG_START_FROM_WEB) from None
+        if not (_recent_migration_spend(old, now) and expires is not None and expires > now):
+            raise _Stop("pass_missing", MSG_START_FROM_WEB) from None
+        spent = base._n(old, "migration_spent_at")
+    # Same step code as the spend: both are the one pass write of this step.
+    try:
+        _call("pass_spend", deadline, base._dynamodb().update_item,
+              TableName=web.web_table_name(env), Key=web.pass_key(email_fp),
+              UpdateExpression="REMOVE migration_spent_at",
+              ConditionExpression="migration_spent_at = :spent AND expires_at > :now",
+              ExpressionAttributeValues={":spent": _num(spent), ":now": _num(now)})
+    except _Stop as exc:
+        if exc.provider_code == "ConditionalCheckFailedException":
+            raise _Stop("pass_missing", MSG_START_FROM_WEB) from None
+        raise
 
 
 # --- UserMigration_Authentication ------------------------------------------------
@@ -561,9 +603,9 @@ def _pre_authentication(event: dict[str, Any], context: Any, started: float,
         raise _Stop("request_invalid", shape=_event_shape(event))
     now = base._now()
     if not_found:
-        # AWS documents neither what userName holds for an absent user nor the
-        # order of this step and the migration; in a pool with email as
-        # username attribute it was not the typed email. So nothing here
+        # The AWS documentation says neither what userName holds for an absent
+        # user nor the order of this step and the migration; in DEV (email as
+        # username attribute) it was observed not to be an email. So nothing here
         # depends on the email: only the refusals that need none. The lock and
         # the pass are checked by the migration, which spends the attempt
         # conditionally before MAPIT; without a valid pass it refuses.

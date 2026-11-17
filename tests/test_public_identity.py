@@ -96,9 +96,13 @@ def _check_values(op: dict) -> None:
 
 def _update(item: dict, expression: str, values: dict) -> dict:
     item = copy.deepcopy(item)
-    parts = re.split(r"\b(SET|ADD)\b", expression)
+    parts = re.split(r"\b(SET|ADD|REMOVE)\b", expression)
     for keyword, body in zip(parts[1::2], parts[2::2]):
         for piece in [p.strip() for p in body.split(",") if p.strip()]:
+            if keyword == "REMOVE":
+                assert re.fullmatch(r"\w+", piece), piece
+                item.pop(piece, None)
+                continue
             if keyword == "ADD":
                 name, ref = piece.split()
                 item[name] = {"N": str(_value(item.get(name, {"N": "0"})) + _value(values[ref]))}
@@ -684,7 +688,7 @@ def test_absent_user_deferral_logs_only_the_event_shape(fakes, caplog):
     assert line["event_shape"] == {
         "user_name_type": "str", "user_name_length": len(ABSENT_NAME), "user_name_is_email": False,
         "user_attributes_type": "dict", "user_not_found": True, "user_attribute_keys": [],
-        "user_attribute_count": 0, "email_attribute_is_email": False}
+        "other_attribute_count": 0, "email_attribute_is_email": False}
     _no_values(caplog)
 
 
@@ -700,7 +704,7 @@ def test_existing_user_without_email_attribute_logs_its_shape(fakes, caplog):
         "user_name_type": "str", "user_name_length": len(EMAIL), "user_name_is_email": True,
         "user_attributes_type": "dict", "user_not_found": False,
         "user_attribute_keys": ["cognito:user_status", "custom:tenant_id", "sub"],
-        "user_attribute_count": 3, "email_attribute_is_email": False}
+        "other_attribute_count": 0, "email_attribute_is_email": False}
     _no_values(caplog)
     assert TENANT not in caplog.text
 
@@ -712,6 +716,7 @@ def test_malformed_pre_auth_request_logs_its_shape(fakes, caplog):
         _fails(event, public.MSG_GENERIC)
     [line] = _shapes(caplog)
     assert line["step"] == "request_invalid" and line["event_shape"]["user_not_found"] == "str"
+    assert '"true"' not in caplog.text
 
 
 def test_migration_with_a_non_email_username_logs_its_shape(fakes, caplog):
@@ -724,14 +729,82 @@ def test_migration_with_a_non_email_username_logs_its_shape(fakes, caplog):
     _no_values(caplog)
 
 
-def test_event_shape_bounds_the_attribute_names():
-    attributes = {f"custom:{'k' * 60}{i:02d}": "v" for i in range(30)}
-    attributes[7] = "v"  # type: ignore[index]
-    shape = public._event_shape({"userName": None, "request": {"userAttributes": attributes}})
-    assert shape["user_attribute_count"] == 31 and len(shape["user_attribute_keys"]) == 20
-    assert all(len(k) <= 40 for k in shape["user_attribute_keys"])
-    assert shape["user_name_type"] == "NoneType" and shape["user_name_length"] is None
-    assert shape["user_not_found"] == "NoneType"
+class _SecretType:
+    pass
+
+
+_SecretType.__name__ = "tok_sk_live_0123456789abcdef"  # a class name is not a fixed type name
+
+
+def test_event_shape_names_only_known_attributes_and_fixed_types(caplog):
+    attributes = {f"custom:{EMAIL}": "v", "tok_sk_live_0123456789abcdef": "v", 7: "v",
+                  "email": EMAIL, "sub": USER_SUB, "custom:tenant_id": TENANT}
+    shape = public._event_shape({"userName": _SecretType(), "request": {
+        "userAttributes": attributes, "userNotFound": 1}})
+    assert shape == {
+        "user_name_type": "other", "user_name_length": None, "user_name_is_email": False,
+        "user_attributes_type": "dict", "user_not_found": "int",
+        "user_attribute_keys": ["custom:tenant_id", "email", "sub"], "other_attribute_count": 3,
+        "email_attribute_is_email": True}
+    text = json.dumps(shape)
+    for value in (EMAIL, "rider", "tok_sk", USER_SUB, TENANT):
+        assert value not in text, value
+
+
+@pytest.mark.parametrize("value, kind", [
+    (None, "none"), (True, "bool"), (0, "int"), ("", "str"), ({}, "dict"), ([], "list"),
+    (1.5, "other"), (b"x", "other"), (("a",), "other"), (_SecretType(), "other"),
+])
+def test_event_shape_types_are_a_fixed_set(value, kind):
+    shape = public._event_shape({"userName": value, "request": {"userAttributes": value, "userNotFound": value}})
+    assert shape["user_name_type"] == shape["user_attributes_type"] == kind
+    assert shape["user_not_found"] == (value if type(value) is bool else kind)
+
+
+def test_raw_user_not_found_values_are_never_logged(fakes, caplog):
+    for raw in (1, 0, 123456789, "yes"):
+        event = _pre_auth(True)
+        event["request"]["userNotFound"] = raw
+        with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+            _fails(event, public.MSG_GENERIC)
+        assert _shapes(caplog)[-1]["event_shape"]["user_not_found"] == ("int" if type(raw) is int else "str")
+    assert "123456789" not in caplog.text and "yes" not in caplog.text
+
+
+def test_migration_spend_covers_one_pre_auth_only(fakes):
+    table, _, _ = fakes
+    table.put(f"pass#{FP}", attempts_left=1, issued_at=NOW - 60, expires_at=NOW + 240)
+    identity.handler(_migration(), Context())
+    assert table.n(f"pass#{FP}", "attempts_left") == 0
+    identity.handler(_pre_auth(False), Context())  # the same sign-in: covered once
+    for _ in range(20):
+        _fails(_pre_auth(False), public.MSG_START_FROM_WEB)
+    assert table.n(f"pass#{FP}", "attempts_left") == 0
+    assert "migration_spent_at" not in table.items[f"pass#{FP}"]
+
+
+def test_after_the_cover_each_pre_auth_spends_its_own_attempt(fakes):
+    table, _, _ = fakes
+    identity.handler(_migration(), Context())       # 3 -> 2
+    identity.handler(_pre_auth(False), Context())   # covered: 2
+    identity.handler(_pre_auth(False), Context())   # 2 -> 1
+    identity.handler(_pre_auth(False), Context())   # 1 -> 0
+    _fails(_pre_auth(False), public.MSG_START_FROM_WEB)
+    assert table.n(f"pass#{FP}", "attempts_left") == 0
+
+
+def test_cover_used_by_a_racing_pre_auth_is_not_used_twice(fakes):
+    table, _, _ = fakes
+    table.put(f"pass#{FP}", attempts_left=0, issued_at=NOW - 60, expires_at=NOW + 240,
+              migration_spent_at=NOW - 1)
+    # This spend sees the cover; the other pre-authentication removes it
+    # between this spend and this removal.
+    table.before_update = lambda t: setattr(
+        t, "before_update", lambda t2: t2.items[f"pass#{FP}"].pop("migration_spent_at"))
+    _fails(_pre_auth(False), public.MSG_START_FROM_WEB)
+    assert table.n(f"pass#{FP}", "attempts_left") == 0
+    assert [c[1]["UpdateExpression"] for c in table.writes()] == [
+        "SET attempts_left = attempts_left - :one", "REMOVE migration_spent_at"]
 
 
 @pytest.mark.parametrize("attempts", [3, 1])
