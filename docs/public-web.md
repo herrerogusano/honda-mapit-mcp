@@ -70,6 +70,14 @@ cookie), which is up to the web, not this template. References:
 [the branding editor and its image assets](https://docs.aws.amazon.com/cognito/latest/developerguide/managed-login-brandingeditor.html),
 [managed login localization](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-managed-login.html#managed-login-localization).
 
+Asset limits the template tests check: the documented ones (at most 40
+assets, `Bytes` of at most 1,000,000 base64 characters, the accepted
+extensions per category, a 2 MB request) and one that the documentation does
+not state but Cognito enforces: a logo (`SubType LOGO`) must have a
+width:height ratio between 1:1 and 4:1, measured on the SVG `width` and
+`height`. A first deployment was refused for a 278 x 56 logo and rolled back;
+the logo is now 278 x 80.
+
 ### Deployment
 
 Two separate runs of `scripts/deploy_public_web.py`, review first:
