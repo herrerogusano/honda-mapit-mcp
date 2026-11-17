@@ -206,8 +206,17 @@ this document before every stack creation:
    the pool because it signed in less than about 50 minutes ago). The same
    refusals. Cognito checks the password against its own hash, so no migration
    runs and the pass attempt is spent here, unless a migration of the same
-   email spent one in the last 10 seconds. For an absent user it only checks
-   the pass.
+   email spent one in the last 10 seconds. The email comes from the user's
+   `email` attribute, never from `userName`. For an absent user
+   (`userNotFound`, sent because the client has `PreventUserExistenceErrors`
+   on) it applies only the refusals that need no email (closed or paused,
+   daily ceiling, breaker), spends nothing and logs `absent_user_deferred`:
+   AWS documents neither what `userName` holds in that event nor the order of
+   this step and the migration, and in DEV it was not the typed email. The
+   lock and the pass of an absent user are checked by the migration, which
+   refuses before MAPIT without a valid pass. Refused or deferred events log
+   their shape only (types, lengths, whether a value parses as an email, the
+   attribute names), never a value.
 5. **Token issue** (`TokenGeneration_*`). Refresh is refused. Every other issue
    first reads the config and day rows again in one consistent
    `BatchGetItem`, because they may have changed after the password was

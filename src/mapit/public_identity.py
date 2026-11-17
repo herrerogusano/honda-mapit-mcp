@@ -14,8 +14,13 @@ nothing here runs. It serves four Cognito triggers and one HTTP route:
   followed by the admission (person row, seat, usage row).
   A full cap is checked only after MAPIT accepted the password, so the answer
   never tells whether an email signed in before.
-* ``PreAuthentication_Authentication``: the same refusals, before Cognito
-  checks the password of a user that still exists.
+* ``PreAuthentication_Authentication``: for a user that still exists, the
+  same refusals, before Cognito checks its password, with the email taken from
+  its ``email`` attribute. For an absent user (``userNotFound``) only the
+  refusals that need no email (closed or paused, daily ceiling, breaker): AWS
+  does not document what ``userName`` holds then, and in a pool with email as
+  username attribute it is not the typed email. The lock and the pass of an
+  absent user are checked by the migration.
 * ``TokenGeneration_*``: refresh is refused; every other issue first reads
   the config and day rows again (closed, paused or the daily ceiling refuse,
   since they may have changed after the password was checked), then counts one
@@ -31,14 +36,17 @@ A pass attempt is spent once per sign-in: in the migration before MAPIT is
 called, whatever MAPIT answers (the conditional decrement is what lets only
 one of several racing migrations through), or in the pre-authentication step
 when the user exists (Cognito checks the password itself and no migration
-runs). A pre-authentication call for an absent user (``userNotFound``) only
-checks the pass, and one for an existing user right after a migration of the
-same email (``MIGRATION_SPEND_GRACE_SECONDS``) spends nothing more. Whatever
-order Cognito runs the two steps in, one attempt is spent once.
+runs). A pre-authentication call for an absent user (``userNotFound``) never
+spends, and one for an existing user right after a migration of the same email
+(``MIGRATION_SPEND_GRACE_SECONDS``) spends nothing more. Whatever order
+Cognito runs the two steps in, one attempt is spent once.
 
 Failures are logged as one JSON line with a fixed step code, the exception
 class name and the AWS error code; never the event, email, password, token,
-fingerprint or key. User messages are short, provisional Spanish texts.
+fingerprint or key. A refused or deferred event of unexpected form adds
+``event_shape`` (:func:`_event_shape`): types, lengths, whether a value parses
+as an email and the attribute names, never a value. User messages are short,
+provisional Spanish texts.
 """
 
 from __future__ import annotations
@@ -88,6 +96,8 @@ STATUS_DEADLINE_SECONDS = 3.0
 # Both steps of one sign-in run within one Cognito request (each under 5 s).
 MIGRATION_SPEND_GRACE_SECONDS = 10
 
+TRIGGER_PRE_AUTH = "PreAuthentication_Authentication"
+
 _LOG = logging.getLogger("mapit.public_identity")
 _KEY_STORE = "web_fingerprint_key"
 _token_hex: Callable[[int], str] = secrets.token_hex
@@ -96,26 +106,72 @@ _token_hex: Callable[[int], str] = secrets.token_hex
 class _Stop(web.PublicWebError):
     """A refusal or failure of one step: fixed code plus the user message."""
 
-    def __init__(self, code: str, message: str = MSG_GENERIC, cause: BaseException | None = None) -> None:
+    def __init__(self, code: str, message: str = MSG_GENERIC, cause: BaseException | None = None,
+                 shape: Mapping[str, Any] | None = None) -> None:
         super().__init__(code, cause=cause)
         self.message = message
+        # Output of _event_shape (no values), logged with the step code.
+        self.shape = shape
         # ALL_OLD item of a ConditionalCheckFailedException (never logged).
         response = getattr(cause, "response", None)
         self.old_item = response.get("Item") if isinstance(response, Mapping) else None
 
 
-def _log(trigger: str, code: str, error_type: str | None, provider_code: str | None) -> None:
-    _LOG.warning(json.dumps({
+def _log(trigger: str, code: str, error_type: str | None, provider_code: str | None,
+         shape: Mapping[str, Any] | None = None) -> None:
+    line: dict[str, Any] = {
         "component": "web_identity", "trigger": trigger, "step": code,
         "error_type": error_type, "provider_code": provider_code,
-    }, sort_keys=True))
+    }
+    if shape is not None:
+        line["event_shape"] = dict(shape)
+    _LOG.warning(json.dumps(line, sort_keys=True))
+
+
+_SHAPE_MAX_KEYS = 20
+_SHAPE_MAX_KEY_CHARS = 40
+
+
+def _looks_like_email(value: object) -> bool:
+    try:
+        normalize_email(value)
+    except MultiuserError:
+        return False
+    return True
+
+
+def _event_shape(event: Mapping[str, Any]) -> dict[str, Any]:
+    """Structure of a sign-in event, never its values.
+
+    Types, lengths, whether ``userName`` and the ``email`` attribute parse as
+    an email, and the attribute names. No email, username, sub or token.
+    """
+    request = event.get("request")
+    request = request if isinstance(request, Mapping) else {}
+    name = event.get("userName")
+    attributes = request.get("userAttributes")
+    shape: dict[str, Any] = {
+        "user_name_type": type(name).__name__,
+        "user_name_length": len(name) if isinstance(name, str) else None,
+        "user_name_is_email": _looks_like_email(name),
+        "user_attributes_type": type(attributes).__name__,
+        "user_not_found": (request.get("userNotFound") if type(request.get("userNotFound")) is bool
+                           else type(request.get("userNotFound")).__name__),
+    }
+    if isinstance(attributes, Mapping):
+        keys = sorted(k[:_SHAPE_MAX_KEY_CHARS] if isinstance(k, str) else "<non-string>"
+                      for k in attributes)
+        shape["user_attribute_keys"] = keys[:_SHAPE_MAX_KEYS]
+        shape["user_attribute_count"] = len(keys)
+        shape["email_attribute_is_email"] = _looks_like_email(attributes.get("email"))
+    return shape
 
 
 def _run(trigger: str, step: Callable[..., Any], *args: Any) -> Any:
     try:
         return step(*args)
     except _Stop as exc:
-        _log(trigger, exc.code, exc.cause_type, exc.provider_code)
+        _log(trigger, exc.code, exc.cause_type, exc.provider_code, exc.shape)
         message = exc.message
     except web.PublicWebError as exc:
         _log(trigger, exc.code, exc.cause_type, exc.provider_code)
@@ -171,11 +227,12 @@ def _condition_failed(reasons: list[Any] | None, index: int) -> bool:
             and reasons[index].get("Code") == "ConditionalCheckFailed")
 
 
-def _email(value: object) -> str:
+def _email(value: object, event: Mapping[str, Any] | None = None) -> str:
     try:
         return normalize_email(value)
     except MultiuserError:
-        raise _Stop("email_invalid", MSG_START_FROM_WEB) from None
+        shape = _event_shape(event) if event is not None else None
+        raise _Stop("email_invalid", MSG_START_FROM_WEB, shape=shape) from None
 
 
 def _email_fp(env: str, email: str, deadline: float) -> str:
@@ -257,8 +314,13 @@ def _pass_valid(row: Mapping[str, Any] | None, now: int, *, grace: bool) -> bool
     return (base._n(row, "attempts_left") or 0) > 0 or (grace and _recent_migration_spend(row, now))
 
 
-def _gate(state: Mapping[str, Any], now: int, *, grace: bool = False) -> web.WebConfig:
-    """Refusals before MAPIT. A full cap is never checked here."""
+def _global_keys(now: int) -> dict[str, web.Key]:
+    """Rows of the refusals that do not depend on the email."""
+    return {"config": web.config_key(), "day": web.day_key(now), **_breaker_keys(web.breaker_window(now))}
+
+
+def _gate_global(state: Mapping[str, Any], now: int) -> web.WebConfig:
+    """Refusals that need no email: closed or paused, daily ceiling, breaker."""
     config = web.parse_web_config(state["config"])
     if not config.accepting(now):
         raise _Stop("closed", MSG_PAUSED)
@@ -267,6 +329,12 @@ def _gate(state: Mapping[str, Any], now: int, *, grace: bool = False) -> web.Web
         raise _Stop("daily_ceiling", MSG_PAUSED)
     if _breaker_open(state, now):
         raise _Stop("breaker_open", MSG_PAUSED)
+    return config
+
+
+def _gate(state: Mapping[str, Any], now: int, *, grace: bool = False) -> web.WebConfig:
+    """Refusals before MAPIT. A full cap is never checked here."""
+    config = _gate_global(state, now)
     attempts = state["attempts"]
     if attempts is not None and (base._n(attempts, "locked_until") or 0) > now:
         raise _Stop("locked", MSG_LOCKED)
@@ -425,8 +493,8 @@ def _user_migration(event: dict[str, Any], context: Any, started: float,
         raise _Stop("request_invalid")
     typed = event.get("userName")
     if type(typed) is not str or len(typed) > base.MAX_USERNAME_CHARS:
-        raise _Stop("email_invalid", MSG_START_FROM_WEB)
-    email = _email(typed)
+        raise _Stop("email_invalid", MSG_START_FROM_WEB, shape=_event_shape(event))
+    email = _email(typed, event)
     email_fp = _email_fp(env, email, deadline)
     now = base._now()
     window = web.breaker_window(now)
@@ -490,14 +558,26 @@ def _pre_authentication(event: dict[str, Any], context: Any, started: float,
     not_found = request.get("userNotFound", False)
     attributes = request.get("userAttributes") or {}
     if type(not_found) is not bool or not isinstance(attributes, Mapping):
-        raise _Stop("request_invalid")
-    # An existing user carries its email attribute; an absent one only the typed name.
-    email = _email(attributes.get("email") if "email" in attributes else event.get("userName"))
-    email_fp = _email_fp(env, email, deadline)
+        raise _Stop("request_invalid", shape=_event_shape(event))
     now = base._now()
+    if not_found:
+        # AWS documents neither what userName holds for an absent user nor the
+        # order of this step and the migration; in a pool with email as
+        # username attribute it was not the typed email. So nothing here
+        # depends on the email: only the refusals that need none. The lock and
+        # the pass are checked by the migration, which spends the attempt
+        # conditionally before MAPIT; without a valid pass it refuses.
+        _gate_global(_read(env, _global_keys(now), now, deadline), now)
+        _log(TRIGGER_PRE_AUTH, "absent_user_deferred", None, None, _event_shape(event))
+        event["response"] = {}
+        return event
+    # An existing user carries its email attribute (the migration wrote it).
+    # Its userName is the pool's username, not necessarily the email: unused.
+    email = _email(attributes.get("email"), event)
+    email_fp = _email_fp(env, email, deadline)
     state = _read(env, _login_keys(email_fp, now, person=False), now, deadline)
-    config = _gate(state, now, grace=not not_found)
-    if not not_found and config.pass_required:
+    config = _gate(state, now, grace=True)
+    if config.pass_required:
         # The user exists: Cognito checks the password and no migration runs,
         # so this attempt is spent here, unless the migration of this same
         # sign-in just spent it.

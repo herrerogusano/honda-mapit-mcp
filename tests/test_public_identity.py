@@ -280,13 +280,24 @@ def _migration(user: str = TYPED) -> dict:
     }
 
 
-def _pre_auth(not_found: bool | None) -> dict:
-    request: dict[str, Any] = {"userAttributes": {} if not_found else {"email": EMAIL, "sub": "s"},
+# Pre-authentication event as documented (common parameters plus
+# userAttributes, validationData, userNotFound). AWS does not document what
+# userName holds for an absent user; in DEV (email as username attribute,
+# PreventUserExistenceErrors ENABLED) it was not an email. Both values below
+# are opaque usernames, never the typed email.
+USER_SUB = "a1b2c3d4-0000-4000-8000-00000000abcd"
+ABSENT_NAME = "5f0c2b7e-1111-4222-8333-444455556666"
+
+
+def _pre_auth(not_found: bool | None, user_name: Any = None) -> dict:
+    request: dict[str, Any] = {"userAttributes": {} if not_found else {"email": EMAIL, "sub": USER_SUB},
                                "validationData": {}}
     if not_found is not None:
         request["userNotFound"] = not_found
+    if user_name is None:
+        user_name = ABSENT_NAME if not_found else USER_SUB
     return {"version": "1", "triggerSource": "PreAuthentication_Authentication", "region": "eu-west-1",
-            "userPoolId": "eu-west-1_Pool12345", "userName": TYPED,
+            "userPoolId": "eu-west-1_Pool12345", "userName": user_name,
             "callerContext": {"awsSdkVersion": "x", "clientId": "webclient1"},
             "request": request, "response": {}}
 
@@ -593,12 +604,134 @@ def test_pre_auth_refusals(fakes, setup, message):
     assert table.writes() == []
 
 
-def test_pre_auth_absent_user_checks_but_never_spends(fakes):
-    table, _, _ = fakes
+def _read_pks(table: FakeTable) -> list[str]:
+    return [key[web.PARTITION_KEY]["S"] for kind, call in table.calls if kind == "batch_get_item"
+            for request in call["RequestItems"].values() for key in request["Keys"]]
+
+
+@pytest.mark.parametrize("user_name", [ABSENT_NAME, "", 42, EMAIL, "x" * 300],
+                         ids=["opaque", "empty", "not_a_string", "email", "too_long"])
+def test_pre_auth_absent_user_never_needs_the_email(fakes, user_name):
+    table, ssm, mapit = fakes
+    event = _pre_auth(True, user_name)
+    assert identity.handler(copy.deepcopy(event), Context())["response"] == {}
+    assert table.writes() == [] and mapit.calls == []
+    # Only the rows that need no email: no pass, attempts or person row.
+    assert not [pk for pk in _read_pks(table) if "#" in pk and not pk.startswith(("day#", "breaker#"))]
+
+
+def test_absent_user_sign_in_spends_the_pass_once_in_the_migration(fakes):
+    table, _, mapit = fakes
     identity.handler(_pre_auth(True), Context())
+    assert table.n(f"pass#{FP}", "attempts_left") == 3
+    identity.handler(_migration(), Context())
+    assert table.n(f"pass#{FP}", "attempts_left") == 2 and len(mapit.calls) == 1
+
+
+@pytest.mark.parametrize("setup", [
+    lambda t: t.items.pop(f"pass#{FP}"),
+    lambda t: t.put(f"pass#{FP}", attempts_left=0, issued_at=NOW - 60, expires_at=NOW + 240),
+    lambda t: t.put(f"pass#{FP}", attempts_left=3, issued_at=NOW - 400, expires_at=NOW - 100),
+], ids=["no_pass", "used_up", "expired"])
+def test_absent_user_without_a_valid_pass_is_refused_before_mapit(fakes, setup):
+    table, ssm, mapit = fakes
+    setup(table)
+    identity.handler(_pre_auth(True), Context())  # nothing here depends on the email
+    _fails(_migration(), public.MSG_START_FROM_WEB)
+    assert mapit.calls == [] and ssm.puts == [] and f"person#{FP}" not in table.items
+
+
+def test_absent_user_with_a_locked_email_is_refused_before_mapit(fakes):
+    table, _, mapit = fakes
+    table.put(f"attempts#{FP}", failed_logins=0, locked_until=NOW + 1, expires_at=NOW + 900)
+    identity.handler(_pre_auth(True), Context())
+    _fails(_migration(), public.MSG_LOCKED)
+    assert mapit.calls == [] and table.n(f"pass#{FP}", "attempts_left") == 3
+
+
+def test_pre_auth_absent_user_refused_while_the_breaker_is_open(fakes):
+    table, _, _ = fakes
+    table.put(f"breaker#{WINDOW}", rejections=0, open_until=NOW + 60, expires_at=NOW + 3600)
+    _fails(_pre_auth(True), public.MSG_PAUSED)
     assert table.writes() == []
-    table.items.pop(f"pass#{FP}")
-    _fails(_pre_auth(True), public.MSG_START_FROM_WEB)
+
+
+def test_pre_auth_existing_user_takes_the_email_from_its_attribute_only(fakes):
+    table, _, _ = fakes
+    identity.handler(_pre_auth(False, user_name=USER_SUB), Context())
+    assert table.n(f"pass#{FP}", "attempts_left") == 2
+    event = _pre_auth(False, user_name=EMAIL)
+    del event["request"]["userAttributes"]["email"]
+    _fails(event, public.MSG_START_FROM_WEB)  # userName is never read as the email
+    assert table.n(f"pass#{FP}", "attempts_left") == 2
+
+
+def _shapes(caplog: pytest.LogCaptureFixture) -> list[dict]:
+    return [json.loads(r.getMessage()) for r in caplog.records]
+
+
+def _no_values(caplog: pytest.LogCaptureFixture) -> None:
+    text = "\n".join(r.getMessage() for r in caplog.records).lower()
+    for value in (EMAIL, "rider", USER_SUB, ABSENT_NAME, PASSWORD.lower(), REFRESH.lower(), FP, "example.com"):
+        assert value.lower() not in text, value
+
+
+def test_absent_user_deferral_logs_only_the_event_shape(fakes, caplog):
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        identity.handler(_pre_auth(True), Context())
+    [line] = _shapes(caplog)
+    assert line["step"] == "absent_user_deferred" and line["trigger"] == "PreAuthentication_Authentication"
+    assert line["event_shape"] == {
+        "user_name_type": "str", "user_name_length": len(ABSENT_NAME), "user_name_is_email": False,
+        "user_attributes_type": "dict", "user_not_found": True, "user_attribute_keys": [],
+        "user_attribute_count": 0, "email_attribute_is_email": False}
+    _no_values(caplog)
+
+
+def test_existing_user_without_email_attribute_logs_its_shape(fakes, caplog):
+    event = _pre_auth(False, user_name=EMAIL)
+    event["request"]["userAttributes"] = {"sub": USER_SUB, "cognito:user_status": "CONFIRMED",
+                                          "custom:tenant_id": TENANT}
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        _fails(event, public.MSG_START_FROM_WEB)
+    [line] = _shapes(caplog)
+    assert line["step"] == "email_invalid"
+    assert line["event_shape"] == {
+        "user_name_type": "str", "user_name_length": len(EMAIL), "user_name_is_email": True,
+        "user_attributes_type": "dict", "user_not_found": False,
+        "user_attribute_keys": ["cognito:user_status", "custom:tenant_id", "sub"],
+        "user_attribute_count": 3, "email_attribute_is_email": False}
+    _no_values(caplog)
+    assert TENANT not in caplog.text
+
+
+def test_malformed_pre_auth_request_logs_its_shape(fakes, caplog):
+    event = _pre_auth(True)
+    event["request"]["userNotFound"] = "true"
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        _fails(event, public.MSG_GENERIC)
+    [line] = _shapes(caplog)
+    assert line["step"] == "request_invalid" and line["event_shape"]["user_not_found"] == "str"
+
+
+def test_migration_with_a_non_email_username_logs_its_shape(fakes, caplog):
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        _fails(_migration(ABSENT_NAME), public.MSG_START_FROM_WEB)
+    [line] = _shapes(caplog)
+    assert line["step"] == "email_invalid"
+    assert line["event_shape"]["user_name_is_email"] is False
+    assert line["event_shape"]["user_name_length"] == len(ABSENT_NAME)
+    _no_values(caplog)
+
+
+def test_event_shape_bounds_the_attribute_names():
+    attributes = {f"custom:{'k' * 60}{i:02d}": "v" for i in range(30)}
+    attributes[7] = "v"  # type: ignore[index]
+    shape = public._event_shape({"userName": None, "request": {"userAttributes": attributes}})
+    assert shape["user_attribute_count"] == 31 and len(shape["user_attribute_keys"]) == 20
+    assert all(len(k) <= 40 for k in shape["user_attribute_keys"])
+    assert shape["user_name_type"] == "NoneType" and shape["user_name_length"] is None
+    assert shape["user_not_found"] == "NoneType"
 
 
 @pytest.mark.parametrize("attempts", [3, 1])
@@ -636,8 +769,9 @@ def test_pre_auth_spends_again_once_the_migration_grace_is_over(fakes, monkeypat
 def test_grace_is_only_for_an_existing_user(fakes):
     table, _, _ = fakes
     table.put(f"pass#{FP}", attempts_left=0, expires_at=NOW + 240, migration_spent_at=NOW - 1)
-    _fails(_pre_auth(True), public.MSG_START_FROM_WEB)  # absent user: the next migration could not spend
-    identity.handler(_pre_auth(False), Context())        # existing user: same sign-in, no second spend
+    identity.handler(_pre_auth(True), Context())    # absent user: the email checks wait for the migration
+    _fails(_migration(), public.MSG_START_FROM_WEB)  # which cannot spend: refused before MAPIT
+    identity.handler(_pre_auth(False), Context())    # existing user: same sign-in, no second spend
     assert table.n(f"pass#{FP}", "attempts_left") == 0
 
 
