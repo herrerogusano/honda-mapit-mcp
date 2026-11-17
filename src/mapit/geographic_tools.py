@@ -20,6 +20,7 @@ from .geography_engine import (
     load_frozen_menorca_area,
 )
 from .geography import GeographyError, summer_window_utc
+from .client import metered_tool_call
 from .services import GeographicRouteSummary, ServiceError, _validated_period
 
 AREA_SOURCE = "ign_menorca_municipalities_union_2026_10_03"
@@ -138,9 +139,10 @@ def _validate_summer(year: int | None) -> None:
         raise ServiceError("unsupported_summer_year", "the selected summer window is unsupported") from None
 
 
-def _safe_tool_call(operation):
+def _safe_tool_call(tool, operation):
     try:
-        return operation()
+        with metered_tool_call(tool):
+            return operation()
     except ServiceError as exc:
         raise ToolError(f"{exc.code}: {exc.public_message}") from None
     except GeographyEngineError:
@@ -175,7 +177,7 @@ def register_geographic_tools(server, provider) -> None:
                 area_source,
             )
 
-        return _safe_tool_call(run)
+        return _safe_tool_call("geographic_summary", run)
 
     @server.tool(annotations=_READ_ONLY_IDEMPOTENT)
     def summer_geographic_summary(
@@ -196,4 +198,4 @@ def register_geographic_tools(server, provider) -> None:
                 area_source=area_source,
             )
 
-        return _safe_tool_call(run)
+        return _safe_tool_call("summer_geographic_summary", run)

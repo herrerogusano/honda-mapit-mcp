@@ -1,0 +1,568 @@
+# Public web mode (technical contract)
+
+The public web mode lets anyone with a MAPIT account sign in to the static web
+client without an invitation, with a cap on distinct people and with every
+session gone in less than one hour. It runs from the same code as the
+invitation-only multiuser stack (`docs/multiuser-production.md`) and is enabled
+only by the environment variable `MAPIT_WEB_MODE=public`, which that stack never
+sets. With the variable absent, nothing in this document runs; any value other
+than `public` is a configuration error (`web_mode_invalid`).
+
+Claude and Codex are not clients of this stack: its user pool is separate, so a
+token from it is never accepted by the invitation-only API, and vice versa.
+
+Source of truth for every value below: `src/mapit/public_web.py` (names, limits,
+rows), `src/mapit/public_identity.py` (sign-in), `src/mapit/public_pass.py`
+(pre-login pass), `src/mapit/public_web_service.py` (`/mcp` gate),
+`src/mapit/public_sweep.py` (sweep) and `scripts/mcp_users_web.py` (operation
+commands). If this document and the code disagree, the code wins and this
+document has a bug.
+
+## Resources and names
+
+One CloudFormation stack per environment (`env` in `dev|prod`, region
+eu-west-1). The template is built by `scripts/build_public_web_stack.py` and
+deployed by `scripts/deploy_public_web.py`, where each resource is described;
+this section lists the names the code depends on and what the operator needs
+to know.
+
+| Resource | Name |
+|---|---|
+| Stack | `honda-mapit-mcp-{env}-web` |
+| User pool | `honda-mapit-mcp-{env}-web-users` (`public_sweep.web_user_pool_name`) |
+| Table | `honda-mapit-mcp-{env}-web-state`, partition key `pk` (S), no sort key, TTL attribute `expires_at` |
+| Functions | `honda-mapit-mcp-{env}-web-identity`, `-web-mcp`, `-web-pass`, `-web-sweep` |
+| MAPIT session parameters | `/honda-mapit-mcp/{env}/web/sessions/<tenant id>/mapit-refresh-token` (SecureString) |
+| Fingerprint key | `/honda-mapit-mcp/{env}/web/fingerprint-key` (SecureString, 32 random bytes, base64) |
+| Turnstile secret | `/honda-mapit-mcp/{env}/web/turnstile-secret` (SecureString) |
+| Sweep metrics | namespace `honda-mapit-mcp/web`, dimension `Environment` |
+| Log metrics | namespace `honda-mapit-mcp/web-logs/{env}` (metric filters on fixed log codes) |
+| Alarm topic | `honda-mapit-mcp-{env}-web-alarms` (SNS, one email subscription that must be confirmed from that inbox) |
+| Log groups | `/aws/lambda/<function>`, 14 days |
+
+HTTP routes of the web API: `POST /pase` (pass function), `GET /estado`
+(identity function, no authentication), `POST /mcp` (service, JWT) and the
+protected-resource metadata route of the service. Throttling: 10 requests per
+second with a burst of 20 for the stage, and 2 per second with a burst of 5
+for each of `GET /estado` and `POST /pase`. CORS allows only the web origin
+(`http://localhost:5173` in DEV, the origin of the exact callback URL in prod).
+
+Reserved concurrency: one optional parameter per function
+(`IdentityReservedConcurrency`, `McpReservedConcurrency`,
+`PassReservedConcurrency`, `SweepReservedConcurrency`), empty by default,
+which reserves nothing. The deploy script fills them only from the optional
+`reserved_concurrency` object of its private config.
+
+### Login page style
+
+The web client's managed login style (`WebManagedLoginBranding`) carries the
+Ride Log look, dark only: the web's colour tokens as hex, 2 px corners, the
+Ride Log wordmark as form logo, a dark background with the web's slanted red
+band, and the web's favicon (`scripts/public_web_branding.py`; the images are
+SVG drawn for this project, embedded in the template, nothing fetched at run
+time). The invitation-only stack keeps the Cognito default style.
+
+What Cognito does not let a style change: the font (no font setting) and the
+page text. The text is Cognito's own; it is shown in Spanish only when the
+authorize request carries `lang=es` (Cognito then keeps the choice in a `lang`
+cookie), which is up to the web, not this template. References:
+[`AWS::Cognito::ManagedLoginBranding`](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-managedloginbranding.html),
+[the branding editor and its image assets](https://docs.aws.amazon.com/cognito/latest/developerguide/managed-login-brandingeditor.html),
+[managed login localization](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-managed-login.html#managed-login-localization).
+
+Asset limits the template tests check: the documented ones (at most 40
+assets, `Bytes` of at most 1,000,000 base64 characters, the accepted
+extensions per category, a 2 MB request) and one that the documentation does
+not state but Cognito enforces: a logo (`SubType LOGO`) must have a
+width:height ratio between 1:1 and 4:1, measured on the SVG `width` and
+`height`. A first deployment was refused for a 278 x 56 logo and rolled back;
+the logo is now 278 x 80.
+
+Settings keys: Cognito ignores keys outside its schema without an error. The
+key paths of a real merged style read back with
+`DescribeManagedLoginBrandingByClient` (`ReturnMergedResources`) are kept,
+without values or identifiers, in
+`tests/fixtures/managed_login_settings_paths.json`, and a test refuses any
+key we send that is not among them. That read-back held every key and value
+we send. The schema has no setting for the space between elements other than
+the page-wide `categories.global.spacingDensity`, no input text colour and no
+separate hover or focus colour for an input besides
+`componentClasses.focusState`.
+
+### Deployment
+
+Two separate runs of `scripts/deploy_public_web.py`, review first:
+
+1. **Review.** `python -m scripts.deploy_public_web --env {env}
+   --private-config PATH --wheel-dir DIR` (or `HONDA_MAPIT_WHEEL_DIR`)
+   verifies the caller, reads the bucket of the existing multiuser artifacts
+   stack (never creates or changes it), says whether the fingerprint key and
+   the Turnstile secret exist (metadata only), builds the ZIP, uploads it if
+   absent and creates a change set named `deploy-YYYYMMDDHHMMSS`, printing its
+   changes. A stack that does not exist yet is left in `REVIEW_IN_PROGRESS`.
+   It writes nothing to SSM and executes nothing. It warns when the change set
+   removes or replaces the user pool, its login domain, the web client or the
+   table, and prints the exact command of the next step.
+2. **Execute.** `python -m scripts.deploy_public_web --env {env} --execute
+   --change-set deploy-YYYYMMDDHHMMSS` (only `--env`, `--change-set` and
+   optionally `--allow-replacement`; no config or wheels) executes exactly
+   that reviewed change set, by name. It refuses one that removes or replaces
+   the pool, the login domain, the web client or the table unless
+   `--allow-replacement` is given (that loses the users, the login address or
+   the counts). Before executing it creates the fingerprint key if absent
+   (`PutParameter` SecureString, `Overwrite=False`, value never printed): the
+   pass function can only read the key and refuses every pass without it.
+   Account ids in the printed outputs are masked.
+
+The Turnstile secret is stored separately and once with `python -m
+scripts.deploy_public_web --env {env} --store-turnstile-secret`, which asks
+for it without echoing it; the template never creates it.
+
+After the stack is first created the web is **closed**: the table has no
+configuration row, and an absent row means closed (see "Table rows"). To open
+it, store the Turnstile secret if it is absent, then create the row:
+
+1. `python -m scripts.mcp_users --env {env} web-config --open true` (shows the
+   row that would be created; writes nothing);
+2. the same with `--yes`: one `UpdateItem` conditional on the row still not
+   existing, which writes `open`, `pause_until`, `cap` and `pass_required`
+   (the given values; for the rest no pause, cap 100, pass required);
+3. `python -m scripts.mcp_users --env {env} web-status`: `/estado would
+   answer: abierto`.
+
+### Alarms
+
+Three CloudWatch alarms per stack, all notifying the alarm topic on alarm and
+on recovery. Each one is a standard-resolution alarm on one metric listed
+directly (no metric math), and each stack produces three custom metrics, so
+the DEV and prod stacks together stay within the CloudWatch free tier of
+alarm metrics and custom metrics (CloudWatch pricing counts a metric alarm
+once per metric it lists, and every metric-filter or EMF metric name and
+dimension combination as one custom metric).
+
+| Alarm (`honda-mapit-mcp-{env}-web-...`) | Metric | Fires when |
+|---|---|---|
+| `faults` | `WebFaults` (log filters, namespace `honda-mapit-mcp/web-logs/{env}`) | at least one of the events below in a 5-minute period |
+| `oldest-item-age` | `OldestItemAgeSeconds` (sweep EMF, namespace `honda-mapit-mcp/web`, dimension `Environment`) | the maximum is above 3600 in 10 minutes, or the sweep reported nothing (missing data counts as breaching: a sweep that does not run, crashes or times out every run) |
+| `daily-ceiling` | `McpDailyCeilingReached` (log filter) | the service logged `public_daily_ceiling_reached`: the call that brought the day's `mcp_calls` to the daily ceiling (calls and new sign-ins are paused until 00:00 UTC) |
+
+Events that feed `WebFaults`, one filter per log group and log format (JSON
+and text terms cannot share a pattern):
+
+| Log group | Filter | Events |
+|---|---|---|
+| identity (text) | `IdentityFaultsFilter` | a fault code (not an expected refusal), `fingerprint_key_created`, `breaker_open`, "Task timed out" |
+| pass (JSON) | `PassFaultsFilter` | a Turnstile or Turnstile-secret failure (`turnstile_secret_missing` included), `fingerprint_key_missing`, `pass_internal_error` |
+| sweep (JSON) | `SweepFaultsFilter` | a run with `SweepFailed` 1, or with `InvalidDates` above 0 |
+| mcp, pass, sweep (text) | `McpTimeoutFilter`, `PassTimeoutFilter`, `SweepTimeoutFilter` | "Task timed out" |
+
+What this set does not give:
+
+- **The email says only "fault".** Which function and which code are in the
+  logs: look for the codes above in the four log groups of the alarm period.
+- **One fault can hide the next.** An alarm emails on a change of state; while
+  `faults` stays in alarm (faults in consecutive 5-minute periods), a
+  different fault in the same periods sends no new email.
+- **Unreadable dates alarm on the first run** that sees them, not after three
+  consecutive periods.
+- **No Lambda `Errors` alarm.** The mcp, pass and sweep handlers catch every
+  exception themselves (mcp answers 503, the pass logs `pass_internal_error`,
+  the sweep logs a failed run), so `Errors` counts only crashes of the
+  runtime itself (a module that does not import, memory exhausted). Those are
+  not alarmed in mcp and pass; in the sweep they show as missing data in
+  `oldest-item-age`.
+- The sweep's other counts (`SweepFailed`, `SweepIncomplete`, `InvalidDates`,
+  deletions, recount) are fields of its log line, not metrics: read them with
+  Logs Insights.
+
+### Hard to undo
+
+Changing any of these needs a new stack or resets data; check them against
+this document before every stack creation:
+
+- **User pool name and login domain**: a pool cannot be renamed. The sweep
+  deletes users only in a pool with exactly the name above.
+- **Table key**: `pk` as the only key, and every row key format below. A new
+  key schema means a new table and loses every count.
+- **Fingerprint format** (`public_web.py` docstring): HMAC-SHA256 over
+  `honda-mapit-mcp/web/fingerprint/v1/` + domain + `\x00` + value, with the
+  email normalized and IPv6 reduced to its /64. Changing it, or losing or
+  recreating the key, resets every person and attempt row: everybody becomes
+  "new" and seats are recounted. The deploy script creates the key; if it is
+  missing at a sign-in, the identity function creates one and logs
+  `fingerprint_key_created`, which fires the `faults` alarm.
+- **Retained resources in prod**: the pool and the table have deletion
+  protection and are retained if the stack is deleted, so a new stack with
+  the same names cannot be created until they are removed by hand.
+
+## Sign-in flow
+
+1. **Pass.** The web shows a consent screen with an email field and a
+   Cloudflare Turnstile check, then sends `POST /pase` with
+   `{"email": ..., "turnstile": ...}`. The pass function:
+   1. validates its environment and the exact JSON body;
+   2. reads the source IP from the API event;
+   3. reads the configuration row and the day row: closed (also an absent
+      configuration row) or paused (also the daily call ceiling, or a day
+      counter it cannot read) answers like `/estado`, without calling
+      Cloudflare;
+   4. calls Turnstile `siteverify` (2 s timeout) and checks `success`, the
+      hostname (from `MAPIT_WEB_TURNSTILE_HOSTNAMES`) and the action
+      `web-pass`; no answer or an odd answer means no pass;
+   5. marks the result as used (conditional put on `result#<fp>`): a result
+      gives at most one pass, even before Cloudflare detects the repeat;
+   6. counts the pass for the IP (`ip#<fp>#<window>`, at most 5 per
+      10-minute window);
+   7. writes `pass#<email fp>` with 3 attempts and a 5-minute expiry. A new
+      pass replaces the old one and resets its attempts.
+
+   The answer is the same for every email: it never tells whether an email has
+   used the web.
+2. **Cognito login page.** The web redirects to the pool's managed login with
+   the email prefilled (`login_hint`). The user types the MAPIT password there.
+3. **Migration** (`UserMigration_Authentication`, user not in the pool). One
+   consistent `BatchGetItem` of config, the day row, person, attempts, pass
+   and the three breaker rows. Refusals that never call MAPIT, in this order:
+   closed (also an absent configuration row) or paused, the daily call ceiling
+   (answered as a pause; a day counter that cannot be read fails with the
+   generic message), breaker open, email locked, no valid pass. Then one pass attempt is
+   spent with a conditional decrement (of several racing migrations only one
+   reaches MAPIT), one MAPIT login, and:
+   - MAPIT rejects: one transaction adds to the attempts row (lock at the
+     fifth failure), the breaker row and the day's `mapit_rejections`;
+   - MAPIT accepts and the person is new while the cap is full: "no seats"
+     (counted in `cap_rejections`); nothing is created. The cap is checked only
+     after the password is proven, so the answer never reveals whether an
+     email signed in before;
+   - MAPIT accepts and the person reached 10 sign-ins today: daily limit;
+   - otherwise: the MAPIT session is stored under a random tenant id, then one
+     transaction writes the person row, the usage row and, for a new person,
+     the seat (conditional on the cap) and the day's `new_people`.
+4. **Pre-authentication** (`PreAuthentication_Authentication`, user still in
+   the pool because it signed in less than about 50 minutes ago). The same
+   refusals. Cognito checks the password against its own hash, so no migration
+   runs and the pass attempt is spent here. An attempt that a migration of the
+   same email spent in the last 10 seconds covers one pre-authentication, once:
+   using it removes `migration_spent_at` with a conditional write, and every
+   later pre-authentication spends its own attempt. One that read the cover
+   but lost that write to another spends an attempt with the plain
+   conditional decrement, or is refused when none is left. The email comes from the
+   user's `email` attribute, never from `userName`. For an absent user
+   (`userNotFound`, sent because the client has `PreventUserExistenceErrors`
+   on) it applies only the refusals that need no email (closed or paused,
+   daily ceiling, breaker), spends nothing and logs `absent_user_deferred`.
+   The AWS documentation says neither what `userName` holds in that event nor
+   the order of this step and the migration; in DEV (email as username
+   attribute) it was observed not to be a valid email. The lock and the pass
+   of an absent user are checked by the migration, which refuses before MAPIT
+   without a valid pass. Refused or deferred events log their shape only:
+   fixed type names, the length of `userName`, whether a value parses as an
+   email, attribute names from a fixed list and a count of the others; never a
+   value.
+5. **Token issue** (`TokenGeneration_*`). Refresh is refused. Every other issue
+   first reads the config and day rows again in one consistent
+   `BatchGetItem`, because they may have changed after the password was
+   checked (for example another session reached the daily ceiling): closed,
+   paused or the ceiling refuse with the pause text, an unreadable counter
+   with the generic one. Then it counts one sign-in on the person row (at most 10 per UTC day) and on the
+   day and month rows (`logins`). Then, once per person and UTC month, one
+   transaction creates `month_person#YYYY-MM#<email fp>` only if it does not
+   exist and adds 1 to the month's `people`: both or neither, so `people` is
+   the exact number of distinct people who signed in that month, without
+   storing any email. If that transaction fails it is logged
+   (`month_people_failed`) and the sign-in goes on; since nothing was written,
+   the person's next sign-in that month counts them. Then the tenant claim is
+   added.
+6. **Calls.** Each `/mcp` tool call passes the session gate (below) before any
+   MAPIT read. Only six tools exist: `get_vehicle_status`,
+   `get_vehicle_details`, `list_routes`, `get_route_detail`, `cerrar_sesion`
+   and `borrar_mis_datos`.
+
+"Forgot password" never calls MAPIT and answers with a fixed text.
+
+## Table rows
+
+| Row (`pk`) | Holds | Lives |
+|---|---|---|
+| `config` | `open`, `pause_until`, `cap`, `occupied`, `pass_required` | No expiry |
+| `person#<email fp>` | first and last sign-in, sign-in count and day count, consent version and date | 365 days after the last sign-in |
+| `attempts#<email fp>` | failed MAPIT logins, `locked_until`; also for emails that never signed in | 24 hours |
+| `pass#<email fp>` | `attempts_left`, `issued_at`, `migration_spent_at` | 5 minutes |
+| `result#<result fp>` | marks a Turnstile result as used | 10 minutes |
+| `ip#<ip fp>#<window>` | passes issued to one IP in one 10-minute window | until one window after its window ends |
+| `breaker#<window>` | MAPIT rejections in one 10-minute window, `open_until` | 15 minutes plus one window after its window ends |
+| `usage#<tenant id>` | `person_fp`, `login_at`, `calls`, per-minute counter `m<epoch minute>` | 2 hours |
+| `day#YYYY-MM-DD` (UTC) | `logins`, `new_people`, `mapit_rejections`, `cap_rejections`, `mcp_calls` (admitted `/mcp` calls) | No expiry; counts only |
+| `month#YYYY-MM` (UTC) | `logins`, `people` (distinct people who signed in) | No expiry; counts only |
+| `month_person#YYYY-MM#<email fp>` (UTC) | nothing but `expires_at`: this person is already counted in that month's `people` | until the start of the next UTC month |
+
+DynamoDB TTL deletes expired rows late (typically within days), so every reader
+treats `expires_at <= now` as absent. Outside the table: the Cognito user (less
+than one hour), the MAPIT session parameter (less than one hour) and function
+logs (14 days; the code never logs emails, passwords, tokens, IPs or
+fingerprints).
+
+The configuration row accepts only the attributes listed above; an unknown
+attribute, a wrong type or a wrong key closes the service (`malformed`). An
+absent row is closed (`source` `missing`, `open = false`): no sign-ins and no
+passes, `/estado` answers `cerrado`, sessions already open continue. That is
+the state of a new stack until an operator writes the row with `web-config`
+(see "Deployment"). In a present row, an absent attribute takes its default:
+closed (the web is open only when `open = true` was written), no pause, cap
+100, pass required. A failed read also closes
+(`read_failed`). The seat claim never creates the row: it is conditional on
+the row existing. `occupied` is written only by the seat claim,
+by `borrar_mis_datos` (which frees the seat) and by the sweep's daily recount
+(03:00-03:05 UTC, set to the number of unexpired person rows, only if
+`occupied` did not change during the count).
+
+## Less than one hour
+
+Five independent mechanisms:
+
+1. **Sign-out deletes at once.** `cerrar_sesion` deletes the MAPIT session
+   parameter, the Cognito user and the usage row. `borrar_mis_datos` also
+   deletes the person row and frees its seat, and the `month_person` markers
+   of this and the previous UTC month; the month counts are not decreased.
+2. **Sweep every 5 minutes, by age.** It deletes session parameters whose
+   `LastModifiedDate` and pool users whose `UserCreateDate` is 50 minutes or
+   older, without reading values or knowing whose they are. It first checks
+   with `DescribeUserPool` that the configured pool id is the pool with the
+   expected name; otherwise it deletes nothing. Worst case: 55 minutes plus the
+   run time.
+3. **The service refuses old sessions.** Each call compares the token's
+   `auth_time` and the usage row's `login_at` with 55 minutes; an older,
+   missing or expired session is deleted on the spot and the call answers
+   `session_expired`. This works even if the sweep fails.
+4. **No refresh.** The identity function refuses refresh token issues, so an
+   access token (60 minutes) cannot be extended.
+5. **Alarm.** Each sweep run writes one EMF log line with the metric
+   `OldestItemAgeSeconds` and the fields `SweepFailed`, `SweepIncomplete` and
+   `InvalidDates`. The `oldest-item-age` alarm fires above 3600 seconds or
+   when the sweep reports nothing, and `faults` on a failed run or unreadable
+   dates (see "Alarms"). `web-status`
+   flags 3600 seconds or more, one second earlier than the alarm.
+
+A second sign-in within the same hour is cut early: the user created by the
+first one keeps its creation date.
+
+## Limits
+
+| Limit | Value | Where |
+|---|---|---|
+| Distinct people (cap) | 100 by default; `cap = 0` means no cap | config row; checked atomically with the seat claim |
+| Failed MAPIT logins per email | 5, then locked 15 minutes | attempts row |
+| Circuit breaker | 20 MAPIT rejections in one 10-minute window close all sign-ins for 15 minutes | breaker rows |
+| Calls per session | 80 | usage row |
+| Calls per session and minute | 30 | usage row, `m<epoch minute>` |
+| Sign-ins per person and UTC day | 10 | person row |
+| Passes per IP | 5 per 10-minute window | `ip#` rows |
+| Attempts per pass | 3, valid 5 minutes | pass row |
+| Session age | 55 minutes in the service, 50 minutes in the sweep | |
+| `/mcp` calls per UTC day, all sessions | 3000 (`DAILY_CALL_LIMIT`); reaching it pauses every call and new sign-in until 00:00 UTC | day row, `mcp_calls` |
+
+## `/estado` vocabulary
+
+`GET /estado` answers `{"estado": ...}` with `cache-control: no-store` and no
+personal data. The same words are used by the pass endpoint and by
+`web-status`.
+
+| Value | Meaning |
+|---|---|
+| `abierto` | open, not paused, breaker closed, room left (or no cap) |
+| `lleno` | open but the cap is reached; people who signed in before can still enter |
+| `cerrado` | `open = false`, no `open` attribute or no configuration row: no sign-ins; sessions already open continue (closing sign-ups cuts nobody off; only a pause stops calls) |
+| `pausa` | `pause_until` in the future, breaker open, the daily call ceiling reached, a malformed configuration row or a day counter that cannot be read (HTTP 200); a failed read (HTTP 503). A pause also stops every `/mcp` call |
+
+## Error codes
+
+Cognito login page (text shown above the form): bad credentials, start from
+the web (no valid pass, or a different email typed), paused, no seats, daily
+limit, too many attempts (locked), session ended (refresh refused), generic.
+The log line of each refusal carries a fixed step code (for example
+`pass_missing`, `breaker_open`, `locked`, `cap_full`, `mapit_rejected`,
+`mapit_failed`), the exception class and the AWS error code only.
+
+`POST /pase`:
+
+| HTTP | Body | When |
+|---|---|---|
+| 200 | `{"pase": "emitido", "caduca_en_segundos": 300}` | pass written |
+| 400 | `{"error": "peticion_invalida"}` | body or email invalid |
+| 403 | `{"error": "control_no_valido"}` | Turnstile rejected or result already used |
+| 404 | `{"error": "no_encontrado"}` | other route or method |
+| 429 | `{"error": "demasiados_pases"}` | IP limit reached |
+| 503 | `{"error": "no_disponible"}` | Cloudflare, SSM or the table did not answer (fails closed) |
+| 503 | `{"estado": "cerrado"}` / `{"estado": "pausa"}` | as `/estado` |
+
+`/mcp` tool errors are `"<code>: <message>"` with the code one of
+`session_expired`, `session_limit_reached`, `rate_limited`, `service_paused`,
+`service_unavailable`, `logout_failed`, `delete_failed`.
+
+The `/mcp` gate, per tool call and before any MAPIT read: session age, the
+configuration row, the session's own counters, and then the day counter.
+Closing sign-ups never cuts a session: with `open = false`, without the `open`
+attribute or without the configuration row, sessions already open keep
+working until they expire; only a pause (`pause_until` or the daily ceiling),
+a malformed row or a failed read stops calls. The day counter is one
+conditional `UpdateItem` that adds 1 to the day's `mcp_calls` only while it is
+absent or a number from 0 to below the ceiling. When the condition fails and
+the returned old row holds a valid counter at the ceiling, the call answers
+`service_paused` with the pause text; a counter that is negative, of the wrong
+type or, in the returned new value, not a non-negative integer (DynamoDB
+cannot test for an integer, so a fraction passes the condition) answers
+`service_unavailable`, and so does a failed write (closed). Only calls admitted by the session counters
+reach it, so a session refused for its own limits cannot pause everybody; a
+call refused by the ceiling has already counted against its session. The
+ceiling is derived from the counter only: nothing is written to the
+configuration row, and the next UTC day starts a new row.
+
+## Operation commands
+
+All in `scripts/mcp_users.py` (implemented in `scripts/mcp_users_web.py`),
+with `--env dev|prod`. Names come from the code above: the table and session
+prefix from `public_web.py`, the pool found by its exact name with
+`ListUserPools` (exactly one match, or the command fails). Output never holds
+a user name, email, tenant id, pool id, parameter name or fingerprint. A
+failed AWS call exits with code 1 and prints only its error code.
+
+- `web-status` (read only): the interpreted configuration row (or
+  `MALFORMED` with the attribute names present, or "no row: closed"), the
+  breaker state and the current window's rejections, today's `/mcp` calls
+  against the daily ceiling, what `/estado` would answer, occupied seats,
+  users in the web pool and session parameters with the age of the oldest.
+  Exit code 0, or 3 when something is one hour old or older or a listing
+  stopped early. This is the cheap way to see why sign-ins fail.
+- `web-stats [--days 14] [--months 3]` (read only): the day rows (`logins`,
+  `new_people`, `mapit_rejections`, `cap_rejections`, `mcp_calls`) and the
+  month rows (`logins`, `people`), one consistent `GetItem` each; an absent
+  row prints zeros, a malformed counter prints `?`.
+- `web-config [--cap N] [--open true|false] [--pause-until <ISO-8601 UTC>|none]
+  [--pass-required true|false] [--yes]`: prints the current and the new values
+  and writes nothing without `--yes`. The write is one `UpdateItem` that sets
+  only the requested attributes, never `occupied`, conditional on the row and
+  each changed attribute still holding the value read (otherwise nothing is
+  written). When the row does not exist it creates it, conditional on it
+  still not existing, with all four attributes: the given values and, for the
+  rest, closed, no pause, cap 100, pass required (so `--cap 50` alone creates
+  a closed row). It refuses a change that would leave the row malformed (for
+  example an unknown attribute already present). `--cap` is 0 to 1000000;
+  `--pause-until` must be in the future and in UTC (`Z` or `+00:00`); `none`
+  lifts a pause.
+
+Changing the configuration is a write in the environment's table: in
+production it is a production change.
+
+The template defines no operator role: the commands run with the operator's
+own credentials, which need exactly these actions (none reads a parameter
+value, so no KMS permission is needed):
+
+| Action | Resource | Used by |
+|---|---|---|
+| `dynamodb:GetItem` (consistent) | the web table | `web-status`, `web-stats`, `web-config` |
+| `dynamodb:UpdateItem` | the web table | `web-config --yes` only (also creates an absent row) |
+| `cognito-idp:ListUserPools` | `*` (no resource-level permissions) | `web-status` |
+| `cognito-idp:ListUsers` | the web user pool | `web-status` |
+| `ssm:DescribeParameters` | `*` (no resource-level permissions; metadata only) | `web-status` |
+
+The commands do not read the stack outputs (`UserPoolId`, `TableName`); they
+derive the same names from the code. If two pools carry the web pool name (for
+example a retained prod pool next to a recreated one), `web-status` fails
+instead of guessing.
+
+## How it is tested
+
+Offline (no network, no AWS, no MAPIT, no Cloudflare):
+
+- unit tests per module with injected clients: `tests/test_public_web.py`,
+  `test_public_identity.py`, `test_public_pass.py`, `test_public_web_service.py`,
+  `test_public_sweep.py`, `test_public_web_contract.py`;
+- the same flows against the real botocore models with `botocore.stub.Stubber`
+  (requests validated against the service model, parsed responses):
+  `test_public_*_sdk.py` and the `web-*` tests in `tests/test_mcp_users.py`;
+- `tests/test_multiuser_template_pinned.py`: the invitation-only templates are
+  unchanged byte for byte and never mention the public mode; the module tests
+  check that with `MAPIT_WEB_MODE` absent the invitation code path runs;
+- every new test is seen failing once against deliberately broken code.
+
+Offline tests prove the contract as read from the documentation and the SDK
+models; they do not prove Cognito trigger order, cold-start time against the
+5-second trigger limit, Turnstile behaviour, TTL timing or real MAPIT answers.
+
+Manual test in DEV, before any automated evaluation, with the web running
+locally against the DEV web stack:
+
+1. Sign in with a MAPIT account without invitation; compare five figures with
+   the invitation-only web.
+2. Sign out; `web-status` shows 0 users and 0 session parameters.
+3. Sign in, close the tab without signing out; after one hour `web-status`
+   shows 0 users and 0 session parameters, and the oldest age never reached
+   60 minutes.
+4. With `--cap 1` and one person inside: an unknown email with a wrong
+   password gets "bad credentials", not "no seats". "No seats" can only be
+   seen with a second real account; otherwise it is covered by tests only.
+5. Five wrong passwords for an invented email lock it for 15 minutes (two
+   passes needed).
+6. Measure the cold start of the sign-in against the 5-second limit.
+7. Open the Cognito login URL directly, without the web: refused, and the
+   day's `mapit_rejections` does not move (`web-stats`).
+8. Request a pass, wait more than 5 minutes, try to sign in: refused.
+9. Normal path on desktop and on an iPhone: the check appears, resolves and
+   the email arrives prefilled.
+10. Sign in, then within the same hour try a direct Cognito login without a
+    pass: refused.
+
+## Known risks
+
+- **Active-session detection.** With a pass and a wrong password, Cognito
+  answers with its own error when the user still exists (signed in less than
+  about 50 minutes ago) and with the migration's when it does not; text and
+  timing tell them apart. The pass and Cognito's own lockout bound it; no text
+  avoids it.
+- **Active-session detection without a pass.** Without a pass, a user still
+  in the pool is refused by the pre-authentication step and an absent one by
+  the migration, and the Cognito API names the trigger in its error
+  (`PreAuthentication failed with error ...` against `UserMigration failed
+  with error ...`). The pre-authentication of an absent user cannot check the
+  pass because it does not know the email, and an existing user never reaches
+  the migration, so the two refusals cannot come from the same trigger.
+  Moving the existing user's pass check after the password does not help
+  (Cognito's own wrong-password error still differs from the migration's).
+  It tells only whether someone signed in with that email in the last hour or
+  so (the sweep deletes pool users after 50 minutes), like the risk above.
+- **The breaker does not see failures against existing users.** For a user
+  still in the pool, Cognito checks the password itself and no trigger learns
+  the result, so those failures add neither to the attempts row nor to the
+  breaker. They still spend pass attempts.
+- **Burst at a window change.** The breaker, the per-IP pass count and the
+  per-minute call limit use fixed windows: up to `2N - 2` breaker rejections
+  (38) fit in ten minutes that span a window change, about twice the per-minute
+  call limit fits in a few seconds around a minute change, and the same for
+  passes per IP.
+- Two racing MAPIT rejections for one email may both add instead of locking;
+  the next one locks.
+- Anyone who knows an email can lock it for 15 minutes or spend its pass, and
+  can open the breaker for everybody, by solving the check each time.
+- If Cloudflare does not answer, nobody new can sign in (fails closed);
+  `--pass-required false` removes the requirement while it lasts.
+- The consent is recorded because the only way into the pool is the web, which
+  always shows the screen; the server does not see the checkbox.
+- **Anyone signed in can bring the daily pause closer.** A session adds at
+  most 80 calls and a person signs in at most 10 times a day, so one MAPIT
+  account adds at most 800 calls a day; four accounts used to the limit pause
+  the service for everybody until 00:00 UTC.
+- **The daily ceiling counts calls, not MAPIT reads.** Every admitted call counts
+  the same, whatever MAPIT reads it causes. Calls of one day can be at most
+  the ceiling; a burst of parallel calls cannot pass it (the condition is
+  atomic).
+- **Monthly people are not exact in two cases.** `people` can miss a person
+  whose month transaction failed and who does not sign in again that month,
+  and counts twice a person who deletes their data (`borrar_mis_datos` deletes
+  the month marker without decreasing `people`) and signs in again in the
+  same month.
+- **Deleting one's data also resets the personal sign-in limit.** The person
+  row goes, so the 10 sign-ins a day start again: 800 calls per account and
+  day is not a limit that resists deleting and signing in again.
+- **A pause without its alarm.** If the answer or the log line of the call
+  that reaches the ceiling is lost, the service pauses without the
+  `daily-ceiling` alarm firing.

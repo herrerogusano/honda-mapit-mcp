@@ -169,6 +169,8 @@ unchanged.
 
 ## Web client (Honda Ride Log)
 
+The public web mode, a separate stack without invitations, is described in `docs/public-web.md`.
+
 Approved by the owner on 2026-11-09 (vault decision D-078). The web is a static
 single-page site in the separate repository `honda-ride-log`; nothing of it is
 built or stored here, and nothing new is stored in AWS. It is one more client
@@ -176,8 +178,15 @@ of this stack, like Claude and Codex: the browser signs in against the same
 pool (authorization code + PKCE, public client `WebClient`) and calls
 `POST /mcp` with the access token. Invitation, consent, tenant isolation and
 the read-only tools are unchanged. With the web each user reads their own
-MAPIT history from their own browser: about 7 MAPIT reads per page load and 1
-per opened route.
+MAPIT history from their own browser. MAPIT reads per tool call, as logged by
+the read meter (`docs/phase-1-mcp-contracts.md`, "Read meter") when each period
+fits in one response: status 1, vehicle details 2, each period route list 2,
+each opened route 2. A page load that asks for status, vehicle details and N
+period route lists therefore costs `3 + 2N` reads (15 for six semesters).
+Before period reads, each route list cost one read per calendar month plus one
+(7 per semester, 45 for the same six-semester load). A period list that times
+out falls back to single months and costs `2 + months` reads instead of 2
+(8 for a semester).
 
 Status: template, runtime and tests are offline work. Nothing is deployed; a
 real browser sign-in and the deployed CORS behaviour are **not verified**.

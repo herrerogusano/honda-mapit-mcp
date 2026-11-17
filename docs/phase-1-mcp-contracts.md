@@ -50,11 +50,12 @@ contract. Inputs may be `YYYY-MM-DD` (UTC midnight) or a timezone-aware ISO
 8601 datetime. Naive datetimes, reversed/empty periods, and periods longer than
 366 days are rejected before a MAPIT data call.
 
-The normalized interval is converted to UTC and split at UTC month boundaries.
-One period therefore makes at most 13 Geo route-list requests; a comparison of
-two maximum periods makes at most 26. The upstream inclusivity and timezone
-semantics remain unconfirmed, so duplicate route IDs across adjacent windows
-are removed and completeness is never inferred.
+The normalized interval is converted to UTC. A period of at most 366 days
+touches at most 14 calendar months in UTC (for example
+`2025-01-31T12:00Z` to `2026-02-01T12:00Z`); "Period reads" below gives the
+route-list read bounds. The upstream inclusivity and timezone semantics remain
+unconfirmed, so duplicate route IDs across adjacent windows are removed and
+completeness is never inferred.
 
 ## Tools
 
@@ -73,10 +74,11 @@ VIN, mileage, product, plan, branch, and available dealer information.
 
 ### `list_routes(from_time, to_time)`
 
-Reads each monthly window, validates `{data: [...]}`, rejects any non-null
-`lastEvaluatedKey`, normalizes route fields, deduplicates by route ID, and sorts
-by start timestamp then ID. It returns no more than 500 routes and reports both
-the matched and returned counts plus `truncated`.
+Reads the whole requested period with one `from`/`to` route-list request (see
+"Period reads" below), validates `{data: [...]}`, normalizes route fields,
+deduplicates by route ID, and sorts by start timestamp then ID. It returns no
+more than 500 routes and reports both the matched and returned counts plus
+`truncated`.
 
 ### `get_route_detail(route_id)`
 
@@ -87,7 +89,7 @@ remains unconfirmed.
 
 ### `get_distance(from_time, to_time)`
 
-Sums the native `distance` values after the same monthly retrieval and
+Sums the native `distance` values after the same period retrieval and
 deduplication as `list_routes`. If any returned route lacks a finite distance,
 the tool fails with `distance_unavailable` instead of treating it as zero.
 
@@ -105,9 +107,102 @@ Accordingly:
 
 - route/distance outputs use `metric_unit="mapit_native_unconfirmed"`;
 - route/distance outputs use `completeness="unverified"`;
-- route-list responses are capped at 2 MiB per monthly window;
+- route-list responses are capped at 2 MiB per request window;
 - route-detail responses are capped at 1 MiB;
-- a non-null upstream cursor fails closed because pagination is not understood.
+- a non-null upstream cursor is never followed; on a single calendar month it
+  fails closed because pagination is not understood.
+
+## Period reads
+
+Every route-list tool reads one bounded period (at most 366 days) for the
+selected vehicle:
+
+1. It sends one `GET /v1/routes` with the whole period as `from`/`to`.
+2. If that response exceeds the 2 MiB ceiling or carries a non-null
+   `lastEvaluatedKey`, the response is discarded and the window is read again
+   as two halves split at a calendar-month boundary, earlier half first. Each
+   half follows the same rule, recursively.
+3. If MAPIT accepts the connection but does not answer a multi-month window
+   within the read timeout (`http_timeout`), that window is replaced directly
+   by its single months, read oldest first. Only a timeout while waiting for
+   the response or its body counts; a connect timeout does not. In the cloud
+   transport, a socket timeout that was shortened by the request deadline does
+   not count either.
+4. A window of one calendar month (or the partial month at either end of the
+   request) is never split. There the original failure stands:
+   `response_too_large`, `pagination_unsupported` or, for a timeout,
+   `mapit_unavailable`. Any other failure in any window (connection failure,
+   HTTP status including 5xx, invalid envelope) stops the whole call without a
+   split; no partial result is returned.
+
+The month windows that end the recursion are exactly the windows the earlier
+month-by-month reads used, so a period that fails here also failed before,
+apart from the extra time spent on a window that timed out. The results are
+merged with the existing route-ID deduplication and the same sort, so routes,
+order, fields and truncation do not depend on how the period was split. A
+period whose list fits in one response costs one route-list read instead of
+one per month. Bounds per period of `n` months:
+
+- the worst case over all causes stays `2n - 1` route-list reads (27 for a
+  366-day period, which touches at most 14 calendar months): falling back to
+  months after a timeout never reads more than halving would;
+- a timeout on the whole period costs `1 + n` route-list reads (15 for a
+  366-day period) and one wasted wait of at most `http_timeout`;
+- halving after a timeout was rejected because each halving level could spend
+  another full timeout, which a multi-month request may not afford inside its
+  per-request deadline (14 s and 24 attempts in the multiuser runtime).
+
+These are read bounds, not time bounds: they do not guarantee that a period
+completes inside the 14 s deadline. Single months can also exceed the read
+timeout or the request deadline. When the deadline expires before the next
+read, the cloud transport raises its own deadline error and the call fails
+with `internal_error`. When it shortens a socket wait that then times out, the
+call fails with `mapit_unavailable`. Both stop without a partial result.
+
+Observed in a test deployment: a six-month window starting months before the
+first route sometimes exceeded a 2 s timeout. That is the case the timeout
+fallback covers; that each single month of such a window answers in time is
+assumed, not measured.
+
+Why the rule changed: month-by-month reads were adopted because one unfiltered
+whole-history read exceeded the 2 MiB ceiling. A bounded `from`/`to` period
+with automatic splitting keeps the same ceiling and falls back to the same
+month windows, while sending fewer reads when the list fits.
+
+Contract as read here, not verified against MAPIT: `from`/`to` filter routes by
+start time on a half-open interval, a multi-month window returns the union of
+its months, and an over-ceiling or cursor response can be discarded and re-read
+in smaller windows. Offline tests prove the code against this reading only.
+
+Also not verified: why MAPIT is slow on some long windows, and whether every
+single month of such a window answers within the timeout. If one month times
+out too, the call fails with `mapit_unavailable`, as the month-by-month reads
+would. A 503/504 or a dropped connection on a long window still fails the whole
+call without a split, where a one-month window might have succeeded; splitting
+on those is deliberately left out because during an outage it would multiply
+the reads. The read meter's `outcome:"error"` lines, and `reads` above 2 for a
+single period, are how this is watched.
+
+## Read meter
+
+Each MCP tool call writes one line to stderr (stdout carries the stdio MCP
+protocol):
+
+```json
+{"event":"mapit_reads","tool":"list_routes","reads":2,"outcome":"ok"}
+```
+
+`reads` counts every GET sent to MAPIT Core/Geo during the call, including the
+single auth-recovery retry; Cognito authentication calls are not counted.
+`outcome` is `ok` or `error`. The line carries no identifiers, parameters,
+dates, URLs or response content. When each period fits in one response the
+counts are: `get_vehicle_status` 1, `get_vehicle_details` 2,
+`get_route_detail` 2, every single-period route tool (`list_routes`,
+`get_distance`, `get_route_statistics`, `get_distance_breakdown`,
+`get_route_extremes`, `geographic_summary`, `summer_geographic_summary`) 2, and
+each two-period comparison 4. Before this change a single-period route tool
+cost one account-summary read plus one read per calendar month (7 for a
+semester, up to 15 for 366 days).
 
 These fields must not be relabelled as kilometres or complete history without
 new primary evidence and a separately reviewed contract change.

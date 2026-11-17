@@ -1,10 +1,12 @@
-"""Build the single deterministic ZIP shared by both multiuser Lambdas.
+"""Build the single deterministic ZIP shared by the multiuser and public web Lambdas.
 
-Both ``mapit.multiuser_entrypoint.handler`` and
-``mapit.multiuser_identity.handler`` run from the same archive: the 28
-hash-locked ARM wheels from ``infra/aws/runtime-requirements.txt`` plus the
-``mapit`` source modules reachable by static import analysis from the five
-multiuser root modules. The archive embeds no private configuration (that is
+The invitation-only stack (``mapit.multiuser_entrypoint.handler`` and
+``mapit.multiuser_identity.handler``) and the public web stack (those two plus
+``mapit.public_pass.handler`` and ``mapit.public_sweep.handler``) run from the
+same archive: the 28 hash-locked ARM wheels from
+``infra/aws/runtime-requirements.txt`` plus the ``mapit`` source modules
+reachable by static import analysis from the root modules below. Every Lambda
+``Handler`` module of both templates must be a root. The archive embeds no private configuration (that is
 passed as CloudFormation parameters) and performs no network or AWS access.
 Optional geography support adds the locked numpy/shapely wheels and the two
 hash-pinned public area assets.
@@ -30,8 +32,10 @@ ROOT_MODULES = (
     "multiuser_entrypoint.py",
     "multiuser_identity.py",
     "multiuser_pages.py",
+    "public_pass.py",
+    "public_sweep.py",
 )
-HANDLER_MODULES = ("multiuser_entrypoint", "multiuser_identity")
+HANDLER_MODULES = ("multiuser_entrypoint", "multiuser_identity", "public_pass", "public_sweep")
 MAX_SOURCE_MODULES = 64
 
 

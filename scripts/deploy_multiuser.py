@@ -99,27 +99,7 @@ def load_private_config(path: Path, env: str) -> PrivateConfig:
         raise DeployError("codex_callback_url invalid")
     if type(port) is not int or not 1024 <= port <= 65535 or urlsplit(callback).port != port:
         raise DeployError("codex_callback_port invalid or different from the callback URL port")
-    mapit = value["mapit_config"]
-    if not isinstance(mapit, dict) or set(mapit) != _MAPIT_KEYS:
-        raise DeployError("mapit_config must contain exactly: " + ", ".join(sorted(_MAPIT_KEYS)))
-    timeout = mapit["http_timeout"]
-    if (
-        any(type(mapit[name]) is not str for name in _MAPIT_KEYS - {"discovery_enabled", "http_timeout"})
-        or mapit["discovery_enabled"] is not False
-        or isinstance(timeout, bool) or type(timeout) not in (int, float)
-        or not math.isfinite(timeout) or not 0 < timeout <= 2
-    ):
-        raise DeployError("mapit_config invalid (discovery_enabled must be false, http_timeout in (0, 2])")
-    from mapit.cloud_transport import validate_cloud_config
-    from mapit.config import MapitConfig
-
-    try:
-        validate_cloud_config(MapitConfig(**mapit))
-    except Exception:
-        raise DeployError("mapit_config rejected by the runtime validator") from None
-    mapit_json = json.dumps(mapit, sort_keys=True, separators=(",", ":"))
-    if len(mapit_json) > 2048:
-        raise DeployError("mapit_config too large")
+    mapit_json = validate_mapit_config(value["mapit_config"])
     contact = value["privacy_contact"]
     if type(contact) is not str or not 3 <= len(contact) <= 254:
         raise DeployError("privacy_contact invalid")
@@ -142,6 +122,31 @@ def load_private_config(path: Path, env: str) -> PrivateConfig:
             or not 1024 <= int(web_dev.split("/")[2].rsplit(":", 1)[1]) <= 65535):
         raise DeployError("web_dev_callback_url invalid (exact http://localhost:PORT/ URL)")
     return PrivateConfig(domain, callback, port, mapit_json, contact, geography, budget, web, web_dev)
+
+
+def validate_mapit_config(mapit: Any) -> str:
+    """Check the public MAPIT identifiers object; return its canonical JSON."""
+    if not isinstance(mapit, dict) or set(mapit) != _MAPIT_KEYS:
+        raise DeployError("mapit_config must contain exactly: " + ", ".join(sorted(_MAPIT_KEYS)))
+    timeout = mapit["http_timeout"]
+    if (
+        any(type(mapit[name]) is not str for name in _MAPIT_KEYS - {"discovery_enabled", "http_timeout"})
+        or mapit["discovery_enabled"] is not False
+        or isinstance(timeout, bool) or type(timeout) not in (int, float)
+        or not math.isfinite(timeout) or not 0 < timeout <= 2
+    ):
+        raise DeployError("mapit_config invalid (discovery_enabled must be false, http_timeout in (0, 2])")
+    from mapit.cloud_transport import validate_cloud_config
+    from mapit.config import MapitConfig
+
+    try:
+        validate_cloud_config(MapitConfig(**mapit))
+    except Exception:
+        raise DeployError("mapit_config rejected by the runtime validator") from None
+    mapit_json = json.dumps(mapit, sort_keys=True, separators=(",", ":"))
+    if len(mapit_json) > 2048:
+        raise DeployError("mapit_config too large")
+    return mapit_json
 
 
 def mask_account(account: str) -> str:
@@ -409,5 +414,5 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ["Clients", "DeployError", "Deployer", "PrivateConfig", "load_private_config",
+__all__ = ["Clients", "DeployError", "Deployer", "PrivateConfig", "load_private_config", "validate_mapit_config",
            "main", "mask_account", "run", "stack_parameters"]
