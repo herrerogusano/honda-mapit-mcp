@@ -27,7 +27,7 @@ windows-auth = ["keyring>=25.6,<26; sys_platform == 'win32'"]
 realtime = ["websockets>=15,<17"]
 geography = ["shapely==2.1.2", "numpy==2.4.3"]
 boundary-import = ["defusedxml==0.7.1", "pyproj==3.7.2", "shapely==2.1.2", "numpy==2.4.3"]
-agent = ["openai-agents==0.22.3"]
+agent = ["openai-agents==0.24.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
