@@ -55,12 +55,61 @@ def test_deterministic_zip_is_stable_and_rejects_collisions():
         builder.deterministic_zip([("A.txt", b""), ("a.txt", b"")])
 
 
-@pytest.mark.skipif(not HAVE_SOURCES, reason="multiuser source modules not present yet")
-def test_full_build_with_locked_wheel_seam(tmp_path, monkeypatch):
-    # Wheel hash/unpack validation has its own suite; this checks source selection and output.
+def _fake_wheels(monkeypatch) -> None:
+    # Wheel hash/unpack validation has its own suite; these tests check source selection.
     monkeypatch.setattr(dev_builder, "_read_lock", lambda _repo: {"fixture": ("1.0", "0" * 64)})
     monkeypatch.setattr(dev_builder, "_wheel_file_inventory", lambda _root, _lock: [("fixture-1.0-py3-none-any.whl", b"w")])
     monkeypatch.setattr(dev_builder, "_unpack_wheels", lambda _w, _l: [("fixture_pkg/__init__.py", b"")])
+
+
+def _template_handler_modules() -> dict[str, set[str]]:
+    """``mapit`` module of every Lambda ``Handler`` in every template that deploys this ZIP."""
+    from scripts.build_multiuser_stack import build_multiuser_template
+    from scripts.build_public_web_stack import build_public_web_template
+
+    found: dict[str, set[str]] = {}
+    for label, build in (("multiuser", build_multiuser_template), ("public_web", build_public_web_template)):
+        for env in ("dev", "prod"):
+            for logical, resource in build(env)["Resources"].items():
+                if resource["Type"] != "AWS::Lambda::Function":
+                    continue
+                package, module, function = resource["Properties"]["Handler"].split(".")
+                assert (package, function) == ("mapit", "handler"), (label, logical)
+                found.setdefault(module, set()).add(f"{label}:{env}:{logical}")
+    return found
+
+
+TEMPLATE_HANDLER_MODULES = _template_handler_modules()
+
+
+def test_templates_declare_the_expected_handlers():
+    assert set(TEMPLATE_HANDLER_MODULES) == {
+        "multiuser_entrypoint", "multiuser_identity", "public_pass", "public_sweep",
+    }
+    assert set(builder.HANDLER_MODULES) == set(TEMPLATE_HANDLER_MODULES)
+
+
+@pytest.mark.skipif(not HAVE_SOURCES, reason="multiuser source modules not present yet")
+def test_every_template_handler_and_its_imports_are_in_the_built_zip(tmp_path, monkeypatch):
+    _fake_wheels(monkeypatch)
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    output = tmp_path / "out.zip"
+    builder.build_multiuser_archive(wheels, output)
+    with zipfile.ZipFile(output) as archive:
+        names = set(archive.namelist())
+    missing = {}
+    for module, functions in sorted(TEMPLATE_HANDLER_MODULES.items()):
+        closure = builder.source_module_inventory(SOURCE, (f"{module}.py",))
+        absent = sorted(f"mapit/{name}" for name in closure if f"mapit/{name}" not in names)
+        if absent:
+            missing[module] = (sorted(functions), absent)
+    assert not missing
+
+
+@pytest.mark.skipif(not HAVE_SOURCES, reason="multiuser source modules not present yet")
+def test_full_build_with_locked_wheel_seam(tmp_path, monkeypatch):
+    _fake_wheels(monkeypatch)
     wheels = tmp_path / "wheels"
     wheels.mkdir()
     output = tmp_path / "out.zip"
