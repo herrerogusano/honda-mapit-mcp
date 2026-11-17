@@ -538,10 +538,12 @@ def test_run_sweep_with_the_real_clock_keeps_a_one_minute_item(monkeypatch):
     assert 50 * 60 <= result.oldest_age <= 52 * 60
 
 
-def test_invalid_dates_are_an_emf_metric():
+def test_invalid_dates_are_a_log_field_not_a_metric():
+    # One extracted metric per environment keeps the custom-metric count small;
+    # the stack's log filter reads InvalidDates and SweepFailed from the same line.
     record = sweep.emf_record(sweep.SweepResult(invalid_dates=3), "dev", 1)
-    names = [m["Name"] for m in record["_aws"]["CloudWatchMetrics"][0]["Metrics"]]
-    assert "InvalidDates" in names and record["InvalidDates"] == 3
+    assert record["_aws"]["CloudWatchMetrics"][0]["Metrics"] == [{"Name": "OldestItemAgeSeconds", "Unit": "Seconds"}]
+    assert record["InvalidDates"] == 3 and record["SweepFailed"] == 0 and record["event"] == "web_sweep"
 
 
 def test_handler_logs_one_emf_line_without_identifiers(factory, monkeypatch):
@@ -555,8 +557,8 @@ def test_handler_logs_one_emf_line_without_identifiers(factory, monkeypatch):
     directive = record["_aws"]["CloudWatchMetrics"][0]
     assert directive["Namespace"] == "honda-mapit-mcp/web"
     assert directive["Dimensions"] == [["Environment"]] and record["Environment"] == "dev"
-    for metric in directive["Metrics"]:
-        assert isinstance(record[metric["Name"]], int)
+    assert directive["Metrics"] == [{"Name": "OldestItemAgeSeconds", "Unit": "Seconds"}]
+    assert isinstance(record["OldestItemAgeSeconds"], int)
     assert record["SessionsDeleted"] == 1 and record["UsersDeleted"] == 1
     assert record["OldestItemAgeSeconds"] >= OLD and record["SweepFailed"] == 0
     assert "error" not in record
@@ -652,7 +654,7 @@ def test_recount_writes_the_number_of_unexpired_person_rows():
     assert (result.recount_ran, result.persons_counted, result.seats_corrected) == (True, 5, 2)
     record = sweep.emf_record(result, "dev", 1)
     names = [m["Name"] for m in record["_aws"]["CloudWatchMetrics"][0]["Metrics"]]
-    assert {"PersonsCounted", "SeatsCorrected", "RecountRan"} <= set(names)
+    assert names == ["OldestItemAgeSeconds"]  # recount counts are log fields only
     assert (record["PersonsCounted"], record["SeatsCorrected"], record["RecountRan"]) == (5, 2, 1)
 
 

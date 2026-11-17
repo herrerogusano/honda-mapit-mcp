@@ -21,8 +21,10 @@ possible (their keys are fingerprints or tenant ids the sweep does not know),
 and readers already treat ``expires_at <= now`` as absent.
 
 Every run writes one log line in CloudWatch embedded metric format (EMF) with
-the age of the oldest item seen, how many items were deleted, and whether the
-run failed (``SweepFailed``) or stopped early (``SweepIncomplete``). A failed
+the age of the oldest item seen (``OldestItemAgeSeconds``, the only extracted
+metric), and as plain fields how many items were deleted, how many dates could
+not be read, and whether the run failed (``SweepFailed``) or stopped early
+(``SweepIncomplete``). A failed
 run also carries the fixed code :data:`FAILURE_CODE` and one code per failed
 step. The line never holds a user name, email, tenant id, parameter name or
 token. Deleting something that no longer exists is not an error. The run stops
@@ -437,20 +439,11 @@ class Sweeper:
 
 # --- Metrics and log -------------------------------------------------------
 
-_METRICS = (
-    ("OldestItemAgeSeconds", "Seconds"),
-    ("OldestSessionAgeSeconds", "Seconds"),
-    ("OldestUserAgeSeconds", "Seconds"),
-    ("SessionsDeleted", "Count"),
-    ("UsersDeleted", "Count"),
-    ("SweepFailed", "Count"),
-    ("SweepIncomplete", "Count"),
-    ("InvalidDates", "Count"),
-    ("RecountRan", "Count"),
-    ("RecountConflict", "Count"),
-)
-# Only in the line of a run that finished the daily recount.
-_RECOUNT_METRICS = (("PersonsCounted", "Count"), ("SeatsCorrected", "Count"))
+# The only value CloudWatch extracts as a metric (each extracted name is a
+# custom metric per environment); the stack alarms on it, also when it is
+# missing. Every other count stays a plain field of the same log line, for Logs
+# Insights and for the stack's log filters (failed run, unreadable dates).
+_METRICS = (("OldestItemAgeSeconds", "Seconds"),)
 
 
 def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict[str, Any]:
@@ -462,8 +455,7 @@ def emf_record(result: SweepResult, environment: str, timestamp_ms: int) -> dict
             "CloudWatchMetrics": [{
                 "Namespace": METRIC_NAMESPACE,
                 "Dimensions": [[METRIC_DIMENSION]],
-                "Metrics": [{"Name": name, "Unit": unit} for name, unit in
-                            _METRICS + (_RECOUNT_METRICS if result.recount_ran else ())],
+                "Metrics": [{"Name": name, "Unit": unit} for name, unit in _METRICS],
             }],
         },
         METRIC_DIMENSION: environment,

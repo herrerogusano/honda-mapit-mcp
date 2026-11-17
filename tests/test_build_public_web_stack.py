@@ -380,28 +380,23 @@ def _alarms(env):
 
 def test_alarm_set_and_thresholds(env):
     alarms = _alarms(env)
-    assert set(alarms) == {
-        "SweepFailedAlarm", "OldestItemAgeAlarm", "InvalidDatesAlarm", "PassCloudflareAlarm", "PassKeyMissingAlarm",
-        "IdentityKeyCreatedAlarm", "IdentityBreakerAlarm", "IdentityFaultsAlarm", "McpErrorsAlarm",
-        "PassErrorsAlarm", "SweepErrorsAlarm", "IdentityTimeoutAlarm", "McpTimeoutAlarm", "PassTimeoutAlarm",
-        "SweepTimeoutAlarm", "McpDailyCeilingAlarm"}
+    assert set(alarms) == {"FaultsAlarm", "OldestItemAgeAlarm", "McpDailyCeilingAlarm"}
+    assert {alarm["AlarmName"] for alarm in alarms.values()} == {
+        f"honda-mapit-mcp-{env}-web-{name}" for name in ("faults", "oldest-item-age", "daily-ceiling")}
     for alarm in alarms.values():
-        assert alarm["AlarmActions"] == [{"Ref": "AlarmTopic"}]
+        assert alarm["AlarmActions"] == alarm["OKActions"] == [{"Ref": "AlarmTopic"}]
+        assert alarm["Period"] >= 60  # standard resolution: high-resolution alarms are outside the free tier
     oldest = alarms["OldestItemAgeAlarm"]
     assert (oldest["MetricName"], oldest["Statistic"], oldest["Threshold"]) == ("OldestItemAgeSeconds", "Maximum", 3600)
     assert oldest["ComparisonOperator"] == "GreaterThanThreshold" and oldest["TreatMissingData"] == "breaching"
-    for name in ("SweepFailedAlarm", "OldestItemAgeAlarm", "InvalidDatesAlarm"):
-        assert alarms[name]["Namespace"] == public_sweep.METRIC_NAMESPACE
-        assert alarms[name]["Dimensions"] == [{"Name": public_sweep.METRIC_DIMENSION, "Value": env}]
-    invalid = alarms["InvalidDatesAlarm"]
-    assert (invalid["EvaluationPeriods"], invalid["DatapointsToAlarm"], invalid["Threshold"]) == (3, 3, 0)
-    failed = alarms["SweepFailedAlarm"]
-    assert (failed["MetricName"], failed["Threshold"], failed["ComparisonOperator"]) == (
-        "SweepFailed", 1, "GreaterThanOrEqualToThreshold")
-    for logical in ("Mcp", "Pass", "Sweep"):
-        errors = alarms[f"{logical}ErrorsAlarm"]
-        assert (errors["Namespace"], errors["MetricName"]) == ("AWS/Lambda", "Errors")
-        assert errors["Dimensions"] == [{"Name": "FunctionName", "Value": {"Ref": f"{logical}Function"}}]
+    assert oldest["Namespace"] == public_sweep.METRIC_NAMESPACE
+    assert oldest["Dimensions"] == [{"Name": public_sweep.METRIC_DIMENSION, "Value": env}]
+    faults = alarms["FaultsAlarm"]
+    assert (faults["Namespace"], faults["MetricName"]) == (stack.log_metric_namespace(env), "WebFaults")
+    assert (faults["Statistic"], faults["Threshold"], faults["ComparisonOperator"]) == (
+        "Sum", 1, "GreaterThanOrEqualToThreshold")
+    assert (faults["Period"], faults["EvaluationPeriods"], faults["TreatMissingData"]) == (300, 1, "notBreaching")
+    assert "Dimensions" not in faults
 
 
 def _filters(env):
@@ -409,21 +404,76 @@ def _filters(env):
             if item["Type"] == "AWS::Logs::MetricFilter"}
 
 
-def test_metric_filters_feed_their_alarms(env):
-    filters, alarms = _filters(env), _alarms(env)
-    for name, item in _resources(env).items():
-        if item["Type"] == "AWS::CloudWatch::Alarm" and "DependsOn" in item:
-            (source,) = item["DependsOn"]
-            transformation = filters[source]["MetricTransformations"][0]
-            assert alarms[name]["MetricName"] == transformation["MetricName"]
-            assert alarms[name]["Namespace"] == transformation["MetricNamespace"] == stack.log_metric_namespace(env)
-    assert filters["PassCloudflareFilter"]["LogGroupName"] == {"Ref": "PassLogGroup"}
-    for logical in ROLES:
+def _custom_metrics(env):
+    """Every custom metric the stack can produce: filter outputs plus the sweep's EMF metrics."""
+    metrics = set()
+    for item in _filters(env).values():
+        (transformation,) = item["MetricTransformations"]
+        assert "Dimensions" not in transformation
+        metrics.add((transformation["MetricNamespace"], transformation["MetricName"], ()))
+    record = public_sweep.emf_record(public_sweep.SweepResult(recount_ran=True), env, 1)
+    for directive in record["_aws"]["CloudWatchMetrics"]:
+        for metric in directive["Metrics"]:
+            for dimensions in directive["Dimensions"]:
+                metrics.add((directive["Namespace"], metric["Name"], tuple((d, record[d]) for d in dimensions)))
+    return metrics
+
+
+def test_both_stacks_together_fit_the_cloudwatch_free_tier():
+    # Free tier: 10 alarm metrics (standard-resolution alarms that list metrics
+    # directly; metric math is counted per listed metric) and 10 custom metrics
+    # (each name and dimension combination is one). Lambda's own metrics are not custom.
+    alarm_metrics, custom = 0, set()
+    for env in ("dev", "prod"):
+        for alarm in _alarms(env).values():
+            assert "Metrics" not in alarm and "MetricName" in alarm  # no metric math, no Metrics Insights
+            alarm_metrics += 1
+        custom |= _custom_metrics(env)
+    assert alarm_metrics == 6 and len(custom) == 6
+    assert alarm_metrics <= 10 and len(custom) <= 10
+    for env in ("dev", "prod"):
+        assert _custom_metrics(env) == {
+            (stack.log_metric_namespace(env), "WebFaults", ()),
+            (stack.log_metric_namespace(env), "McpDailyCeilingReached", ()),
+            (public_sweep.METRIC_NAMESPACE, "OldestItemAgeSeconds", ((public_sweep.METRIC_DIMENSION, env),)),
+        }
+
+
+def test_fault_filters_feed_the_one_faults_alarm(env):
+    filters, resources = _filters(env), _resources(env)
+    fault_filters = {name for name, item in filters.items()
+                     if item["MetricTransformations"][0]["MetricName"] == "WebFaults"}
+    assert fault_filters == {"IdentityFaultsFilter", "PassFaultsFilter", "SweepFaultsFilter", "McpTimeoutFilter",
+                             "PassTimeoutFilter", "SweepTimeoutFilter"}
+    assert resources["FaultsAlarm"]["DependsOn"] == sorted(fault_filters)
+    for name in fault_filters:
+        transformation = filters[name]["MetricTransformations"][0]
+        assert transformation["MetricNamespace"] == stack.log_metric_namespace(env)
+        assert (transformation["MetricValue"], transformation["DefaultValue"]) == ("1", 0)
+    # Every function's log group is covered, including a timeout in each.
+    groups = {filters[name]["LogGroupName"]["Ref"] for name in fault_filters}
+    assert groups == {f"{logical}LogGroup" for logical in ROLES}
+    for logical in ("Mcp", "Pass", "Sweep"):
         assert filters[f"{logical}TimeoutFilter"]["FilterPattern"] == '"Task timed out"'
         assert filters[f"{logical}TimeoutFilter"]["LogGroupName"] == {"Ref": f"{logical}LogGroup"}
-    for name in ("IdentityKeyCreatedFilter", "IdentityBreakerFilter", "IdentityFaultsFilter"):
-        assert filters[name]["LogGroupName"] == {"Ref": "IdentityLogGroup"}
+    assert filters["IdentityFaultsFilter"]["FilterPattern"].endswith(' ?"Task timed out"')
     assert stack.log_metric_namespace("dev") != stack.log_metric_namespace("prod")
+
+
+def test_sweep_fault_filter_reads_fields_of_the_sweep_line(env):
+    pattern = _filters(env)["SweepFaultsFilter"]["FilterPattern"]
+    assert pattern == stack.SWEEP_FAULT_PATTERN
+    fields = set(re.findall(r"\$\.([A-Za-z_]+)", pattern))
+    assert fields == {"event", "SweepFailed", "InvalidDates"}
+    ok = public_sweep.emf_record(public_sweep.SweepResult(), env, 1)
+    failed = public_sweep.emf_record(public_sweep.SweepResult(codes=["sweep_users_delete_failed"]), env, 1)
+    invalid = public_sweep.emf_record(public_sweep.SweepResult(invalid_dates=2), env, 1)
+
+    def matches(record):  # the pattern's logic, over the same fields
+        return record["event"] == "web_sweep" and (record["SweepFailed"] == 1 or record["InvalidDates"] > 0)
+
+    assert '$.event = "web_sweep"' in pattern and "$.SweepFailed = 1" in pattern and "$.InvalidDates > 0" in pattern
+    assert (matches(ok), matches(failed), matches(invalid)) == (False, True, True)
 
 
 def test_filter_codes_are_codes_the_modules_write(env):
@@ -431,21 +481,22 @@ def test_filter_codes_are_codes_the_modules_write(env):
     pass_source = (ROOT / "src/mapit/public_pass.py").read_text(encoding="utf-8")
     identity_source = (ROOT / "src/mapit/public_identity.py").read_text(encoding="utf-8")
     web_source = (ROOT / "src/mapit/public_web.py").read_text(encoding="utf-8")
-    cloudflare = re.findall(r'\$\.web_pass_outcome = "([a-z_]+)"', filters["PassCloudflareFilter"]["FilterPattern"])
-    assert cloudflare == list(stack.PASS_CLOUDFLARE_CODES)
+    pass_codes = re.findall(r'\$\.web_pass_outcome = "([a-z_]+)"', filters["PassFaultsFilter"]["FilterPattern"])
+    assert pass_codes == list(stack.PASS_FAULT_CODES)
+    assert pass_codes == list(stack.PASS_CLOUDFLARE_CODES) + ["fingerprint_key_missing", "pass_internal_error"]
     # Every pass outcome that means "Cloudflare or its secret does not answer" (pass PR contract).
-    assert set(cloudflare) == {
+    assert set(stack.PASS_CLOUDFLARE_CODES) == {
         "turnstile_unavailable", "turnstile_http_status", "turnstile_response_too_large",
         "turnstile_response_malformed", "turnstile_failed_unexpected", "turnstile_secret_rejected",
         "turnstile_secret_missing", "turnstile_secret_read_failed", "turnstile_secret_invalid"}
-    for code in cloudflare + ["fingerprint_key_missing"]:
+    for code in pass_codes:
         assert f'"{code}"' in pass_source, code
     assert public_pass.LOG_FIELD == "web_pass_outcome"
-    assert filters["PassKeyMissingFilter"]["FilterPattern"] == '{ $.web_pass_outcome = "fingerprint_key_missing" }'
-    assert filters["IdentityKeyCreatedFilter"]["FilterPattern"] == public_web.EVENT_FINGERPRINT_KEY_CREATED
-    assert '"breaker_open"' in identity_source and filters["IdentityBreakerFilter"]["FilterPattern"] == "breaker_open"
-    faults = filters["IdentityFaultsFilter"]["FilterPattern"].split(" ")
-    assert [term.removeprefix("?") for term in faults] == list(stack.IDENTITY_FAULT_CODES)
+    assert stack.IDENTITY_ALARM_EVENTS == (public_web.EVENT_FINGERPRINT_KEY_CREATED, "breaker_open")
+    assert '"breaker_open"' in identity_source
+    terms = filters["IdentityFaultsFilter"]["FilterPattern"].removesuffix(' ?"Task timed out"').split(" ")
+    assert [term.removeprefix("?") for term in terms] == list(stack.IDENTITY_FAULT_CODES + stack.IDENTITY_ALARM_EVENTS)
+    assert all(term.startswith("?") for term in terms)
     # Every code public_identity can log is classified exactly once: fault or expected refusal.
     logged = set(re.findall(r'_Stop\("([a-z_]+)"', identity_source))
     logged |= set(re.findall(r'_log\([^,]+, "([a-z_]+)"', identity_source))
@@ -475,6 +526,7 @@ def test_daily_ceiling_alarm_counts_the_fixed_event_of_the_service(env):
         "Sum", 1, "GreaterThanOrEqualToThreshold")
     assert alarm["TreatMissingData"] == "notBreaching"
     assert _resources(env)["McpDailyCeilingAlarm"]["DependsOn"] == ["McpDailyCeilingFilter"]
+    assert ceiling["MetricTransformations"][0]["MetricName"] == "McpDailyCeilingReached"
 
 
 def test_daily_ceiling_filter_matches_the_line_the_service_writes(env):
