@@ -62,6 +62,16 @@ band, and the web's favicon (`scripts/public_web_branding.py`; the images are
 SVG drawn for this project, embedded in the template, nothing fetched at run
 time). The invitation-only stack keeps the Cognito default style.
 
+Under the wordmark, the form logo carries one line, "Usa tu correo y contraseña
+de MAPIT" (`LOGIN_HINT`): an SVG `text` element in a system font, fitted to the
+wordmark width with `textLength`, in the web's secondary text colour on the
+form background (the same in both colour modes). It is in the image because the
+field labels are Cognito's and the style has no text of its own (the
+`instructions` component of `Settings` is reserved and not implemented, per the
+`AWS::Cognito::ManagedLoginBranding` reference); the developer guide lists
+`text` and its font and `textlength` attributes among the supported SVG
+elements and attributes. The logo is 278 x 112 (about 2.5:1).
+
 What Cognito does not let a style change: the font (no font setting) and the
 page text. The text is Cognito's own; it is shown in Spanish only when the
 authorize request carries `lang=es` (Cognito then keeps the choice in a `lang`
@@ -76,7 +86,7 @@ extensions per category, a 2 MB request) and one that the documentation does
 not state but Cognito enforces: a logo (`SubType LOGO`) must have a
 width:height ratio between 1:1 and 4:1, measured on the SVG `width` and
 `height`. A first deployment was refused for a 278 x 56 logo and rolled back;
-the logo is now 278 x 80.
+the logo became 278 x 80, and 278 x 112 with the hint line.
 
 Settings keys: Cognito ignores keys outside its schema without an error. The
 key paths of a real merged style read back with
