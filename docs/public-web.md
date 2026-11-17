@@ -222,9 +222,24 @@ this document before every stack creation:
 4. **Pre-authentication** (`PreAuthentication_Authentication`, user still in
    the pool because it signed in less than about 50 minutes ago). The same
    refusals. Cognito checks the password against its own hash, so no migration
-   runs and the pass attempt is spent here, unless a migration of the same
-   email spent one in the last 10 seconds. For an absent user it only checks
-   the pass.
+   runs and the pass attempt is spent here. An attempt that a migration of the
+   same email spent in the last 10 seconds covers one pre-authentication, once:
+   using it removes `migration_spent_at` with a conditional write, and every
+   later pre-authentication spends its own attempt. One that read the cover
+   but lost that write to another spends an attempt with the plain
+   conditional decrement, or is refused when none is left. The email comes from the
+   user's `email` attribute, never from `userName`. For an absent user
+   (`userNotFound`, sent because the client has `PreventUserExistenceErrors`
+   on) it applies only the refusals that need no email (closed or paused,
+   daily ceiling, breaker), spends nothing and logs `absent_user_deferred`.
+   The AWS documentation says neither what `userName` holds in that event nor
+   the order of this step and the migration; in DEV (email as username
+   attribute) it was observed not to be a valid email. The lock and the pass
+   of an absent user are checked by the migration, which refuses before MAPIT
+   without a valid pass. Refused or deferred events log their shape only:
+   fixed type names, the length of `userName`, whether a value parses as an
+   email, attribute names from a fixed list and a count of the others; never a
+   value.
 5. **Token issue** (`TokenGeneration_*`). Refresh is refused. Every other issue
    first reads the config and day rows again in one consistent
    `BatchGetItem`, because they may have changed after the password was
@@ -485,6 +500,17 @@ locally against the DEV web stack:
   about 50 minutes ago) and with the migration's when it does not; text and
   timing tell them apart. The pass and Cognito's own lockout bound it; no text
   avoids it.
+- **Active-session detection without a pass.** Without a pass, a user still
+  in the pool is refused by the pre-authentication step and an absent one by
+  the migration, and the Cognito API names the trigger in its error
+  (`PreAuthentication failed with error ...` against `UserMigration failed
+  with error ...`). The pre-authentication of an absent user cannot check the
+  pass because it does not know the email, and an existing user never reaches
+  the migration, so the two refusals cannot come from the same trigger.
+  Moving the existing user's pass check after the password does not help
+  (Cognito's own wrong-password error still differs from the migration's).
+  It tells only whether someone signed in with that email in the last hour or
+  so (the sweep deletes pool users after 50 minutes), like the risk above.
 - **The breaker does not see failures against existing users.** For a user
   still in the pool, Cognito checks the password itself and no trigger learns
   the result, so those failures add neither to the attempts row nor to the

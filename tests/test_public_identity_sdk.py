@@ -123,7 +123,29 @@ def test_modelled_pre_auth_grace_from_the_returned_item(stubs):
     old = {**PASS_ROW, "attempts_left": {"N": "2"}, "migration_spent_at": {"N": str(NOW - 1)}}
     dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
                             modeled_fields={"Item": old})
+    dynamo.add_response("update_item", {}, expected_params={
+        "TableName": TABLE, "Key": web.pass_key(FP), "UpdateExpression": "REMOVE migration_spent_at",
+        "ConditionExpression": "migration_spent_at = :spent AND expires_at > :now",
+        "ExpressionAttributeValues": {":spent": {"N": str(NOW - 1)}, ":now": {"N": str(NOW)}}})
     assert identity.handler(_pre_auth(False), Context())["response"] == {}
+
+
+def test_modelled_used_cover_refuses(stubs):
+    dynamo, _, _ = stubs
+    _read(dynamo, PASS_ROW)
+    old = {**PASS_ROW, "attempts_left": {"N": "0"}, "migration_spent_at": {"N": str(NOW - 1)}}
+    dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
+                            modeled_fields={"Item": old})
+    dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400)
+    dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
+                            expected_params={
+                                "TableName": TABLE, "Key": web.pass_key(FP),
+                                "UpdateExpression": "SET attempts_left = attempts_left - :one",
+                                "ConditionExpression": "attempts_left > :zero AND expires_at > :now",
+                                "ExpressionAttributeValues": {":one": {"N": "1"}, ":zero": {"N": "0"},
+                                                              ":now": {"N": str(NOW)}}})
+    with pytest.raises(identity.IdentityError, match="^" + public.MSG_START_FROM_WEB + "$"):
+        identity.handler(_pre_auth(False), Context())
 
 
 def test_modelled_seat_cancellation_says_full(stubs):

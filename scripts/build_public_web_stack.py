@@ -75,14 +75,16 @@ PASS_CLOUDFLARE_CODES = (
     "turnstile_secret_missing", "turnstile_secret_read_failed", "turnstile_secret_invalid",
 )
 # Identity step codes (logged by ``public_identity._run`` and ``_log``) that are
-# expected refusals: a wrong password, a lock, a missing pass, a full cap, bad
-# user input. Every other code it can log is a fault of the service and feeds
-# the ``identity-faults`` alarm; a test checks that both lists together are
+# expected refusals (a wrong password, a lock, a missing pass, a full cap, bad
+# user input) or the notice that a pre-authentication of an absent user left
+# the email checks to the migration. Every other code it can log is a fault of
+# the service and feeds the ``identity-faults`` alarm; a test checks that both lists together are
 # exactly the codes the module can write. Lambda ``Errors`` cannot be used for
 # this function: Cognito refusals are raised.
 IDENTITY_REFUSAL_CODES = (
     "mapit_rejected", "pass_missing", "locked", "closed", "breaker_open", "cap_full", "cap_full_race",
     "daily_limit", "refresh_refused", "person_absent", "email_invalid", "request_invalid", "daily_ceiling",
+    "absent_user_deferred",
 )
 IDENTITY_FAULT_CODES = (
     "config_invalid", "unexpected", "trigger_unknown", "deadline_passed", "state_unprocessed", "state_malformed",
