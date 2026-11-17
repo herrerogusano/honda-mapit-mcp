@@ -73,12 +73,15 @@ from .multiuser_common import (
     validate_tenant_id,
 )
 
-# Provisional: the consent text of the public web is not final yet.
-PUBLIC_CONSENT_VERSION = "web-provisional-1"
+# Version of the consent text the web shows, recorded on a person row when it is
+# created. A constant of the service, never read from a request; rows written
+# with an earlier version keep it and are never checked against it.
+PUBLIC_CONSENT_VERSION = "web-1"
 
-MSG_BAD_CREDENTIALS = "Email o contraseña de MAPIT incorrectos."
-MSG_START_FROM_WEB = "Empieza desde la web."
-MSG_PAUSED = "Ahora no se puede entrar. Vuelve a probar más tarde."
+MSG_BAD_CREDENTIALS = "Correo o contraseña de MAPIT incorrectos."
+MSG_START_FROM_WEB = "Vuelve a la web y entra desde allí con este mismo correo."
+# Also used while sign-ups are closed and while the breaker is open.
+MSG_PAUSED = "El servicio está en pausa. Vuelve más tarde."
 MSG_FULL = "No quedan plazas."
 MSG_DAILY_LIMIT = "Has entrado demasiadas veces hoy. Vuelve mañana."
 MSG_SESSION_ENDED = "La sesión ha terminado. Vuelve a entrar desde la web."
