@@ -154,6 +154,8 @@ IP_WINDOW_SECONDS = 10 * 60
 USED_RESULT_TTL_SECONDS = 10 * 60
 MAX_RESULT_LENGTH = 2048               # Turnstile response tokens are at most 2048 characters
 FINGERPRINT_KEY_BYTES = 32
+DAILY_CALL_LIMIT = 3_000               # /mcp calls per UTC day, all sessions; reaching it pauses
+                                       # every call and new sign-in until the next UTC day
 # MAX_FAILED_LOGINS (5) and LOCK_SECONDS (15 min) come from multiuser_common.
 
 # --- Table schema ----------------------------------------------------------
@@ -171,6 +173,11 @@ KIND_BREAKER = "breaker"
 KIND_USAGE = "usage"
 KIND_DAY = "day"
 KIND_MONTH = "month"
+KIND_MONTH_PERSON = "month_person"
+
+# Day and month counters that the identity function's login flow does not write.
+DAY_CALLS_ATTRIBUTE = "mcp_calls"      # admitted /mcp calls of the UTC day (service)
+MONTH_PEOPLE_ATTRIBUTE = "people"      # distinct people who signed in during the UTC month
 
 ROW_KINDS: Mapping[str, str] = {
     KIND_CONFIG: "pk 'config'. open, pause_until, cap, occupied, pass_required. "
@@ -190,8 +197,13 @@ ROW_KINDS: Mapping[str, str] = {
                   "window after the window ends.",
     KIND_USAGE: "pk 'usage#<tenant id>'. /mcp call counters of one session. "
                 "Expires after SESSION_USAGE_TTL_SECONDS.",
-    KIND_DAY: "pk 'day#YYYY-MM-DD' (UTC). Aggregate counts only, no personal data. No expiry.",
-    KIND_MONTH: "pk 'month#YYYY-MM' (UTC). Aggregate counts only, no personal data. No expiry.",
+    KIND_DAY: "pk 'day#YYYY-MM-DD' (UTC). Aggregate counts only, no personal data, including "
+              "DAY_CALLS_ATTRIBUTE. No expiry.",
+    KIND_MONTH: "pk 'month#YYYY-MM' (UTC). Aggregate counts only, no personal data, including "
+                "MONTH_PEOPLE_ATTRIBUTE. No expiry.",
+    KIND_MONTH_PERSON: "pk 'month_person#YYYY-MM#<email fp>' (UTC). Only the expiry: marks that "
+                       "this person is already counted in MONTH_PEOPLE_ATTRIBUTE of that month. "
+                       "Expires at the start of the next UTC month.",
 }
 """What each row holds and how long it lives.
 
@@ -291,6 +303,20 @@ def day_key(now: int) -> Key:
 
 def month_key(now: int) -> Key:
     return _key(f"{KIND_MONTH}#{_utc(now):%Y-%m}")
+
+
+def month_person_key(now: int, email_fp: str) -> Key:
+    return _key(f"{KIND_MONTH_PERSON}#{_utc(now):%Y-%m}#{_fingerprint_arg(email_fp)}")
+
+
+def month_person_expires_at(now: int) -> int:
+    """Start of the UTC month after the month of ``now``.
+
+    The marker is only needed while its month can still receive sign-ins.
+    """
+    start = _utc(now).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    year, month = divmod(start.year * 12 + start.month, 12)
+    return int(start.replace(year=year, month=month + 1).timestamp())
 
 
 def person_expires_at(last_login: int) -> int:
@@ -486,7 +512,7 @@ class FingerprintKeyStore:
 
 # --- Configuration row -----------------------------------------------------
 
-CONFIG_SOURCE_DEFAULT = "default"      # row absent
+CONFIG_SOURCE_MISSING = "missing"      # row absent: closed
 CONFIG_SOURCE_ROW = "row"              # row present and valid
 CONFIG_SOURCE_MALFORMED = "malformed"  # row present but invalid: closed
 CONFIG_SOURCE_READ_FAILED = "read_failed"  # GetItem failed: closed
@@ -515,9 +541,14 @@ class WebConfig:
         return self.cap == 0 or self.occupied < self.cap
 
 
-DEFAULT_WEB_CONFIG = WebConfig(
-    open=True, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
-    source=CONFIG_SOURCE_DEFAULT)
+# Value of an attribute missing from a present row (``source="row"``). ``open``
+# defaults to false: the web is open only when someone wrote ``open = true``.
+ATTRIBUTE_DEFAULTS = WebConfig(
+    open=False, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
+    source=CONFIG_SOURCE_ROW)
+MISSING_WEB_CONFIG = WebConfig(
+    open=False, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
+    source=CONFIG_SOURCE_MISSING)
 CLOSED_WEB_CONFIG = WebConfig(
     open=False, pause_until=0, cap=DEFAULT_CAP, occupied=0, pass_required=True,
     source=CONFIG_SOURCE_MALFORMED)
@@ -549,25 +580,27 @@ def parse_web_config(item: object) -> WebConfig:
     """Parse the low-level DynamoDB ``config`` item.
 
     ``None`` means only one thing: a successful ``GetItem`` whose response has
-    no ``Item``. It gives the defaults (open, cap 100, pass required). A failed
-    or unreadable read must never be passed here as ``None``; it must become a
-    closed config (:func:`load_web_config` does that). Missing attributes take
-    their default, so a row created by an atomic counter update stays valid.
-    Unknown attributes, wrong types or a wrong key: :data:`CLOSED_WEB_CONFIG`.
+    no ``Item``. It gives :data:`MISSING_WEB_CONFIG`: closed (``open=false``,
+    ``source="missing"``) until an operator writes the row. A failed or
+    unreadable read must never be passed here as ``None``; it must become a
+    closed config (:func:`load_web_config` does that). In a present row,
+    missing attributes take :data:`ATTRIBUTE_DEFAULTS` (``open`` absent is
+    closed). Unknown attributes,
+    wrong types or a wrong key: :data:`CLOSED_WEB_CONFIG`.
     """
     if item is None:
-        return DEFAULT_WEB_CONFIG
+        return MISSING_WEB_CONFIG
     try:
         if not isinstance(item, Mapping) or not set(item) <= _CONFIG_ATTRIBUTES:
             raise PublicWebError("config_malformed")
         if item.get(PARTITION_KEY) != {"S": KIND_CONFIG}:
             raise PublicWebError("config_malformed")
         return WebConfig(
-            open=_bool_attribute(item, "open", DEFAULT_WEB_CONFIG.open),
-            pause_until=_number_attribute(item, "pause_until", DEFAULT_WEB_CONFIG.pause_until),
-            cap=_number_attribute(item, "cap", DEFAULT_WEB_CONFIG.cap),
-            occupied=_number_attribute(item, "occupied", DEFAULT_WEB_CONFIG.occupied),
-            pass_required=_bool_attribute(item, "pass_required", DEFAULT_WEB_CONFIG.pass_required),
+            open=_bool_attribute(item, "open", ATTRIBUTE_DEFAULTS.open),
+            pause_until=_number_attribute(item, "pause_until", ATTRIBUTE_DEFAULTS.pause_until),
+            cap=_number_attribute(item, "cap", ATTRIBUTE_DEFAULTS.cap),
+            occupied=_number_attribute(item, "occupied", ATTRIBUTE_DEFAULTS.occupied),
+            pass_required=_bool_attribute(item, "pass_required", ATTRIBUTE_DEFAULTS.pass_required),
             source=CONFIG_SOURCE_ROW,
         )
     except PublicWebError:
@@ -579,7 +612,8 @@ def load_web_config(dynamodb: Any, table_name: str) -> WebConfig:
 
     Any exception, or a response that is not a mapping, gives
     :data:`READ_FAILED_WEB_CONFIG` (closed, ``source="read_failed"``). Only a
-    successful response without ``Item`` gives the defaults.
+    successful response without ``Item`` gives :data:`MISSING_WEB_CONFIG`
+    (closed too).
     """
     try:
         response = dynamodb.get_item(TableName=table_name, Key=config_key(), ConsistentRead=True)
@@ -597,8 +631,9 @@ def claim_seat_update(table_name: str) -> dict[str, Any]:
     """The ``Update`` of one new person taking a seat, atomic with its cap check.
 
     The same mapping works as ``update_item`` keyword arguments and as the
-    ``Update`` element of ``transact_write_items``. It adds 1 to ``occupied``
-    only if: ``cap`` is absent and ``occupied`` (absent = 0) is below
+    ``Update`` element of ``transact_write_items``. The row must exist (a
+    claim never creates it, so a deleted row cannot come back through a racing
+    sign-in). It adds 1 to ``occupied`` only if: ``cap`` is absent and ``occupied`` (absent = 0) is below
     :data:`DEFAULT_CAP`; or ``cap`` is 0 (no cap); or ``cap`` is a positive
     number and ``occupied`` (absent = 0) is below it. A non-number ``cap`` or
     ``occupied`` fails the condition (closed). It does not check ``open`` or
@@ -609,15 +644,67 @@ def claim_seat_update(table_name: str) -> dict[str, Any]:
         "Key": config_key(),
         "UpdateExpression": "ADD #occupied :one",
         "ConditionExpression": (
-            "(attribute_not_exists(#cap) AND (attribute_not_exists(#occupied) OR #occupied < :default_cap))"
+            "attribute_exists(#pk) AND ((attribute_not_exists(#cap) AND (attribute_not_exists(#occupied) OR #occupied < :default_cap))"
             " OR #cap = :zero"
             " OR (attribute_exists(#cap) AND attribute_not_exists(#occupied) AND #cap > :zero)"
-            " OR #occupied < #cap"
+            " OR #occupied < #cap)"
         ),
-        "ExpressionAttributeNames": {"#occupied": "occupied", "#cap": "cap"},
+        "ExpressionAttributeNames": {"#pk": PARTITION_KEY, "#occupied": "occupied", "#cap": "cap"},
         "ExpressionAttributeValues": {
             ":one": {"N": "1"}, ":zero": {"N": "0"}, ":default_cap": {"N": str(DEFAULT_CAP)},
         },
+    }
+
+
+# --- Daily call ceiling -------------------------------------------------------
+
+def daily_calls(item: object) -> int:
+    """``mcp_calls`` of a day row read with a successful read.
+
+    ``None`` (no row) and a row without the attribute are 0. Anything else that
+    is not a canonical non-negative number raises ``day_malformed``: callers
+    treat it like an unreadable counter (closed).
+    """
+    if item is None:
+        return 0
+    if not isinstance(item, Mapping):
+        raise PublicWebError("day_malformed")
+    if DAY_CALLS_ATTRIBUTE not in item:
+        return 0
+    value = item[DAY_CALLS_ATTRIBUTE]
+    if (not isinstance(value, Mapping) or set(value) != {"N"} or type(value["N"]) is not str
+            or not _NUMBER_RE.fullmatch(value["N"])):
+        raise PublicWebError("day_malformed")
+    return int(value["N"])
+
+
+def daily_ceiling_reached(item: object) -> bool:
+    """True when the day's admitted calls reached :data:`DAILY_CALL_LIMIT`."""
+    return daily_calls(item) >= DAILY_CALL_LIMIT
+
+
+def count_daily_call_update(table_name: str, now: int) -> dict[str, Any]:
+    """``update_item`` arguments that count one admitted ``/mcp`` call.
+
+    Atomic: adds 1 to ``mcp_calls`` of ``day#<UTC day of now>`` only while it
+    is absent or a number from 0 to below :data:`DAILY_CALL_LIMIT`, so a
+    negative counter can never let calls past the ceiling. It returns the new
+    value, so the call that reaches the ceiling can be told apart, and on a
+    failed condition the old row, so the caller can tell the ceiling from an
+    invalid counter. DynamoDB cannot test for an integer: a fractional counter
+    passes the condition, and the caller must refuse when the returned value
+    is not a non-negative integer.
+    """
+    return {
+        "TableName": table_name,
+        "Key": day_key(now),
+        "UpdateExpression": "ADD #c :one",
+        "ConditionExpression": "attribute_not_exists(#c) OR (#c >= :zero AND #c < :max)",
+        "ExpressionAttributeNames": {"#c": DAY_CALLS_ATTRIBUTE},
+        "ExpressionAttributeValues": {":one": {"N": "1"}, ":zero": {"N": "0"},
+                                      ":max": {"N": str(DAILY_CALL_LIMIT)}},
+        "ReturnValues": "UPDATED_NEW",
+        "ReturnValuesOnConditionCheckFailure": "ALL_OLD",
     }
 
 
@@ -627,6 +714,8 @@ __all__ = [name for name in globals() if (name.isupper() and not name.startswith
     "web_session_parameter_name", "fingerprint_key_parameter_name", "config_key", "person_key",
     "attempts_key", "pass_key", "used_result_key", "ip_window", "ip_passes_key",
     "breaker_window", "breaker_tripped", "breaker_key", "session_usage_key", "day_key", "month_key",
+    "month_person_key", "month_person_expires_at", "daily_calls", "daily_ceiling_reached",
+    "count_daily_call_update",
     "person_expires_at", "attempts_expires_at", "pass_expires_at", "used_result_expires_at",
     "ip_passes_expires_at", "breaker_expires_at", "session_usage_expires_at", "ttl_value",
     "fingerprint", "email_fingerprint", "ip_fingerprint", "ip_fingerprint_value", "result_fingerprint",

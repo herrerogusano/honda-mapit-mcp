@@ -123,9 +123,9 @@ def test_load_config_reads_consistently():
     assert dynamo.calls == [{"TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True}]
 
 
-def test_load_config_without_item_uses_the_defaults():
+def test_load_config_without_item_is_closed():
     config = web.load_web_config(FakeDynamo({"ResponseMetadata": {"HTTPStatusCode": 200}}), TABLE)
-    assert config == web.DEFAULT_WEB_CONFIG
+    assert config == web.MISSING_WEB_CONFIG and not config.open and config.source == "missing"
 
 
 @pytest.mark.parametrize("dynamo", [
@@ -242,7 +242,7 @@ def test_reference_evaluator_semantics():
 
 
 @pytest.mark.parametrize(("item", "admitted"), [
-    ({}, True),                                  # row absent: default cap, nobody yet
+    ({}, False),                                 # row absent: a claim never creates it
     (_row(occupied=99), True),                   # default cap 100
     (_row(occupied=100), False),
     (_row(cap=0, occupied=5000), True),          # 0 = no cap
@@ -260,8 +260,23 @@ def test_claim_seat_condition(item, admitted):
     assert _claims(item) is admitted
     # The condition agrees with WebConfig.has_room on every well-typed row.
     parsed = web.parse_web_config(item or None)
-    if parsed.source != web.CONFIG_SOURCE_MALFORMED:
+    if parsed.source == web.CONFIG_SOURCE_ROW:
         assert parsed.has_room() is admitted
+
+
+@pytest.mark.parametrize(("item", "counted"), [
+    ({}, True),                                   # no counter yet
+    ({"mcp_calls": {"N": "0"}}, True),
+    ({"mcp_calls": {"N": "2999"}}, True),
+    ({"mcp_calls": {"N": "3000"}}, False),        # ceiling reached
+    ({"mcp_calls": {"N": "-10000"}}, False),      # a negative counter must not let calls past the ceiling
+    ({"mcp_calls": {"N": "-1"}}, False),
+    ({"mcp_calls": {"S": "1"}}, False),           # wrong type
+])
+def test_daily_call_condition_counts_only_a_valid_counter_below_the_ceiling(item, counted):
+    update = web.count_daily_call_update(TABLE, NOW)
+    assert _evaluate(update["ConditionExpression"], update["ExpressionAttributeNames"],
+                     update["ExpressionAttributeValues"], item) is counted
 
 
 def test_claim_seat_update_shape():

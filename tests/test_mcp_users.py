@@ -250,6 +250,7 @@ class _WebClients:
         self.cognito, self.cognito_stub = _stubbed("cognito-idp")
         self.ssm, self.ssm_stub = _stubbed("ssm")
         self.lines: list[str] = []
+        self.day_item = None  # today's day row, read by web-status after the breaker rows
 
     def __enter__(self):
         for stub in (self.dynamo_stub, self.cognito_stub, self.ssm_stub):
@@ -279,6 +280,7 @@ class _WebClients:
         rows = [current, *older, None, None][:3]
         for back, item in enumerate(rows):
             self.get(web.breaker_key(window - back), item)
+        self.get(web.day_key(WEB_NOW), self.day_item)
 
     def pools(self):
         self.cognito_stub.add_response("list_user_pools", {"UserPools": [
@@ -330,6 +332,7 @@ def test_web_status_reports_counts_ages_and_state_without_identifiers():
         c.verify()
     assert "config (row): open=true pause_until=none cap=100 occupied=3 pass_required=true" in c.text
     assert "breaker: closed; MAPIT rejections in this 10-min window: 4/20" in c.text
+    assert "/mcp calls today (UTC): 0/3000, below the ceiling" in c.text
     assert "/estado would answer: abierto" in c.text
     assert "users in web pool: 2, oldest 40 min 0 s (under one hour)" in c.text
     assert "session parameters: 1, oldest 40 min 0 s (under one hour)" in c.text
@@ -357,7 +360,7 @@ def test_web_status_ignores_expired_breaker_rows_and_reads_states():
     expired = {**web.breaker_key(web.breaker_window(WEB_NOW)), "rejections": {"N": "25"},
                "open_until": {"N": str(WEB_NOW + 60)}, "expires_at": {"N": str(WEB_NOW)}}
     with _WebClients() as c:
-        c.get(web.config_key(), _config(cap=2, occupied=2))
+        c.get(web.config_key(), _config(cap=2, occupied=2, open=True))
         c.breakers(expired)
         c.pools()
         c.users()
@@ -365,10 +368,14 @@ def test_web_status_ignores_expired_breaker_rows_and_reads_states():
         assert c.run("web-status") == 0
     assert "breaker: closed" in c.text and "/estado would answer: lleno" in c.text
     now = WEB_NOW
-    assert mcp_users_web.public_state(web.parse_web_config(None), now, False) == "abierto"
-    assert mcp_users_web.public_state(web.parse_web_config(None), now, True) == "pausa"
+    assert mcp_users_web.public_state(web.parse_web_config(None), now, False) == "cerrado"
+    assert mcp_users_web.public_state(web.parse_web_config(None), now, True, True) == "cerrado"
+    assert mcp_users_web.public_state(web.parse_web_config(_config()), now, False) == "cerrado"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(open=True)), now, False) == "abierto"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(open=True)), now, False, True) == "pausa"
     assert mcp_users_web.public_state(web.parse_web_config(_config(open=False)), now, True) == "cerrado"
-    assert mcp_users_web.public_state(web.parse_web_config(_config(pause_until=now + 1)), now, False) == "pausa"
+    assert mcp_users_web.public_state(web.parse_web_config(_config(open=True, pause_until=now + 1)), now,
+                                      False) == "pausa"
     assert mcp_users_web.public_state(web.READ_FAILED_WEB_CONFIG, now, False) == "pausa"
 
 
@@ -380,7 +387,7 @@ def test_web_status_fails_without_exactly_one_web_pool(capsys):
             {"Id": OTHER_POOL, "Name": "honda-mapit-mcp-dev-users"}]}, {"MaxResults": 60})
         assert c.run("web-status") == 1
         c.verify()
-    assert "config (no row, defaults)" in c.text
+    assert "config (no row: closed; open it with web-config --open true --yes)" in c.text
     assert "web user pool not found" in capsys.readouterr().err
 
 
@@ -406,16 +413,19 @@ def test_web_status_reports_aws_failures_by_code_only(capsys):
 def test_web_stats_reads_day_and_month_rows_across_a_year_change():
     with _WebClients() as c:
         c.get(web.day_key(WEB_NOW), {**web.day_key(WEB_NOW), "logins": {"N": "7"}, "new_people": {"N": "2"},
-                                     "mapit_rejections": {"N": "3"}})
+                                     "mapit_rejections": {"N": "3"}, "mcp_calls": {"N": "2999"}})
         c.get(web.day_key(WEB_NOW - 86400))
-        c.get({"pk": {"S": "month#2027-01"}}, {"pk": {"S": "month#2027-01"}, "logins": {"N": "40"}})
+        c.get({"pk": {"S": "month#2027-01"}}, {"pk": {"S": "month#2027-01"}, "logins": {"N": "40"},
+                                               "people": {"N": "12"}})
         c.get({"pk": {"S": "month#2026-12"}}, {"pk": {"S": "month#2026-12"}, "logins": {"S": "bad"}})
         assert c.run("web-stats", "--days", "2", "--months", "2") == 0
         c.verify()
     rows = [line.split() for line in c.lines]
-    assert ["2027-01-15", "7", "2", "3", "0"] in rows
-    assert ["2027-01-14", "0", "0", "0", "0"] in rows
-    assert ["2027-01", "40"] in rows and ["2026-12", "?"] in rows
+    assert rows[0] == ["day", "(UTC)", "logins", "new_people", "mapit_rejections", "cap_rejections", "mcp_calls"]
+    assert ["2027-01-15", "7", "2", "3", "0", "2999"] in rows
+    assert ["2027-01-14", "0", "0", "0", "0", "0"] in rows
+    assert ["month", "(UTC)", "logins", "people"] in rows
+    assert ["2027-01", "40", "12"] in rows and ["2026-12", "?", "0"] in rows
 
 
 def test_web_stats_bounds_its_reads(capsys):
@@ -428,7 +438,7 @@ def test_web_stats_bounds_its_reads(capsys):
 
 def test_web_config_dry_run_shows_both_values_and_writes_nothing():
     with _WebClients() as c:
-        c.get(web.config_key(), _config(cap=100, occupied=7))
+        c.get(web.config_key(), _config(cap=100, occupied=7, open=True))
         assert c.run("web-config", "--cap", "200") == 0
         c.verify()  # no update_item stubbed: a write would have raised
     assert "current: open=true pause_until=none cap=100 occupied=7 pass_required=true" in c.text
@@ -456,18 +466,87 @@ def test_web_config_writes_only_the_requested_attributes_conditionally():
     assert c.lines[-1] == "written"
 
 
+def _create(values):
+    """The conditional creation of an absent row: every configuration attribute, never occupied."""
+    return {
+        "TableName": WEB_TABLE, "Key": web.config_key(),
+        "UpdateExpression": "SET #a0 = :v0, #a1 = :v1, #a2 = :v2, #a3 = :v3",
+        "ConditionExpression": ("attribute_not_exists(#pk) AND attribute_not_exists(#a0) AND "
+                                "attribute_not_exists(#a1) AND attribute_not_exists(#a2) AND "
+                                "attribute_not_exists(#a3)"),
+        "ExpressionAttributeNames": {"#pk": "pk", "#a0": "cap", "#a1": "open", "#a2": "pass_required",
+                                     "#a3": "pause_until"},
+        "ExpressionAttributeValues": dict(zip((":v0", ":v1", ":v2", ":v3"), values)),
+    }
+
+
 def test_web_config_creates_an_absent_row_without_occupied():
     with _WebClients() as c:
         c.get(web.config_key())
-        c.dynamo_stub.add_response("update_item", {}, {
-            "TableName": WEB_TABLE, "Key": web.config_key(), "UpdateExpression": "SET #a0 = :v0",
-            "ConditionExpression": "attribute_not_exists(#pk) AND attribute_not_exists(#a0)",
-            "ExpressionAttributeNames": {"#pk": "pk", "#a0": "pass_required"},
-            "ExpressionAttributeValues": {":v0": {"BOOL": False}},
-        })
+        c.dynamo_stub.add_response("update_item", {}, _create(
+            [{"N": "100"}, {"BOOL": False}, {"BOOL": False}, {"N": "0"}]))
         assert c.run("web-config", "--pass-required", "false", "--yes") == 0
         c.verify()
     assert "warning: without the pass" in c.text
+    # Without --open the new row stays closed and states open=false explicitly.
+    assert "new:     open=false pause_until=none cap=100 occupied=0 pass_required=false" in c.text
+
+
+def test_web_config_opens_the_web_after_stack_creation():
+    with _WebClients() as c:
+        c.get(web.config_key())
+        assert c.run("web-config", "--open", "true") == 0  # dry run first
+        c.get(web.config_key())
+        c.dynamo_stub.add_response("update_item", {}, _create(
+            [{"N": "100"}, {"BOOL": True}, {"BOOL": True}, {"N": "0"}]))
+        assert c.run("web-config", "--open", "true", "--yes") == 0
+        c.verify()
+    assert "current: no row (closed): open=false pause_until=none cap=100 occupied=0 pass_required=true; " \
+           "the row will be created" in c.text
+    assert "new:     open=true pause_until=none cap=100 occupied=0 pass_required=true" in c.text
+    assert c.lines[-1] == "written"
+
+
+def test_web_config_create_refuses_if_the_row_appeared_meanwhile(capsys):
+    with _WebClients() as c:
+        c.get(web.config_key())
+        c.dynamo_stub.add_client_error("update_item", "ConditionalCheckFailedException", expected_params=_create(
+            [{"N": "100"}, {"BOOL": True}, {"BOOL": True}, {"N": "0"}]))
+        assert c.run("web-config", "--open", "true", "--yes") == 1
+        c.verify()
+    assert "changed while running; nothing written" in capsys.readouterr().err
+
+
+def test_web_status_row_without_open_is_closed():
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(cap=100, occupied=2))
+        c.breakers()
+        c.pools()
+        c.users()
+        c.sessions()
+        assert c.run("web-status") == 0
+        c.verify()
+    assert "config (row): open=false pause_until=none cap=100 occupied=2 pass_required=true" in c.text
+    assert "/estado would answer: cerrado" in c.text
+
+
+@pytest.mark.parametrize(("item", "verdict", "state"), [
+    ({"mcp_calls": {"N": "3000"}}, "3000/3000, CEILING REACHED (paused until 00:00 UTC)", "pausa"),
+    ({"mcp_calls": {"N": "2999"}}, "2999/3000, below the ceiling", "abierto"),
+    ({"mcp_calls": {"S": "x"}}, "?/3000, UNREADABLE (paused)", "pausa"),
+])
+def test_web_status_shows_the_daily_ceiling(item, verdict, state):
+    with _WebClients() as c:
+        c.get(web.config_key(), _config(open=True))
+        c.day_item = {**web.day_key(WEB_NOW), **item}
+        c.breakers()
+        c.pools()
+        c.users()
+        c.sessions()
+        assert c.run("web-status") == 0
+        c.verify()
+    assert f"/mcp calls today (UTC): {verdict}" in c.text
+    assert f"/estado would answer: {state}" in c.text
 
 
 def test_web_config_can_repair_a_bad_value_but_not_an_unknown_attribute(capsys):

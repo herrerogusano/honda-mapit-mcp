@@ -87,7 +87,7 @@ def test_config_read_with_real_dynamodb_model():
                              expected_params=expected)
     with stubber:
         assert web.load_web_config(client, TABLE).cap == 0
-        assert web.load_web_config(client, TABLE) == web.DEFAULT_WEB_CONFIG
+        assert web.load_web_config(client, TABLE) == web.MISSING_WEB_CONFIG
         assert web.load_web_config(client, TABLE) == web.READ_FAILED_WEB_CONFIG
     stubber.assert_no_pending_responses()
 
@@ -104,6 +104,19 @@ def test_seat_claim_is_valid_for_update_item_and_transactions():
         with pytest.raises(client.exceptions.ConditionalCheckFailedException):
             client.update_item(**update)
         client.transact_write_items(TransactItems=[{"Update": update}])
+    stubber.assert_no_pending_responses()
+
+
+def test_daily_call_count_is_valid_for_the_real_model():
+    client, stubber = _dynamodb()
+    update = web.count_daily_call_update(TABLE, 1_800_000_000)
+    stubber.add_response("update_item", {"Attributes": {"mcp_calls": {"N": "3000"}}}, update)
+    stubber.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
+                             expected_params=update)
+    with stubber:
+        assert client.update_item(**update)["Attributes"] == {"mcp_calls": {"N": "3000"}}
+        with pytest.raises(client.exceptions.ConditionalCheckFailedException):
+            client.update_item(**update)
     stubber.assert_no_pending_responses()
 
 

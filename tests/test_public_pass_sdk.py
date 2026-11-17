@@ -52,8 +52,10 @@ def _parameter(name, value):
 
 
 def _expect_reads(ddb, ssm):
-    ddb.add_response("get_item", {}, expected_params={
+    ddb.add_response("get_item", {"Item": {"pk": {"S": "config"}, "open": {"BOOL": True}}}, expected_params={
         "TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True})
+    ddb.add_response("get_item", {}, expected_params={
+        "TableName": TABLE, "Key": web.day_key(NOW), "ConsistentRead": True})
     key_name = web.fingerprint_key_parameter_name("dev")
     ssm.add_response("get_parameter", _parameter(key_name, base64.b64encode(KEY).decode()),
                      expected_params={"Name": key_name, "WithDecryption": True})
@@ -129,8 +131,10 @@ def test_missing_fingerprint_key_is_not_created_with_real_model():
     # No put_parameter is stubbed: the Stubber would raise if one were sent.
     made = _clients()
     ddb, ssm = made["dynamodb"][1], made["ssm"][1]
-    ddb.add_response("get_item", {}, expected_params={
+    ddb.add_response("get_item", {"Item": {"pk": {"S": "config"}, "open": {"BOOL": True}}}, expected_params={
         "TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True})
+    ddb.add_response("get_item", {}, expected_params={
+        "TableName": TABLE, "Key": web.day_key(NOW), "ConsistentRead": True})
     key_name = web.fingerprint_key_parameter_name("dev")
     ssm.add_client_error("get_parameter", "ParameterNotFound", http_status_code=400,
                          expected_params={"Name": key_name, "WithDecryption": True})
@@ -143,8 +147,10 @@ def test_missing_fingerprint_key_is_not_created_with_real_model():
 def test_missing_secret_with_real_model():
     made = _clients()
     ddb, ssm = made["dynamodb"][1], made["ssm"][1]
-    ddb.add_response("get_item", {}, expected_params={
+    ddb.add_response("get_item", {"Item": {"pk": {"S": "config"}, "open": {"BOOL": True}}}, expected_params={
         "TableName": TABLE, "Key": {"pk": {"S": "config"}}, "ConsistentRead": True})
+    ddb.add_response("get_item", {}, expected_params={
+        "TableName": TABLE, "Key": web.day_key(NOW), "ConsistentRead": True})
     key_name = web.fingerprint_key_parameter_name("dev")
     ssm.add_response("get_parameter", _parameter(key_name, base64.b64encode(KEY).decode()))
     ssm.add_client_error("get_parameter", "ParameterNotFound", http_status_code=400)

@@ -8,7 +8,8 @@ it calls MAPIT. Steps, each failing closed with its own fixed code:
 
 1. configuration (environment variables) and the request (exact JSON body);
 2. source IP from ``requestContext.http.sourceIp``;
-3. configuration row: closed or paused answers like ``/estado`` would, with no
+3. configuration row (an absent row is closed) and the day's ``/mcp`` call
+   ceiling: closed or paused answers like ``/estado`` would, with no
    Cloudflare call;
 4. Turnstile ``siteverify`` through an injected transport, with the secret from
    an SSM SecureString (cached in memory), checking ``success``, ``hostname``
@@ -416,6 +417,21 @@ class PassService:
             raise PassError("web_closed", "closed")
         if not config.accepting(now):
             raise PassError("web_paused", "paused")
+        # The day's /mcp call ceiling pauses sign-ins too; an unreadable
+        # counter is a pause (closed).
+        try:
+            response = self._dynamodb.get_item(TableName=self._settings.table, Key=web.day_key(now),
+                                               ConsistentRead=True)
+        except Exception as exc:
+            raise PassError("day_read_failed", "paused", cause=exc) from None
+        if not isinstance(response, Mapping):
+            raise PassError("day_read_failed", "paused")
+        try:
+            reached = web.daily_ceiling_reached(response.get("Item"))
+        except web.PublicWebError:
+            raise PassError("day_malformed", "paused") from None
+        if reached:
+            raise PassError("daily_ceiling", "paused")
 
     def _mark_result_used(self, result_fp: str, now: int) -> None:
         item = dict(web.used_result_key(result_fp))

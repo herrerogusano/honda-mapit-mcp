@@ -5,8 +5,9 @@ Reached only from :mod:`mapit.multiuser_identity` when
 nothing here runs. It serves four Cognito triggers and one HTTP route:
 
 * ``UserMigration_Authentication``: one consistent read of the web table
-  (config, person, attempts, pass, breaker), refusals that never call MAPIT
-  (closed or paused, breaker open, email locked, no valid pass), the pass
+  (config, day, person, attempts, pass, breaker), refusals that never call
+  MAPIT (closed or paused, including an absent configuration row and the
+  day's ``/mcp`` call ceiling, breaker open, email locked, no valid pass), the pass
   attempt spent conditionally, one MAPIT login as in invitation mode, then
   either the rejection counters or the MAPIT session under
   :func:`mapit.public_web.web_session_parameter_name` with a random tenant
@@ -15,9 +16,14 @@ nothing here runs. It serves four Cognito triggers and one HTTP route:
   never tells whether an email signed in before.
 * ``PreAuthentication_Authentication``: the same refusals, before Cognito
   checks the password of a user that still exists.
-* ``TokenGeneration_*``: refresh is refused; every other issue counts one
+* ``TokenGeneration_*``: refresh is refused; every other issue first reads
+  the config and day rows again (closed, paused or the daily ceiling refuse,
+  since they may have changed after the password was checked), then counts one
   sign-in per person and day (at most ``DAILY_LOGINS_PER_PERSON``) and the
-  day and month aggregates, then adds the tenant claim.
+  day and month aggregates, then the person once per UTC month in the
+  month's distinct ``people`` (a ``month_person`` marker created only if
+  absent, in the same transaction as the counter; a failure there is logged
+  and never refuses the sign-in), then adds the tenant claim.
 * ``GET /estado``: fixed public JSON, ``abierto``, ``lleno``, ``cerrado`` or
   ``pausa``.
 
@@ -183,8 +189,14 @@ def _email_fp(env: str, email: str, deadline: float) -> str:
 
 # --- the single state read -----------------------------------------------------
 
+_NO_EXPIRY_ROWS = frozenset({"config", "day"})
+
+
 def _read(env: str, keys: Mapping[str, web.Key], now: int, deadline: float) -> dict[str, Any]:
-    """One consistent BatchGetItem; rows past ``expires_at`` count as absent."""
+    """One consistent BatchGetItem; rows past ``expires_at`` count as absent.
+
+    The config and day rows have no expiry.
+    """
     table = web.web_table_name(env)
     response = _call("state_read", deadline, base._dynamodb().batch_get_item, RequestItems={
         table: {"Keys": [dict(key) for key in keys.values()], "ConsistentRead": True}})
@@ -198,7 +210,7 @@ def _read(env: str, keys: Mapping[str, web.Key], now: int, deadline: float) -> d
         if pk not in wanted or state[wanted[pk]] is not None:
             raise _Stop("state_malformed")
         name = wanted[pk]
-        if name != "config":
+        if name not in _NO_EXPIRY_ROWS:
             expires = base._n(item, web.TTL_ATTRIBUTE)
             if expires is None:
                 raise _Stop("state_malformed")
@@ -208,12 +220,12 @@ def _read(env: str, keys: Mapping[str, web.Key], now: int, deadline: float) -> d
     return state
 
 
-def _login_keys(email_fp: str, window: int, *, person: bool) -> dict[str, web.Key]:
-    keys = {"config": web.config_key(), "attempts": web.attempts_key(email_fp),
+def _login_keys(email_fp: str, now: int, *, person: bool) -> dict[str, web.Key]:
+    keys = {"config": web.config_key(), "day": web.day_key(now), "attempts": web.attempts_key(email_fp),
             "pass": web.pass_key(email_fp)}
     if person:
         keys["person"] = web.person_key(email_fp)
-    keys.update(_breaker_keys(window))
+    keys.update(_breaker_keys(web.breaker_window(now)))
     return keys
 
 
@@ -250,6 +262,9 @@ def _gate(state: Mapping[str, Any], now: int, *, grace: bool = False) -> web.Web
     config = web.parse_web_config(state["config"])
     if not config.accepting(now):
         raise _Stop("closed", MSG_PAUSED)
+    # An unreadable counter raises day_malformed (closed, generic message).
+    if web.daily_ceiling_reached(state["day"]):
+        raise _Stop("daily_ceiling", MSG_PAUSED)
     if _breaker_open(state, now):
         raise _Stop("breaker_open", MSG_PAUSED)
     attempts = state["attempts"]
@@ -415,7 +430,7 @@ def _user_migration(event: dict[str, Any], context: Any, started: float,
     email_fp = _email_fp(env, email, deadline)
     now = base._now()
     window = web.breaker_window(now)
-    state = _read(env, _login_keys(email_fp, window, person=True), now, deadline)
+    state = _read(env, _login_keys(email_fp, now, person=True), now, deadline)
     state["window"] = window
     config = _gate(state, now)
     if config.pass_required:
@@ -480,7 +495,7 @@ def _pre_authentication(event: dict[str, Any], context: Any, started: float,
     email = _email(attributes.get("email") if "email" in attributes else event.get("userName"))
     email_fp = _email_fp(env, email, deadline)
     now = base._now()
-    state = _read(env, _login_keys(email_fp, web.breaker_window(now), person=False), now, deadline)
+    state = _read(env, _login_keys(email_fp, now, person=False), now, deadline)
     config = _gate(state, now, grace=not not_found)
     if not not_found and config.pass_required:
         # The user exists: Cognito checks the password and no migration runs,
@@ -520,16 +535,49 @@ def _count_login(env: str, email_fp: str, now: int, deadline: float) -> None:
                              "ReturnValuesOnConditionCheckFailure": "ALL_OLD"}}
         try:
             base._dynamodb().transact_write_items(TransactItems=[person, *aggregates])
-            return
         except Exception as exc:
             reasons = _cancellation(exc)
             if not _condition_failed(reasons, 0):
                 raise _Stop("count_failed", MSG_GENERIC, exc) from None
             old = reasons[0].get("Item")
+            continue
+        _count_month_person(env, email_fp, now, deadline)
+        return
     expires = base._n(old, web.TTL_ATTRIBUTE) if isinstance(old, Mapping) else None
     if expires is None or expires <= now:
         raise _Stop("person_absent")
     raise _Stop("daily_limit", MSG_DAILY_LIMIT)
+
+
+def _count_month_person(env: str, email_fp: str, now: int, deadline: float) -> None:
+    """Count the person once in this UTC month's distinct ``people``.
+
+    One transaction creates ``month_person#YYYY-MM#<fp>`` only if absent and
+    adds 1 to ``people`` of the month row: both or neither. A cancelled
+    marker condition means this person is already counted. Any other failure
+    is logged and leaves both unwritten, so a later sign-in in the month counts
+    the person; the sign-in itself is never refused for it.
+    """
+    trigger = "TokenGeneration"
+    if not base._has_sdk_time(deadline):
+        _log(trigger, "month_people_no_time", None, None)
+        return
+    table = web.web_table_name(env)
+    try:
+        base._dynamodb().transact_write_items(TransactItems=[
+            {"Put": {"TableName": table, "Item": {
+                **web.month_person_key(now, email_fp),
+                web.TTL_ATTRIBUTE: web.ttl_value(web.month_person_expires_at(now))},
+                "ConditionExpression": "attribute_not_exists(pk)"}},
+            {"Update": {"TableName": table, "Key": web.month_key(now), "UpdateExpression": "ADD #p :one",
+                        "ExpressionAttributeNames": {"#p": web.MONTH_PEOPLE_ATTRIBUTE},
+                        "ExpressionAttributeValues": {":one": _num(1)}}},
+        ])
+    except Exception as exc:
+        if _condition_failed(_cancellation(exc), 0):
+            return
+        error = web.PublicWebError("x", cause=exc)
+        _log(trigger, "month_people_failed", error.cause_type, error.provider_code)
 
 
 def _token_generation(event: dict[str, Any], context: Any, started: float,
@@ -547,7 +595,15 @@ def _token_generation(event: dict[str, Any], context: Any, started: float,
     except MultiuserError:
         raise _Stop("tenant_invalid") from None
     email_fp = _email_fp(env, _email(attributes.get("email")), deadline)
-    _count_login(env, email_fp, base._now(), deadline)
+    now = base._now()
+    # The configuration or the daily ceiling may have changed since the checks
+    # before the password: check them again before counting and issuing.
+    state = _read(env, {"config": web.config_key(), "day": web.day_key(now)}, now, deadline)
+    if not web.parse_web_config(state["config"]).accepting(now):
+        raise _Stop("closed", MSG_PAUSED)
+    if web.daily_ceiling_reached(state["day"]):  # unreadable: day_malformed, closed
+        raise _Stop("daily_ceiling", MSG_PAUSED)
+    _count_login(env, email_fp, now, deadline)
     return base._token_generation(event)
 
 
@@ -583,8 +639,8 @@ def _status(environ: Mapping[str, str]) -> dict[str, Any]:
         env = _environment(environ)
         now = base._now()
         deadline = base._monotonic() + STATUS_DEADLINE_SECONDS
-        state = _read(env, {"config": web.config_key(), **_breaker_keys(web.breaker_window(now))},
-                      now, deadline)
+        state = _read(env, {"config": web.config_key(), "day": web.day_key(now),
+                            **_breaker_keys(web.breaker_window(now))}, now, deadline)
     except web.PublicWebError as exc:
         _log("http_status", exc.code, exc.cause_type, exc.provider_code)
         return _json(503, STATUS_PAUSED)
@@ -594,9 +650,14 @@ def _status(environ: Mapping[str, str]) -> dict[str, Any]:
     config = web.parse_web_config(state["config"])
     if config.source == web.CONFIG_SOURCE_MALFORMED:
         return _json(200, STATUS_PAUSED)
-    if not config.open:
+    if not config.open:  # also an absent row
         return _json(200, STATUS_CLOSED)
-    if not config.accepting(now) or _breaker_open(state, now):
+    try:
+        ceiling = web.daily_ceiling_reached(state["day"])
+    except web.PublicWebError as exc:
+        _log("http_status", exc.code, None, None)
+        ceiling = True
+    if ceiling or not config.accepting(now) or _breaker_open(state, now):
         return _json(200, STATUS_PAUSED)
     return _json(200, STATUS_OPEN if config.has_room() else STATUS_FULL)
 

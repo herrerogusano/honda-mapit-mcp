@@ -15,7 +15,21 @@ Per tool call, before any MAPIT read, :meth:`PublicSessionGate.admit`:
    the maximum age, have ``calls < SESSION_CALL_LIMIT`` and fewer than
    ``CALLS_PER_MINUTE`` calls in the current UTC minute. The per-minute counter
    is the attribute ``m<epoch minute>``; the previous minute's attribute is
-   removed in the same write. A refused call is not counted.
+   removed in the same write. A refused call is not counted;
+4. counts the admitted call in the day row (``mcp_calls`` of
+   ``day#YYYY-MM-DD``, UTC) with one conditional ``UpdateItem``
+   (:func:`mapit.public_web.count_daily_call_update`). When the day reached
+   ``DAILY_CALL_LIMIT`` the condition fails and the call is refused as a pause
+   (``service_paused``) until the next UTC day; the call whose increment
+   reaches the limit logs the fixed event :data:`EVENT_DAILY_CEILING_REACHED`.
+   A failed write, or a counter that is not a non-negative integer (in the
+   returned new value or, on a failed condition, in the returned old row),
+   refuses as ``service_unavailable`` (closed). Only calls admitted by step 3 are counted,
+   so refused calls of one session cannot pause everybody; a session refused
+   here has already spent one of its own calls.
+
+An absent configuration row (``source="missing"``) is treated like
+``open = false``: it closes sign-ups only.
 
 Usage row written by the identity function at login (shared contract):
 ``person_fp`` (S, email fingerprint), ``login_at`` (N, epoch s), ``calls``
@@ -32,13 +46,14 @@ import json
 import sys
 import time
 from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 from .multiuser_common import validate_tenant_id
 from .public_web import (
-    CALLS_PER_MINUTE, PARTITION_KEY, SESSION_CALL_LIMIT, SESSION_MAX_AGE_SECONDS, TTL_ATTRIBUTE,
-    CONFIG_SOURCE_MALFORMED, CONFIG_SOURCE_READ_FAILED, PublicWebError, config_key, load_web_config,
-    person_key,
+    CALLS_PER_MINUTE, DAILY_CALL_LIMIT, DAY_CALLS_ATTRIBUTE, PARTITION_KEY, SESSION_CALL_LIMIT,
+    SESSION_MAX_AGE_SECONDS, TTL_ATTRIBUTE, CONFIG_SOURCE_MALFORMED, CONFIG_SOURCE_READ_FAILED,
+    PublicWebError, config_key, count_daily_call_update, load_web_config, month_person_key, person_key,
     session_usage_key, web_session_parameter_name, web_table_name,
 )
 
@@ -55,6 +70,10 @@ REFUSED_LIMIT = "session_limit_reached"
 REFUSED_RATE = "rate_limited"
 REFUSED_PAUSED = "service_paused"
 REFUSED_UNAVAILABLE = "service_unavailable"
+
+# Fixed log event (JSON field "event") of the call that reaches DAILY_CALL_LIMIT;
+# the stack's daily-ceiling alarm counts it.
+EVENT_DAILY_CEILING_REACHED = "public_daily_ceiling_reached"
 
 MSG_PUBLIC_LIMIT = (
     "Has llegado al máximo de consultas de esta sesión. Cierra sesión y vuelve a entrar."
@@ -208,6 +227,7 @@ class PublicSessionGate:
             raise PublicSessionRefused(REFUSED_EXPIRED, "session_aged")
         self._check_config(now)
         self._count_call(tenant, username, now)
+        self._count_day(now)
 
     def _check_config(self, now: int) -> None:
         try:
@@ -251,6 +271,31 @@ class PublicSessionGate:
             response = getattr(exc, "response", None)
             old = response.get("Item") if isinstance(response, Mapping) else None
             self._refuse_from_old(tenant, username, now, minute, old)
+
+    def _count_day(self, now: int) -> None:
+        try:
+            response = self._client("dynamodb").update_item(**count_daily_call_update(self._table, now))
+        except Exception as exc:
+            if _provider_code(exc) != "ConditionalCheckFailedException":
+                raise PublicSessionRefused(REFUSED_UNAVAILABLE, "day_write_failed", cause=exc) from None
+            # A pause only for a valid counter at the ceiling; anything else
+            # (negative, wrong type, no row returned) is an invalid counter.
+            failure = getattr(exc, "response", None)
+            old = failure.get("Item") if isinstance(failure, Mapping) else None
+            calls = _number(old, DAY_CALLS_ATTRIBUTE)
+            if calls is not None and calls >= DAILY_CALL_LIMIT:
+                raise PublicSessionRefused(REFUSED_PAUSED, "daily_ceiling") from None
+            raise PublicSessionRefused(REFUSED_UNAVAILABLE, "day_counter_invalid") from None
+        attributes = response.get("Attributes") if isinstance(response, Mapping) else None
+        calls = _number(attributes, DAY_CALLS_ATTRIBUTE)
+        if calls is None or calls < 1:
+            # Not a non-negative integer (for example a fractional counter): closed.
+            raise PublicSessionRefused(REFUSED_UNAVAILABLE, "day_counter_invalid")
+        if calls == DAILY_CALL_LIMIT:
+            try:
+                self._log(json.dumps({"event": EVENT_DAILY_CEILING_REACHED}, separators=(",", ":")))
+            except Exception:  # noqa: BLE001
+                pass
 
     def _refuse_from_old(self, tenant: str, username: str, now: int, minute: int, old: Any) -> None:
         expires_at, login_at = _number(old, TTL_ATTRIBUTE), _number(old, "login_at")
@@ -310,13 +355,16 @@ class PublicSessionGate:
         return self._delete_session(tenant, username)
 
     def delete_account(self, tenant: str, username: str) -> str:
-        """``borrar_mis_datos``: the person row and its seat, then the session.
+        """``borrar_mis_datos``: the person row and its seat, the month markers, then the session.
 
         The person row is found through the usage row's ``person_fp``. One
         ``TransactWriteItems`` deletes it (``attribute_exists(pk)``) and frees
         its seat (``ADD occupied -1`` only if ``occupied > 0``). If the person
         row is already gone, no seat is freed. If ``occupied`` is already 0 the
-        person row is still deleted, without the counter. Returns
+        person row is still deleted, without the counter. Then the
+        ``month_person`` markers of this and the previous UTC month (the
+        previous one may still wait for TTL) are deleted; the month counts are
+        not decreased. Returns
         :data:`DELETE_DONE`; :data:`DELETE_NO_SESSION` when the usage row is
         missing, expired or has no valid ``person_fp`` (nothing deleted); or
         :data:`DELETE_FAILED` (the session is kept so the call can be retried).
@@ -342,7 +390,19 @@ class PublicSessionGate:
             return DELETE_NO_SESSION
         if not self._delete_person(key):
             return DELETE_FAILED
+        if not self._delete_month_markers(person["S"], now):
+            return DELETE_FAILED
         return DELETE_DONE if self._delete_session(tenant, username) else DELETE_FAILED
+
+    def _delete_month_markers(self, email_fp: str, now: int) -> bool:
+        month_start = datetime.fromtimestamp(now, tz=timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0)
+        ok = True
+        for moment in (now, int(month_start.timestamp()) - 1):
+            key = month_person_key(moment, email_fp)
+            ok = self._attempt("month_marker", lambda key=key: self._client("dynamodb").delete_item(
+                TableName=self._table, Key=dict(key))) and ok
+        return ok
 
     def _delete_person(self, key: Mapping[str, Any]) -> bool:
         names = {"#k": PARTITION_KEY}
@@ -377,7 +437,8 @@ class PublicSessionGate:
 
 
 __all__ = [
-    "DELETE_DONE", "DELETE_FAILED", "DELETE_NO_SESSION", "FAILED_DELETE", "FAILED_LOGOUT",
+    "DELETE_DONE", "DELETE_FAILED", "DELETE_NO_SESSION", "EVENT_DAILY_CEILING_REACHED", "FAILED_DELETE",
+    "FAILED_LOGOUT",
     "MSG_PUBLIC_DELETE_FAILED", "MSG_PUBLIC_DELETE_NO_SESSION", "MSG_PUBLIC_EXPIRED",
     "MSG_LOGOUT_DONE", "MSG_LOGOUT_FAILED", "MSG_PUBLIC_DELETE_DONE", "MSG_PUBLIC_DELETE_PREVIEW",
     "MSG_PUBLIC_LIMIT", "MSG_PUBLIC_PAUSED", "MSG_PUBLIC_RATE", "PUBLIC_ACCOUNT_TOOLS",

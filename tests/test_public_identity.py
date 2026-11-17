@@ -264,6 +264,7 @@ def fakes(monkeypatch: pytest.MonkeyPatch):
     for key, value in {"MAPIT_MCP_ENV": "dev", "AWS_REGION": "eu-west-1", "MAPIT_WEB_MODE": "public",
                        "MAPIT_CONFIG_JSON": json.dumps(MAPIT_CONFIG)}.items():
         monkeypatch.setenv(key, value)
+    table.put("config", open=True)  # an absent row is closed
     table.put(f"pass#{FP}", attempts_left=3, issued_at=NOW - 60, expires_at=NOW + 240)
     yield table, ssm, mapit
     identity.reset_clients()
@@ -335,13 +336,13 @@ def test_new_person_is_admitted_with_usage_row_and_session(fakes):
     writes = [c[0] for c in table.writes()]
     assert writes == ["update_item", "transact_write_items"]  # pass spend, then admission
     reads = [c for c in table.calls if c[0] == "batch_get_item"]
-    assert len(reads) == 1 and len(reads[0][1]["RequestItems"][TABLE]["Keys"]) == 7
+    assert len(reads) == 1 and len(reads[0][1]["RequestItems"][TABLE]["Keys"]) == 8  # with config and day
     assert EMAIL not in json.dumps(table.items) and "Rider" not in json.dumps(table.items)
 
 
 def test_returning_person_passes_with_full_cap(fakes):
     table, ssm, _ = fakes
-    table.put("config", cap=2, occupied=2)
+    table.put("config", open=True, cap=2, occupied=2)
     _person(table)
     identity.handler(_migration(), Context())
     assert table.n("config", "occupied") == 2 and f"day#{TODAY}" not in table.items
@@ -352,7 +353,7 @@ def test_returning_person_passes_with_full_cap(fakes):
 
 def test_new_person_with_full_cap_is_told_only_after_mapit(fakes):
     table, ssm, mapit = fakes
-    table.put("config", cap=2, occupied=2)
+    table.put("config", open=True, cap=2, occupied=2)
     _fails(_migration(), public.MSG_FULL)
     assert len(mapit.calls) == 1 and ssm.puts == []
     assert f"person#{FP}" not in table.items and table.n("config", "occupied") == 2
@@ -362,7 +363,7 @@ def test_new_person_with_full_cap_is_told_only_after_mapit(fakes):
 @pytest.mark.parametrize("returning", [False, True])
 def test_wrong_password_with_full_cap_says_the_same_for_any_email(fakes, returning):
     table, _, mapit = fakes
-    table.put("config", cap=1, occupied=1)
+    table.put("config", open=True, cap=1, occupied=1)
     if returning:
         _person(table)
     mapit.mode = "reject"
@@ -371,15 +372,15 @@ def test_wrong_password_with_full_cap_says_the_same_for_any_email(fakes, returni
 
 def test_cap_zero_means_no_cap(fakes):
     table, ssm, _ = fakes
-    table.put("config", cap=0, occupied=500)
+    table.put("config", open=True, cap=0, occupied=500)
     identity.handler(_migration(), Context())
     assert table.n("config", "occupied") == 501 and ssm.puts
 
 
 def test_seat_taken_by_a_racing_login_says_full_and_takes_nothing(fakes):
     table, ssm, _ = fakes
-    table.put("config", cap=100, occupied=99)
-    table.before_transact = lambda t: t.put("config", cap=100, occupied=100)
+    table.put("config", open=True, cap=100, occupied=99)
+    table.before_transact = lambda t: t.put("config", open=True, cap=100, occupied=100)
     _fails(_migration(), public.MSG_FULL)
     # The session was stored first under a random tenant no token carries;
     # the sweep deletes it by age. No person, usage row or seat.
@@ -402,7 +403,7 @@ def test_no_time_for_the_session_stores_nothing(fakes, monkeypatch):
     table, ssm, mapit = fakes
     monkeypatch.setattr(identity, "_has_sdk_time", _Budget(lambda: bool(mapit.calls)))
     _fails(_migration(), public.MSG_GENERIC)
-    assert ssm.puts == [] and f"person#{FP}" not in table.items and "config" not in table.items
+    assert ssm.puts == [] and f"person#{FP}" not in table.items and table.n("config", "occupied") is None
 
 
 def test_no_time_for_the_admission_takes_no_seat(fakes, monkeypatch):
@@ -411,7 +412,7 @@ def test_no_time_for_the_admission_takes_no_seat(fakes, monkeypatch):
     _fails(_migration(), public.MSG_GENERIC)
     assert [p["Name"] for p in ssm.puts] == [SESSION_PARAMETER]  # left to the sweep
     assert f"person#{FP}" not in table.items and f"usage#{TENANT}" not in table.items
-    assert "config" not in table.items and f"day#{TODAY}" not in table.items
+    assert table.n("config", "occupied") is None and f"day#{TODAY}" not in table.items
 
 
 def test_expired_person_row_counts_as_new(fakes):
@@ -451,7 +452,7 @@ WINDOW = web.breaker_window(NOW)
 
 @pytest.mark.parametrize("setup, message", [
     (lambda t: t.put("config", open=False), public.MSG_PAUSED),
-    (lambda t: t.put("config", pause_until=NOW + 60), public.MSG_PAUSED),
+    (lambda t: t.put("config", open=True, pause_until=NOW + 60), public.MSG_PAUSED),
     (lambda t: t.put("config", open="yes"), public.MSG_PAUSED),  # malformed row: closed
     (lambda t: t.put(f"breaker#{WINDOW - 1}", rejections=20, open_until=NOW + 60, expires_at=NOW + 900),
      public.MSG_PAUSED),
@@ -479,7 +480,7 @@ def test_pass_for_another_email_does_not_count(fakes):
 def test_switch_off_pass_requirement(fakes):
     table, _, mapit = fakes
     table.items.pop(f"pass#{FP}")
-    table.put("config", pass_required=False)
+    table.put("config", open=True, pass_required=False)
     identity.handler(_migration(), Context())
     assert len(mapit.calls) == 1
 
@@ -655,12 +656,155 @@ def test_grace_does_not_revive_a_used_up_pass(fakes, spent_at, expires_at):
 
 def test_pre_auth_without_pass_requirement_spends_nothing(fakes):
     table, _, _ = fakes
-    table.put("config", pass_required=False)
+    table.put("config", open=True, pass_required=False)
     identity.handler(_pre_auth(False), Context())
     assert table.writes() == []
 
 
+# --- absent configuration row and daily ceiling -----------------------------------------
+
+@pytest.mark.parametrize("event", [_migration, lambda: _pre_auth(False), lambda: _pre_auth(True)],
+                         ids=["migration", "pre_auth", "pre_auth_absent"])
+def test_absent_config_row_refuses_every_sign_in_before_mapit(fakes, event):
+    table, ssm, mapit = fakes
+    del table.items["config"]
+    _fails(event(), public.MSG_PAUSED)
+    assert mapit.calls == [] and ssm.puts == [] and table.writes() == []
+    assert "config" not in table.items
+
+
+@pytest.mark.parametrize("event", [_migration, lambda: _pre_auth(False), lambda: _pre_auth(True)],
+                         ids=["migration", "pre_auth", "pre_auth_absent"])
+def test_daily_ceiling_refuses_every_sign_in_as_pause_before_mapit(fakes, event, caplog):
+    table, ssm, mapit = fakes
+    table.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT, logins=3)
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        _fails(event(), public.MSG_PAUSED)
+    assert mapit.calls == [] and ssm.puts == [] and table.writes() == []
+    assert [json.loads(r.getMessage())["step"] for r in caplog.records] == ["daily_ceiling"]
+
+
+@pytest.mark.parametrize("event", [_migration, lambda: _pre_auth(False), lambda: _pre_auth(True)],
+                         ids=["migration", "pre_auth", "pre_auth_absent"])
+def test_config_row_without_open_refuses_every_sign_in_before_mapit(fakes, event):
+    table, ssm, mapit = fakes
+    table.put("config", cap=100, occupied=3, pass_required=True)
+    _fails(event(), public.MSG_PAUSED)
+    assert mapit.calls == [] and ssm.puts == [] and table.writes() == []
+
+
+def test_daily_ceiling_is_per_utc_day_and_below_it_admits(fakes):
+    table, ssm, _ = fakes
+    table.put("day#2027-01-14", mcp_calls=web.DAILY_CALL_LIMIT)
+    table.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT - 1)
+    identity.handler(_migration(), Context())
+    assert ssm.puts and table.n(f"day#{TODAY}", "mcp_calls") == web.DAILY_CALL_LIMIT - 1  # never written here
+
+
+def test_unreadable_day_counter_fails_closed(fakes, caplog):
+    table, ssm, mapit = fakes
+    table.put(f"day#{TODAY}", mcp_calls="3")
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        _fails(_migration(), public.MSG_GENERIC)
+    assert mapit.calls == [] and ssm.puts == [] and table.writes() == []
+    assert json.loads(caplog.records[0].getMessage())["step"] == "day_malformed"
+
+
 # --- token generation --------------------------------------------------------------------
+
+@pytest.mark.parametrize("setup", [
+    lambda t: t.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT),
+    lambda t: t.put("config", open=False),
+    lambda t: t.put("config", cap=100),                    # row without open
+    lambda t: t.items.pop("config"),
+    lambda t: t.put("config", open=True, pause_until=NOW + 60),
+], ids=["daily_ceiling", "closed", "row_without_open", "no_row", "paused"])
+def test_token_issue_rechecks_configuration_and_ceiling_before_counting(fakes, setup):
+    """The ceiling can be reached between the pre-login checks and the token issue."""
+    table, _, _ = fakes
+    _person(table)
+    setup(table)
+    before = {pk: dict(item) for pk, item in table.items.items()}
+    _fails(_token(), public.MSG_PAUSED)
+    assert table.writes() == [] and table.items == before
+    reads = [c for c in table.calls if c[0] == "batch_get_item"]
+    assert [k["pk"]["S"] for k in reads[0][1]["RequestItems"][TABLE]["Keys"]] == ["config", f"day#{TODAY}"]
+
+
+def test_token_issue_with_an_unreadable_day_counter_fails_closed(fakes):
+    table, _, _ = fakes
+    _person(table)
+    table.put(f"day#{TODAY}", mcp_calls="x")
+    _fails(_token(), public.MSG_GENERIC)
+    assert table.writes() == []
+
+
+def test_token_issue_just_below_the_ceiling_is_counted(fakes):
+    table, _, _ = fakes
+    _person(table)
+    table.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT - 1)
+    identity.handler(_token(), Context())
+    assert table.n(f"day#{TODAY}", "logins") == 1
+
+
+def test_token_issue_counts_the_person_once_per_month(fakes):
+    table, _, _ = fakes
+    _person(table)
+    marker = f"month_person#2027-01#{FP}"
+    for _ in range(3):
+        identity.handler(_token(), Context())
+    assert table.n("month#2027-01", "people") == 1 and table.n("month#2027-01", "logins") == 3
+    assert table.items[marker] == {"pk": {"S": marker}, "expires_at": {"N": str(web.month_person_expires_at(NOW))}}
+    assert EMAIL not in json.dumps(table.items) and TENANT not in json.dumps(table.items)
+    other = web.email_fingerprint(KEY, "other@example.com")
+    table.put(f"person#{other}", first_login_at=NOW, last_login_at=NOW, login_count=1, consent_version="v0",
+              consent_at=NOW, expires_at=NOW + 1000)
+    event = _token()
+    event["request"]["userAttributes"]["email"] = "other@example.com"
+    identity.handler(event, Context())
+    assert table.n("month#2027-01", "people") == 2
+
+
+def test_a_new_month_counts_the_person_again(fakes, monkeypatch):
+    table, _, _ = fakes
+    _person(table)
+    identity.handler(_token(), Context())
+    february = 1_801_440_000  # 2027-02-01T00:00:00Z
+    table.items[f"person#{FP}"]["expires_at"] = {"N": str(february + 1000)}
+    monkeypatch.setattr(identity, "_wall_clock", lambda: float(february))
+    identity.handler(_token(), Context())
+    assert table.n("month#2027-01", "people") == 1 and table.n("month#2027-02", "people") == 1
+
+
+def test_month_count_failure_never_refuses_the_sign_in(fakes, caplog):
+    table, _, _ = fakes
+    _person(table)
+    def fail_month(t):
+        if "month_person#" in json.dumps(t.calls[-1]):
+            t.fail.add("transact_write_items")
+
+    table.before_transact = fail_month
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        result = identity.handler(_token(), Context())
+    assert result["response"]["claimsAndScopeOverrideDetails"]
+    assert table.n("month#2027-01", "logins") == 1 and table.n("month#2027-01", "people") is None
+    assert f"month_person#2027-01#{FP}" not in table.items  # both or neither: the next sign-in counts it
+    line = json.loads(caplog.records[0].getMessage())
+    assert (line["step"], line["provider_code"]) == ("month_people_failed", "InternalServerError")
+    table.fail.clear()
+    table.before_transact = None
+    identity.handler(_token(), Context())
+    assert table.n("month#2027-01", "people") == 1
+
+
+def test_no_time_for_the_month_count_skips_it(fakes, monkeypatch, caplog):
+    table, _, _ = fakes
+    _person(table)
+    monkeypatch.setattr(identity, "_has_sdk_time", _Budget(lambda: "month#2027-01" in table.items))
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        identity.handler(_token(), Context())
+    assert table.n("month#2027-01", "people") is None
+    assert json.loads(caplog.records[0].getMessage())["step"] == "month_people_no_time"
 
 def test_refresh_is_refused_without_any_read(fakes):
     table, _, _ = fakes
@@ -791,14 +935,22 @@ def _http(method: str, path: str) -> dict:
 
 @pytest.mark.parametrize("setup, state", [
     (lambda t: None, "abierto"),
-    (lambda t: t.put("config", cap=3, occupied=3), "lleno"),
-    (lambda t: t.put("config", cap=0, occupied=3), "abierto"),
+    (lambda t: t.items.pop("config"), "cerrado"),
+    (lambda t: t.put("config", cap=3, occupied=0), "cerrado"),
+    (lambda t: t.put("config", open=True, cap=3, occupied=3), "lleno"),
+    (lambda t: t.put("config", open=True, cap=0, occupied=3), "abierto"),
     (lambda t: t.put("config", open=False, cap=3, occupied=3), "cerrado"),
     (lambda t: t.put("config", open=False, pause_until=NOW + 1), "cerrado"),
-    (lambda t: t.put("config", pause_until=NOW + 1), "pausa"),
+    (lambda t: t.put("config", open=True, pause_until=NOW + 1), "pausa"),
     (lambda t: t.put(f"breaker#{WINDOW}", rejections=1, open_until=NOW + 1, expires_at=NOW + 900), "pausa"),
     (lambda t: t.put("config", open="yes"), "pausa"),
-], ids=["no_row", "full", "no_cap", "closed", "closed_and_paused", "paused", "breaker", "malformed"])
+    (lambda t: t.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT), "pausa"),
+    (lambda t: t.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT - 1, logins=4), "abierto"),
+    (lambda t: t.put("day#2027-01-14", mcp_calls=web.DAILY_CALL_LIMIT), "abierto"),
+    (lambda t: t.put(f"day#{TODAY}", mcp_calls="many"), "pausa"),
+    (lambda t: (t.items.pop("config"), t.put(f"day#{TODAY}", mcp_calls=web.DAILY_CALL_LIMIT)), "cerrado"),
+], ids=["open_row", "no_row", "row_without_open", "full", "no_cap", "closed", "closed_and_paused", "paused", "breaker", "malformed",
+        "daily_ceiling", "below_ceiling", "yesterday_ceiling", "day_malformed", "no_row_and_ceiling"])
 def test_status_endpoint(fakes, setup, state):
     table, _, _ = fakes
     setup(table)

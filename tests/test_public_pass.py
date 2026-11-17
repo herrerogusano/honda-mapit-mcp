@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import urllib.error
+from datetime import datetime, timezone
 from urllib.parse import parse_qs
 
 import pytest
@@ -51,6 +52,7 @@ class FakeDynamo:
     def get_item(self, **kwargs):
         self.calls.append(("get_item", kwargs))
         self._maybe_fail("get_item")
+        self._maybe_fail("get_item:" + kwargs["Key"]["pk"]["S"].split("#")[0])
         item = self.items.get(kwargs["Key"]["pk"]["S"])
         return {"Item": item} if item is not None else {}
 
@@ -124,6 +126,7 @@ class FakeTransport:
 class World:
     def __init__(self, monkeypatch, *, secret: str | None = SECRET, env: dict | None = None) -> None:
         self.dynamo = FakeDynamo()
+        self.dynamo.items["config"] = {"pk": {"S": "config"}, "open": {"BOOL": True}}  # absent = closed
         self.ssm = FakeSsm(secret)
         self.transport = FakeTransport()
         self.now = NOW
@@ -210,7 +213,8 @@ def test_email_is_normalized_before_the_fingerprint(world):
 
 
 def test_full_cap_and_pass_not_required_still_issue(world):
-    world.dynamo.items["config"] = {"pk": {"S": "config"}, "cap": {"N": "1"}, "occupied": {"N": "1"},
+    world.dynamo.items["config"] = {"pk": {"S": "config"}, "open": {"BOOL": True}, "cap": {"N": "1"},
+                                    "occupied": {"N": "1"},
                                     "pass_required": {"BOOL": False}}
     assert world.call()[0] == 200
 
@@ -328,7 +332,8 @@ def test_ip_row_uses_the_base_fingerprint_of_the_address(world):
 
 @pytest.mark.parametrize("item,expected,code", [
     ({"pk": {"S": "config"}, "open": {"BOOL": False}}, {"estado": "cerrado"}, "web_closed"),
-    ({"pk": {"S": "config"}, "pause_until": {"N": str(NOW + 1)}}, {"estado": "pausa"}, "web_paused"),
+    ({"pk": {"S": "config"}, "open": {"BOOL": True}, "pause_until": {"N": str(NOW + 1)}}, {"estado": "pausa"},
+     "web_paused"),
     ({"pk": {"S": "config"}, "open": {"S": "yes"}}, {"estado": "pausa"}, "config_malformed"),
     ({"pk": {"S": "config"}, "open": {"BOOL": False}, "pause_until": {"N": str(NOW + 1)}},
      {"estado": "cerrado"}, "web_closed"),
@@ -340,8 +345,53 @@ def test_closed_or_paused_answers_like_estado_without_cloudflare(world, item, ex
     assert world.dynamo.writes() == [] and world.codes == [code]
 
 
+def test_config_row_without_open_answers_cerrado(world):
+    world.dynamo.items["config"] = {"pk": {"S": "config"}, "cap": {"N": "100"}}
+    assert world.call() == (503, {"estado": "cerrado"})
+    assert world.transport.calls == [] and world.codes == ["web_closed"]
+
+
+def test_absent_config_row_answers_cerrado_without_cloudflare(world):
+    del world.dynamo.items["config"]
+    assert world.call() == (503, {"estado": "cerrado"})
+    assert world.transport.calls == [] and world.ssm.calls == []
+    assert world.dynamo.writes() == [] and world.codes == ["web_closed"]
+
+
+TABLE = web.web_table_name("dev")
+DAY_PK = f"day#{datetime.fromtimestamp(NOW, tz=timezone.utc):%Y-%m-%d}"
+
+
+@pytest.mark.parametrize("calls,code", [
+    ({"N": str(web.DAILY_CALL_LIMIT)}, "daily_ceiling"),
+    ({"N": str(web.DAILY_CALL_LIMIT + 5)}, "daily_ceiling"),
+    ({"S": "3000"}, "day_malformed"),
+    ({"N": "-1"}, "day_malformed"),
+])
+def test_daily_ceiling_or_unreadable_counter_answers_pausa(world, calls, code):
+    world.dynamo.items[DAY_PK] = {"pk": {"S": DAY_PK}, "mcp_calls": calls}
+    assert world.call() == (503, {"estado": "pausa"})
+    assert world.transport.calls == [] and world.ssm.calls == []
+    assert world.dynamo.writes() == [] and world.codes == [code]
+
+
+def test_below_the_ceiling_or_another_day_issues(world):
+    world.dynamo.items[DAY_PK] = {"pk": {"S": DAY_PK}, "mcp_calls": {"N": str(web.DAILY_CALL_LIMIT - 1)}}
+    world.dynamo.items["day#2000-01-01"] = {"pk": {"S": "day#2000-01-01"}, "mcp_calls": {"N": "999999"}}
+    assert world.call()[0] == 200
+    reads = [call for name, call in world.dynamo.calls if name == "get_item"]
+    assert {"TableName": TABLE, "Key": {"pk": {"S": DAY_PK}}, "ConsistentRead": True} in reads
+
+
+def test_day_read_failure_answers_pausa(world):
+    world.dynamo.fail["get_item:day"] = "ProvisionedThroughputExceededException"
+    assert world.call() == (503, {"estado": "pausa"})
+    assert world.transport.calls == []
+    assert world.logs == [("day_read_failed", "ClientError", "ProvisionedThroughputExceededException")]
+
+
 def test_pause_over_issues_again(world):
-    world.dynamo.items["config"] = {"pk": {"S": "config"}, "pause_until": {"N": str(NOW)}}
+    world.dynamo.items["config"] = {"pk": {"S": "config"}, "open": {"BOOL": True}, "pause_until": {"N": str(NOW)}}
     assert world.call()[0] == 200
 
 

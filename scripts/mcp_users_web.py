@@ -10,7 +10,11 @@ Names come from :mod:`mapit.public_web` (table, session parameter prefix) and
 ``web-status`` and ``web-stats`` only read. ``web-config`` prints the current
 and the new configuration and writes nothing without ``--yes``; it writes one
 conditional ``UpdateItem`` that sets only the requested attributes, never
-``occupied``, and fails if the row changed since it was read. Output holds
+``occupied``, and fails if the row changed since it was read. When the row
+does not exist (a new stack: the web is closed) it creates it, only if it
+still does not exist, with every configuration attribute written: the
+requested values and, for the rest, closed, no pause, cap 100 and pass
+required. Output holds
 counts, ages and configuration values only: never a user name, email, tenant
 id, pool id, parameter name or fingerprint.
 """
@@ -31,8 +35,8 @@ MAX_MONTHS = 24
 MAX_POOL_PAGES = 20
 MAX_LIST_PAGES = 40          # same bound as the sweep
 PROMISE_SECONDS = 3600       # nothing may live one hour or more
-DAY_COUNTERS = ("logins", "new_people", "mapit_rejections", "cap_rejections")
-MONTH_COUNTERS = ("logins",)
+DAY_COUNTERS = ("logins", "new_people", "mapit_rejections", "cap_rejections", web.DAY_CALLS_ATTRIBUTE)
+MONTH_COUNTERS = ("logins", web.MONTH_PEOPLE_ATTRIBUTE)
 CONFIG_FIELDS = ("open", "pause_until", "cap", "pass_required")
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|\+00:00)$")
 _COUNTER_RE = re.compile(r"^(0|[1-9][0-9]{0,15})$")
@@ -92,13 +96,13 @@ def describe_config(config: web.WebConfig) -> str:
             f"occupied={config.occupied} pass_required={str(config.pass_required).lower()}")
 
 
-def public_state(config: web.WebConfig, now: int, breaker_open: bool) -> str:
-    """The word ``GET /estado`` would answer for this configuration and breaker."""
+def public_state(config: web.WebConfig, now: int, breaker_open: bool, ceiling_reached: bool = False) -> str:
+    """The word ``GET /estado`` would answer for this configuration, breaker and daily ceiling."""
     if config.source in (web.CONFIG_SOURCE_MALFORMED, web.CONFIG_SOURCE_READ_FAILED):
         return "pausa"
     if not config.open:
         return "cerrado"
-    if not config.accepting(now) or breaker_open:
+    if not config.accepting(now) or breaker_open or ceiling_reached:
         return "pausa"
     return "abierto" if config.has_room() else "lleno"
 
@@ -154,6 +158,13 @@ class WebAdmin:
             if back == 0:
                 current = _number(item, "rejections") or 0
         return open_ or web.breaker_tripped(current), current
+
+    def _day_calls(self, now: int) -> int | None:
+        """Today's admitted /mcp calls, or None when the counter is malformed."""
+        try:
+            return web.daily_calls(self._get(web.day_key(now)))
+        except web.PublicWebError:
+            return None
 
     def _pool_id(self) -> str:
         name = web_user_pool_name(self.env)
@@ -229,13 +240,20 @@ class WebAdmin:
         if config.source == web.CONFIG_SOURCE_MALFORMED:
             names = ", ".join(sorted(item)) if isinstance(item, Mapping) else "-"
             self.out(f"config: MALFORMED (service closed); attributes present: {names}")
+        elif config.source == web.CONFIG_SOURCE_MISSING:
+            self.out(f"config (no row: closed; open it with web-config --open true --yes): "
+                     f"{describe_config(config)}")
         else:
-            label = "row" if config.source == web.CONFIG_SOURCE_ROW else "no row, defaults"
-            self.out(f"config ({label}): {describe_config(config)}")
+            self.out(f"config (row): {describe_config(config)}")
         breaker_open, rejections = self._breaker(now)
         self.out(f"breaker: {'OPEN' if breaker_open else 'closed'}; MAPIT rejections in this "
                  f"{web.BREAKER_WINDOW_SECONDS // 60}-min window: {rejections}/{web.BREAKER_REJECTIONS}")
-        self.out(f"/estado would answer: {public_state(config, now, breaker_open)}")
+        calls = self._day_calls(now)
+        ceiling = calls is None or calls >= web.DAILY_CALL_LIMIT
+        verdict = ("UNREADABLE (paused)" if calls is None
+                   else "CEILING REACHED (paused until 00:00 UTC)" if ceiling else "below the ceiling")
+        self.out(f"/mcp calls today (UTC): {_show(calls)}/{web.DAILY_CALL_LIMIT}, {verdict}")
+        self.out(f"/estado would answer: {public_state(config, now, breaker_open, ceiling)}")
         cap = "no cap" if config.cap == 0 else str(config.cap)
         self.out(f"seats occupied: {config.occupied} of {cap}")
         users, users_complete = self._user_dates(self._pool_id())
@@ -283,9 +301,18 @@ class WebAdmin:
         item, current = self._config_item()
         if current.source == web.CONFIG_SOURCE_MALFORMED:
             self.out("current: MALFORMED (service closed)")
+        elif current.source == web.CONFIG_SOURCE_MISSING:
+            self.out(f"current: no row (closed): {describe_config(current)}; the row will be created")
         else:
             self.out(f"current: {describe_config(current)}")
-        new_item = dict(item) if item is not None else dict(web.config_key())
+        if item is None:
+            # A new row states every attribute, so nothing relies on the
+            # defaults of a present row.
+            changes = {"open": current.open, "pause_until": current.pause_until, "cap": current.cap,
+                       "pass_required": current.pass_required, **changes}
+            new_item = dict(web.config_key())
+        else:
+            new_item = dict(item)
         for name, value in changes.items():
             new_item[name] = {"BOOL": value} if type(value) is bool else {"N": str(value)}
         new = web.parse_web_config(new_item)
