@@ -583,6 +583,10 @@ def test_public_pause_and_age_messages(keys):
     assert harness.created == []
 
 
+def test_public_pause_text_is_the_approved_one():
+    assert MSG_PUBLIC_PAUSED == "El servicio está en pausa. Vuelve más tarde."
+
+
 def test_public_daily_ceiling_message_is_the_pause_text(keys):
     with Aws() as aws:
         aws.config()
