@@ -697,6 +697,26 @@ def test_login_style_assets_within_cognito_limits(env):
             assert _LOGO_RATIO[0] <= width / height <= _LOGO_RATIO[1], (category, width, height)
 
 
+def _leaf_paths(value, prefix=()):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from _leaf_paths(item, prefix + (key,))
+    else:
+        yield ".".join(prefix)
+
+
+def test_login_style_uses_only_keys_cognito_keeps(env):
+    """Cognito ignores Settings keys outside its schema without an error.
+
+    The fixture holds the key paths (no values) of a real merged style read back
+    from Cognito with ReturnMergedResources; every key we send must be one of them.
+    """
+    fixture = json.loads((ROOT / "tests" / "fixtures" / "managed_login_settings_paths.json").read_text("utf-8"))
+    known = set(fixture["paths"])
+    sent = set(_leaf_paths(_branding(env)["Settings"]))
+    assert sent and not sent - known, sorted(sent - known)
+
+
 def test_template_fits_a_template_body_request(env):
     assert len(json.dumps(stack.build_public_web_template(env), separators=(",", ":"))) < _TEMPLATE_BODY_LIMIT
 
