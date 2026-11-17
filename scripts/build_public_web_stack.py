@@ -19,10 +19,12 @@ Not created here on purpose:
 * the Turnstile secret ``/honda-mapit-mcp/{env}/web/turnstile-secret``: stored
   by hand with a command that does not echo it; the pass role may only read it.
 
-Log-based alarms use metric filters over the fixed codes the modules write: the
-pass prints one JSON line per request (``web_pass_outcome``), the sweep prints
-one embedded-metric JSON line per run, and the identity function logs fixed
-step codes through ``logging`` (text lines, so plain-term filters).
+Three alarms (``faults``, ``oldest-item-age``, ``daily-ceiling``). The log-based
+ones use metric filters over the fixed codes the modules write: the pass prints
+one JSON line per request (``web_pass_outcome``), the sweep prints one
+embedded-metric JSON line per run, the service one JSON line at the daily
+ceiling, and the identity function logs fixed step codes through ``logging``
+(text lines, so plain-term filters).
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ from mapit.public_pass import turnstile_secret_parameter_name
 from mapit.public_sweep import METRIC_DIMENSION, METRIC_NAMESPACE, web_user_pool_name
 from mapit.public_web_service import EVENT_DAILY_CEILING_REACHED
 from mapit.public_web import (
-    MODE_PUBLIC, MODE_VARIABLE, fingerprint_key_parameter_name, web_function_name,
+    EVENT_FINGERPRINT_KEY_CREATED, MODE_PUBLIC, MODE_VARIABLE, fingerprint_key_parameter_name, web_function_name,
     web_session_parameter_prefix, web_stack_name, web_table_name,
 )
 from scripts.build_multiuser_stack import (
@@ -93,6 +95,19 @@ IDENTITY_FAULT_CODES = (
     "fingerprint_value_invalid", "function_role_invalid", "ip_invalid", "result_invalid", "time_invalid",
     "web_mode_invalid", "window_invalid", "day_malformed",
 )
+# Other pass outcomes that are faults: the fingerprint key cannot be read, or an
+# unexpected exception (the handler catches it, so Lambda ``Errors`` never sees it).
+PASS_FAULT_CODES = PASS_CLOUDFLARE_CODES + ("fingerprint_key_missing", "pass_internal_error")
+# Identity log terms outside the fault list that also feed the faults alarm: a
+# recreated fingerprint key (every count and pass reset) and an open breaker
+# (every sign-in refused; an expected refusal per attempt, but worth an email).
+IDENTITY_ALARM_EVENTS = (EVENT_FINGERPRINT_KEY_CREATED, "breaker_open")
+# The sweep's EMF line (``event`` ``web_sweep``): a failed run or unreadable dates.
+SWEEP_FAULT_PATTERN = '{ ($.event = "web_sweep") && (($.SweepFailed = 1) || ($.InvalidDates > 0)) }'
+# The line the Lambda platform writes when a function reaches its timeout.
+TIMEOUT_LINE = "Task timed out"
+# The common metric of every fault filter (namespace per environment, no dimensions).
+FAULT_METRIC = "WebFaults"
 # IAM condition: PutParameter only with Overwrite=false (condition key ssm:Overwrite).
 _NO_OVERWRITE = {"StringEquals": {"ssm:Overwrite": "false"}}
 
@@ -223,7 +238,7 @@ def _metric_filter(log_group: str, pattern: str, metric: str, env: str) -> dict[
 def _alarm(env: str, name: str, description: str, *, namespace: str, metric: str, statistic: str,
            operator: str, threshold: float, period: int = 300, evaluations: int = 1,
            missing: str = "notBreaching", dimensions: list[dict[str, Any]] | None = None,
-           depends: str | None = None) -> dict[str, Any]:
+           depends: list[str] | None = None) -> dict[str, Any]:
     properties: dict[str, Any] = {
         "AlarmName": f"{PROJECT}-{env}-web-{name}",
         "AlarmDescription": description,
@@ -244,15 +259,36 @@ def _alarm(env: str, name: str, description: str, *, namespace: str, metric: str
     alarm: dict[str, Any] = {"Type": "AWS::CloudWatch::Alarm", "Condition": "SupportedDeployment",
                              "Properties": properties}
     if depends:
-        alarm["DependsOn"] = [depends]
+        alarm["DependsOn"] = list(depends)
     return alarm
 
 
 def _observability(env: str) -> dict[str, Any]:
+    """Topic, three alarms and the log filters behind them.
+
+    Kept small on purpose: every alarm lists one metric directly (no metric
+    math, which is charged per listed metric) and the stack produces three
+    custom metrics, so two stacks (DEV and prod) stay within the CloudWatch
+    free tier of alarm metrics and custom metrics. Every fault of the four
+    functions feeds one common metric (``WebFaults``, no dimensions) through
+    one filter per log group and log format; the email then says only "fault",
+    and the function logs say which one.
+    """
     logs = log_metric_namespace(env)
     sweep_dimension = [{"Name": METRIC_DIMENSION, "Value": env}]
     at_least_one = {"statistic": "Sum", "operator": "GreaterThanOrEqualToThreshold", "threshold": 1}
-    cloudflare = " || ".join(f'($.web_pass_outcome = "{code}")' for code in PASS_CLOUDFLARE_CODES)
+    pass_faults = " || ".join(f'($.web_pass_outcome = "{code}")' for code in PASS_FAULT_CODES)
+    identity_terms = " ".join(f"?{term}" for term in IDENTITY_FAULT_CODES + IDENTITY_ALARM_EVENTS)
+    timeout = f'"{TIMEOUT_LINE}"'
+    fault_filters = {
+        # Text lines (logging): fault codes, a new key, an open breaker, a timeout.
+        "IdentityFaultsFilter": _metric_filter("IdentityLogGroup", f"{identity_terms} ?{timeout}", FAULT_METRIC, env),
+        "PassFaultsFilter": _metric_filter("PassLogGroup", "{ " + pass_faults + " }", FAULT_METRIC, env),
+        "SweepFaultsFilter": _metric_filter("SweepLogGroup", SWEEP_FAULT_PATTERN, FAULT_METRIC, env),
+        # JSON and text terms cannot share one pattern: timeouts of the other three get their own.
+        **{f"{_LOGICAL[role]}TimeoutFilter": _metric_filter(f"{_LOGICAL[role]}LogGroup", timeout, FAULT_METRIC, env)
+           for role in ("mcp", "pass", "sweep")},
+    }
     resources: dict[str, Any] = {
         "AlarmTopic": {
             "Type": "AWS::SNS::Topic",
@@ -263,64 +299,27 @@ def _observability(env: str) -> dict[str, Any]:
                 "Tags": _tags(env),
             },
         },
-        "SweepFailedAlarm": _alarm(env, "sweep-failed", "A sweep run failed (see its codes).",
-                                   namespace=METRIC_NAMESPACE, metric="SweepFailed", dimensions=sweep_dimension,
-                                   **at_least_one),
-        # A sweep that never runs emits nothing: missing data alarms too.
+        **fault_filters,
+        "FaultsAlarm": _alarm(env, "faults", "A fault in the public web: an identity fault code, a new fingerprint "
+                              "key, an open breaker, Turnstile or its secret or the fingerprint key failing in the "
+                              "pass, a failed sweep or unreadable dates, or a timeout in any function. The four "
+                              "function logs say which.", namespace=logs, metric=FAULT_METRIC,
+                              depends=sorted(fault_filters), **at_least_one),
+        # A sweep that never runs (or crashes before its line) emits nothing: missing data alarms too.
         "OldestItemAgeAlarm": _alarm(env, "oldest-item-age", "A web user or session is older than 60 minutes, "
                                      "or the sweep has not reported.", namespace=METRIC_NAMESPACE,
                                      metric="OldestItemAgeSeconds", statistic="Maximum",
                                      operator="GreaterThanThreshold", threshold=3600, period=600,
                                      missing="breaching", dimensions=sweep_dimension),
-        "InvalidDatesAlarm": _alarm(env, "invalid-dates", "The sweep keeps deleting items whose date it cannot read.",
-                                    namespace=METRIC_NAMESPACE, metric="InvalidDates", statistic="Sum",
-                                    operator="GreaterThanThreshold", threshold=0, evaluations=3,
-                                    dimensions=sweep_dimension),
-        "PassCloudflareFilter": _metric_filter("PassLogGroup", "{ " + cloudflare + " }",
-                                               "PassCloudflareUnavailable", env),
-        "PassCloudflareAlarm": _alarm(env, "pass-cloudflare", "Turnstile validation is not answering: no new "
-                                      "sign-in can get a pass.", namespace=logs, metric="PassCloudflareUnavailable",
-                                      depends="PassCloudflareFilter", **at_least_one),
-        "PassKeyMissingFilter": _metric_filter("PassLogGroup", '{ $.web_pass_outcome = "fingerprint_key_missing" }',
-                                               "PassFingerprintKeyMissing", env),
-        "PassKeyMissingAlarm": _alarm(env, "fingerprint-key-missing", "The pass cannot read the fingerprint key.",
-                                      namespace=logs, metric="PassFingerprintKeyMissing",
-                                      depends="PassKeyMissingFilter", **at_least_one),
-        "IdentityKeyCreatedFilter": _metric_filter("IdentityLogGroup", "fingerprint_key_created",
-                                                   "IdentityFingerprintKeyCreated", env),
-        "IdentityKeyCreatedAlarm": _alarm(env, "fingerprint-key-created", "The identity function created a new "
-                                          "fingerprint key: every count and pass was reset.", namespace=logs,
-                                          metric="IdentityFingerprintKeyCreated",
-                                          depends="IdentityKeyCreatedFilter", **at_least_one),
-        "IdentityBreakerFilter": _metric_filter("IdentityLogGroup", "breaker_open", "IdentityBreakerOpen", env),
-        "IdentityBreakerAlarm": _alarm(env, "breaker-open", "Sign-ins are refused because the breaker is open.",
-                                       namespace=logs, metric="IdentityBreakerOpen", depends="IdentityBreakerFilter",
-                                       **at_least_one),
-        "IdentityFaultsFilter": _metric_filter("IdentityLogGroup", " ".join(f"?{code}" for code in IDENTITY_FAULT_CODES),
-                                               "IdentityFaults", env),
         # Fixed event of the /mcp call that reaches the daily ceiling: from then
         # until 00:00 UTC every call and new sign-in is refused as a pause.
         "McpDailyCeilingFilter": _metric_filter("McpLogGroup", '{ $.event = "%s" }' % EVENT_DAILY_CEILING_REACHED,
                                                 "McpDailyCeilingReached", env),
         "McpDailyCeilingAlarm": _alarm(env, "daily-ceiling", "The day's /mcp call ceiling was reached: calls and "
                                        "new sign-ins are paused until 00:00 UTC.", namespace=logs,
-                                       metric="McpDailyCeilingReached", depends="McpDailyCeilingFilter",
+                                       metric="McpDailyCeilingReached", depends=["McpDailyCeilingFilter"],
                                        **at_least_one),
-        "IdentityFaultsAlarm": _alarm(env, "identity-faults", "The identity function failed for a reason other "
-                                      "than an expected refusal.", namespace=logs, metric="IdentityFaults",
-                                      depends="IdentityFaultsFilter", **at_least_one),
     }
-    for role, logical in _LOGICAL.items():
-        if role != "identity":
-            resources[f"{logical}ErrorsAlarm"] = _alarm(
-                env, f"{role}-errors", f"The {role} function returned a function error.", namespace="AWS/Lambda",
-                metric="Errors", dimensions=[{"Name": "FunctionName", "Value": {"Ref": f"{logical}Function"}}],
-                **at_least_one)
-        resources[f"{logical}TimeoutFilter"] = _metric_filter(f"{logical}LogGroup", '"Task timed out"',
-                                                              f"{logical}Timeouts", env)
-        resources[f"{logical}TimeoutAlarm"] = _alarm(
-            env, f"{role}-timeouts", f"The {role} function timed out.", namespace=logs, metric=f"{logical}Timeouts",
-            depends=f"{logical}TimeoutFilter", **at_least_one)
     return resources
 
 
@@ -538,7 +537,8 @@ def build_public_web_template(env: str) -> dict[str, Any]:
 
 
 __all__ = [
-    "CORS_ALLOW_HEADERS", "CORS_ALLOW_METHODS", "DEV_CALLBACK_URL", "IDENTITY_FAULT_CODES", "IDENTITY_REFUSAL_CODES", "PASS_CLOUDFLARE_CODES",
-    "PASS_HANDLER", "PROD_CALLBACK_PATTERN", "ROUTE_THROTTLES", "SWEEP_HANDLER", "SWEEP_SCHEDULE",
+    "CORS_ALLOW_HEADERS", "CORS_ALLOW_METHODS", "DEV_CALLBACK_URL", "FAULT_METRIC", "IDENTITY_ALARM_EVENTS",
+    "IDENTITY_FAULT_CODES", "IDENTITY_REFUSAL_CODES", "PASS_CLOUDFLARE_CODES", "PASS_FAULT_CODES", "PASS_HANDLER",
+    "SWEEP_FAULT_PATTERN", "TIMEOUT_LINE", "PROD_CALLBACK_PATTERN", "ROUTE_THROTTLES", "SWEEP_HANDLER", "SWEEP_SCHEDULE",
     "TIMEOUTS", "build_public_web_template", "log_metric_namespace",
 ]

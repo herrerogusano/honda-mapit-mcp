@@ -96,22 +96,48 @@ it, store the Turnstile secret if it is absent, then create the row:
 
 ### Alarms
 
-Sixteen CloudWatch alarms, all notifying the alarm topic on alarm and on
-recovery:
+Three CloudWatch alarms per stack, all notifying the alarm topic on alarm and
+on recovery. Each one is a standard-resolution alarm on one metric listed
+directly (no metric math), and each stack produces three custom metrics, so
+the DEV and prod stacks together stay within the CloudWatch free tier of
+alarm metrics and custom metrics (CloudWatch pricing counts a metric alarm
+once per metric it lists, and every metric-filter or EMF metric name and
+dimension combination as one custom metric).
 
-| Alarm (`honda-mapit-mcp-{env}-web-...`) | Fires when |
-|---|---|
-| `oldest-item-age` | the sweep's `OldestItemAgeSeconds` maximum is above 3600 in 10 minutes, or the sweep reported nothing (missing data counts as breaching) |
-| `sweep-failed` | a sweep run reported `SweepFailed` |
-| `invalid-dates` | the sweep saw unreadable dates in three consecutive 5-minute periods |
-| `pass-cloudflare` | the pass logged a Turnstile or Turnstile-secret failure |
-| `fingerprint-key-missing` | the pass could not read the fingerprint key |
-| `fingerprint-key-created` | the identity function created a new fingerprint key |
-| `breaker-open` | the identity function refused a sign-in because the breaker is open |
-| `identity-faults` | the identity function logged a fault code (not an expected refusal) |
-| `daily-ceiling` | the service logged `public_daily_ceiling_reached`: the call that brought the day's `mcp_calls` to the daily ceiling (calls and new sign-ins are paused until 00:00 UTC) |
-| `mcp-errors`, `pass-errors`, `sweep-errors` | Lambda `Errors` of that function |
-| `identity-timeouts`, `mcp-timeouts`, `pass-timeouts`, `sweep-timeouts` | a "Task timed out" line in that function's log |
+| Alarm (`honda-mapit-mcp-{env}-web-...`) | Metric | Fires when |
+|---|---|---|
+| `faults` | `WebFaults` (log filters, namespace `honda-mapit-mcp/web-logs/{env}`) | at least one of the events below in a 5-minute period |
+| `oldest-item-age` | `OldestItemAgeSeconds` (sweep EMF, namespace `honda-mapit-mcp/web`, dimension `Environment`) | the maximum is above 3600 in 10 minutes, or the sweep reported nothing (missing data counts as breaching: a sweep that does not run, crashes or times out every run) |
+| `daily-ceiling` | `McpDailyCeilingReached` (log filter) | the service logged `public_daily_ceiling_reached`: the call that brought the day's `mcp_calls` to the daily ceiling (calls and new sign-ins are paused until 00:00 UTC) |
+
+Events that feed `WebFaults`, one filter per log group and log format (JSON
+and text terms cannot share a pattern):
+
+| Log group | Filter | Events |
+|---|---|---|
+| identity (text) | `IdentityFaultsFilter` | a fault code (not an expected refusal), `fingerprint_key_created`, `breaker_open`, "Task timed out" |
+| pass (JSON) | `PassFaultsFilter` | a Turnstile or Turnstile-secret failure (`turnstile_secret_missing` included), `fingerprint_key_missing`, `pass_internal_error` |
+| sweep (JSON) | `SweepFaultsFilter` | a run with `SweepFailed` 1, or with `InvalidDates` above 0 |
+| mcp, pass, sweep (text) | `McpTimeoutFilter`, `PassTimeoutFilter`, `SweepTimeoutFilter` | "Task timed out" |
+
+What this set does not give:
+
+- **The email says only "fault".** Which function and which code are in the
+  logs: look for the codes above in the four log groups of the alarm period.
+- **One fault can hide the next.** An alarm emails on a change of state; while
+  `faults` stays in alarm (faults in consecutive 5-minute periods), a
+  different fault in the same periods sends no new email.
+- **Unreadable dates alarm on the first run** that sees them, not after three
+  consecutive periods.
+- **No Lambda `Errors` alarm.** The mcp, pass and sweep handlers catch every
+  exception themselves (mcp answers 503, the pass logs `pass_internal_error`,
+  the sweep logs a failed run), so `Errors` counts only crashes of the
+  runtime itself (a module that does not import, memory exhausted). Those are
+  not alarmed in mcp and pass; in the sweep they show as missing data in
+  `oldest-item-age`.
+- The sweep's other counts (`SweepFailed`, `SweepIncomplete`, `InvalidDates`,
+  deletions, recount) are fields of its log line, not metrics: read them with
+  Logs Insights.
 
 ### Hard to undo
 
@@ -128,7 +154,7 @@ this document before every stack creation:
   recreating the key, resets every person and attempt row: everybody becomes
   "new" and seats are recounted. The deploy script creates the key; if it is
   missing at a sign-in, the identity function creates one and logs
-  `fingerprint_key_created`, which fires its alarm.
+  `fingerprint_key_created`, which fires the `faults` alarm.
 - **Retained resources in prod**: the pool and the table have deletion
   protection and are retained if the stack is deleted, so a new stack with
   the same names cannot be created until they are removed by hand.
@@ -259,10 +285,11 @@ Five independent mechanisms:
    `session_expired`. This works even if the sweep fails.
 4. **No refresh.** The identity function refuses refresh token issues, so an
    access token (60 minutes) cannot be extended.
-5. **Alarm.** Each sweep run writes one EMF log line with
-   `OldestItemAgeSeconds`, `SweepFailed` and `SweepIncomplete`. The
-   `oldest-item-age` alarm fires above 3600 seconds or when the sweep reports
-   nothing, and `sweep-failed` on a failed run (see "Alarms"). `web-status`
+5. **Alarm.** Each sweep run writes one EMF log line with the metric
+   `OldestItemAgeSeconds` and the fields `SweepFailed`, `SweepIncomplete` and
+   `InvalidDates`. The `oldest-item-age` alarm fires above 3600 seconds or
+   when the sweep reports nothing, and `faults` on a failed run or unreadable
+   dates (see "Alarms"). `web-status`
    flags 3600 seconds or more, one second earlier than the alarm.
 
 A second sign-in within the same hour is cut early: the user created by the
