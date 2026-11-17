@@ -79,7 +79,7 @@ MSG_PUBLIC_LIMIT = (
     "Has llegado al máximo de consultas de esta sesión. Cierra sesión y vuelve a entrar."
 )
 MSG_PUBLIC_RATE = "Demasiadas consultas seguidas. Espera un minuto y vuelve a intentarlo."
-MSG_PUBLIC_PAUSED = "El servicio está en pausa. Inténtalo de nuevo más tarde."
+MSG_PUBLIC_PAUSED = "El servicio está en pausa. Vuelve más tarde."
 MSG_LOGOUT_DONE = (
     "Sesión cerrada: se han borrado tu sesión de MAPIT guardada y tu usuario de este servicio."
 )

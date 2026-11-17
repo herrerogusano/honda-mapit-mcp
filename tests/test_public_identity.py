@@ -322,8 +322,9 @@ def _fails(event: dict, message: str) -> None:
 
 
 def _person(table: FakeTable, **attrs: Any) -> None:
-    table.put(f"person#{FP}", first_login_at=NOW - 86400, last_login_at=NOW - 86400, login_count=1,
-              consent_version="v0", consent_at=NOW - 86400, expires_at=NOW + 1000, **attrs)
+    values = {"first_login_at": NOW - 86400, "last_login_at": NOW - 86400, "login_count": 1,
+              "consent_version": "v0", "consent_at": NOW - 86400, "expires_at": NOW + 1000, **attrs}
+    table.put(f"person#{FP}", **values)
 
 
 # --- UserMigration_Authentication: admission -----------------------------------------
@@ -353,6 +354,30 @@ def test_new_person_is_admitted_with_usage_row_and_session(fakes):
     reads = [c for c in table.calls if c[0] == "batch_get_item"]
     assert len(reads) == 1 and len(reads[0][1]["RequestItems"][TABLE]["Keys"]) == 8  # with config and day
     assert EMAIL not in json.dumps(table.items) and "Rider" not in json.dumps(table.items)
+
+
+def test_user_texts_and_consent_version_are_the_approved_ones():
+    # Exact approved wording: the web shows these texts and matches its own on them.
+    assert public.MSG_BAD_CREDENTIALS == "Correo o contraseña de MAPIT incorrectos."
+    assert public.MSG_START_FROM_WEB == "Vuelve a la web y entra desde allí con este mismo correo."
+    assert public.MSG_PAUSED == "El servicio está en pausa. Vuelve más tarde."
+    assert public.PUBLIC_CONSENT_VERSION == "web-1"
+
+
+def test_new_person_records_consent_version_web_1(fakes):
+    table, _, _ = fakes
+    identity.handler(_migration(), Context())
+    assert table.items[f"person#{FP}"]["consent_version"] == {"S": "web-1"}
+
+
+@pytest.mark.parametrize("old_version", ["web-provisional-1", "v0"])
+def test_person_with_an_earlier_consent_version_still_signs_in(fakes, old_version):
+    # Rows written before the change keep their version; nothing checks it against a list.
+    table, ssm, _ = fakes
+    _person(table, consent_version=old_version)
+    identity.handler(_migration(), Context())
+    assert table.items[f"person#{FP}"]["consent_version"] == {"S": old_version}
+    assert table.n(f"person#{FP}", "last_login_at") == NOW and ssm.puts[0]["Name"] == SESSION_PARAMETER
 
 
 def test_returning_person_passes_with_full_cap(fakes):
@@ -1081,6 +1106,17 @@ def test_token_issue_counts_sign_ins_and_caps_them_per_day(fakes):
     assert table.n(f"day#{TODAY}", "logins") == web.DAILY_LOGINS_PER_PERSON
     assert table.n("month#2027-01", "logins") == web.DAILY_LOGINS_PER_PERSON
     assert set(table.items[f"day#{TODAY}"]) == {"pk", "logins"}
+
+
+def test_token_issue_keeps_an_earlier_consent_version_and_date(fakes):
+    # Both count expressions: first sign-in of the day, then another the same day.
+    table, _, _ = fakes
+    _person(table, consent_version="web-provisional-1")
+    for source in ("TokenGeneration_HostedAuth", "TokenGeneration_Authentication"):
+        identity.handler(_token(source), Context())
+        assert table.items[f"person#{FP}"]["consent_version"] == {"S": "web-provisional-1"}
+        assert table.n(f"person#{FP}", "consent_at") == NOW - 86400
+    assert table.n(f"person#{FP}", "login_day_count") == 2
 
 
 def test_a_new_day_restarts_the_daily_count(fakes):
