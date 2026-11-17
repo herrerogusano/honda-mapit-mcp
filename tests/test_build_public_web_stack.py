@@ -649,6 +649,54 @@ def test_login_style_assets_are_small_own_svgs(env):
             assert set(element.attrib) <= _SVG_ATTRIBUTES
 
 
+# Limits on every asset. Documented: at most 40 assets and Bytes of at most 1,000,000
+# characters (CloudFormation AssetType and Cognito API AssetType references), the accepted
+# extensions per category (developer guide, "Image assets"), and a 2 MB request for
+# Settings plus Assets (same guide, note under "Image assets"). Not in the documentation,
+# taken from Cognito's own validation error on a real deployment: "Assets of SubType LOGO
+# must have a width:height ratio between 1:1 and 4:1", measured on the SVG width/height.
+_DOCUMENTED_EXTENSIONS = {
+    "FAVICON_ICO": {"ICO"}, "FAVICON_SVG": {"SVG"}, "IDP_BUTTON_ICON": {"ICO", "SVG"},
+    **{category: {"PNG", "SVG", "JPEG"} for category in (
+        "EMAIL_GRAPHIC", "SMS_GRAPHIC", "AUTH_APP_GRAPHIC", "PASSWORD_GRAPHIC", "PASSKEY_GRAPHIC",
+        "PAGE_HEADER_LOGO", "PAGE_HEADER_BACKGROUND", "PAGE_FOOTER_LOGO", "PAGE_FOOTER_BACKGROUND",
+        "PAGE_BACKGROUND", "FORM_BACKGROUND", "FORM_LOGO")},
+}
+_LOGO_CATEGORIES = {"FORM_LOGO", "PAGE_HEADER_LOGO", "PAGE_FOOTER_LOGO"}
+_LOGO_RATIO = (1.0, 4.0)
+
+
+def _svg_size(root):
+    """(width, height) as Cognito measures it: the width/height attributes, else the viewBox."""
+    view = [float(part) for part in root.attrib["viewBox"].split()]
+    if "width" in root.attrib or "height" in root.attrib:
+        size = (float(root.attrib["width"]), float(root.attrib["height"]))
+        # The drawing is not stretched: the attributes keep the viewBox proportion.
+        assert abs(size[0] / size[1] - view[2] / view[3]) < 1e-9
+        return size
+    return view[2], view[3]
+
+
+def test_login_style_assets_within_cognito_limits(env):
+    import base64
+    import xml.etree.ElementTree as ElementTree
+
+    branding = _branding(env)
+    assets = branding["Assets"]
+    assert len(assets) <= 40
+    request = json.dumps({"Settings": branding["Settings"], "Assets": assets}, separators=(",", ":"))
+    assert len(request.encode()) < 2 * 1024 * 1024
+    for asset in assets:
+        category = asset["Category"]
+        assert asset["Extension"] in _DOCUMENTED_EXTENSIONS[category], category
+        assert asset["ColorMode"] in {"LIGHT", "DARK", "DYNAMIC"}
+        assert len(asset["Bytes"]) <= 1_000_000, category
+        width, height = _svg_size(ElementTree.fromstring(base64.b64decode(asset["Bytes"])))
+        assert width > 0 and height > 0, category
+        if category in _LOGO_CATEGORIES:
+            assert _LOGO_RATIO[0] <= width / height <= _LOGO_RATIO[1], (category, width, height)
+
+
 def test_template_fits_a_template_body_request(env):
     assert len(json.dumps(stack.build_public_web_template(env), separators=(",", ":"))) < _TEMPLATE_BODY_LIMIT
 

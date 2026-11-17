@@ -74,7 +74,10 @@ def _logo_svg() -> str:
     ride, x = _word("RIDE", 30, RED_HI)
     log, x = _word("LOG", x + 4, FG)
     width = x - 3
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:g} 28" width="{2 * width:g}" height="56">'
+    # Cognito refuses a logo wider than 4:1 (its validation error; the documentation does
+    # not say). The 28-unit-high drawing gets a 6-unit margin above and below: 139 x 40,
+    # about 3.5:1, nothing stretched.
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -6 {width:g} 40" width="{2 * width:g}" height="80">'
             f'<title>Ride Log</title><polygon points="8,0 23,0 15,28 0,28" fill="#{RED}"/>{ride}{log}</svg>')
 
 
