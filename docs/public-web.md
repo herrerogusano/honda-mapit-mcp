@@ -78,6 +78,17 @@ width:height ratio between 1:1 and 4:1, measured on the SVG `width` and
 `height`. A first deployment was refused for a 278 x 56 logo and rolled back;
 the logo is now 278 x 80.
 
+Settings keys: Cognito ignores keys outside its schema without an error. The
+key paths of a real merged style read back with
+`DescribeManagedLoginBrandingByClient` (`ReturnMergedResources`) are kept,
+without values or identifiers, in
+`tests/fixtures/managed_login_settings_paths.json`, and a test refuses any
+key we send that is not among them. That read-back held every key and value
+we send. The schema has no setting for the space between elements other than
+the page-wide `categories.global.spacingDensity`, no input text colour and no
+separate hover or focus colour for an input besides
+`componentClasses.focusState`.
+
 ### Deployment
 
 Two separate runs of `scripts/deploy_public_web.py`, review first:
