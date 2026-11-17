@@ -17,7 +17,8 @@ CloudFormation template reference, and the Cognito developer guide pages
   not from the style.
 
 The three images are original drawings for this project (plain shapes; the
-wordmark letters are drawn as paths, not set in a font), except the favicon,
+wordmark letters are drawn as paths, not set in a font; the one line of text
+under it, ``LOGIN_HINT``, is an SVG ``text`` in a system font), except the favicon,
 which is the web's own ``public/favicon.svg``. No photo, font file or third
 party mark, and nothing is fetched at run time.
 
@@ -70,15 +71,31 @@ def _word(text: str, x: float, colour: str) -> tuple[str, float]:
     return f'<g fill="#{colour}" fill-rule="evenodd">{"".join(parts)}</g>', x
 
 
+# Shown under the wordmark: Cognito's own field labels cannot be changed, and the
+# Settings document has no text of our own ("instructions" is reserved, not
+# implemented), so the only place for it is this image.
+LOGIN_HINT = "Usa tu correo y contraseña de MAPIT"
+HINT_FONT_SIZE = 8.5
+HINT_BASELINE = 44
+_HINT_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
+
 def _logo_svg() -> str:
     ride, x = _word("RIDE", 30, RED_HI)
     log, x = _word("LOG", x + 4, FG)
     width = x - 3
     # Cognito refuses a logo wider than 4:1 (its validation error; the documentation does
-    # not say). The 28-unit-high drawing gets a 6-unit margin above and below: 139 x 40,
-    # about 3.5:1, nothing stretched.
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -6 {width:g} 40" width="{2 * width:g}" height="80">'
-            f'<title>Ride Log</title><polygon points="8,0 23,0 15,28 0,28" fill="#{RED}"/>{ride}{log}</svg>')
+    # not say). The 28-unit-high wordmark gets a 6-unit margin above, then the hint line
+    # and a 6-unit margin below: 139 x 56, about 2.5:1, nothing stretched.
+    # The text uses a system font (an image fetches nothing) and is fitted to the wordmark
+    # width with textLength, so a wider or narrower font never overflows the image.
+    # FG_2 on the form background: the page is dark only and light mode carries the
+    # same form colours.
+    hint = (f'<text x="{width / 2:g}" y="{HINT_BASELINE}" text-anchor="middle" textLength="{width:g}" '
+            f'lengthAdjust="spacingAndGlyphs" font-family="{_HINT_FONT}" font-size="{HINT_FONT_SIZE:g}" '
+            f'font-weight="500" fill="#{FG_2}">{LOGIN_HINT}</text>')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -6 {width:g} 56" width="{2 * width:g}" height="112">'
+            f'<title>Ride Log</title><polygon points="8,0 23,0 15,28 0,28" fill="#{RED}"/>{ride}{log}{hint}</svg>')
 
 
 LOGO_SVG = _logo_svg()
