@@ -804,7 +804,54 @@ def test_cover_used_by_a_racing_pre_auth_is_not_used_twice(fakes):
     _fails(_pre_auth(False), public.MSG_START_FROM_WEB)
     assert table.n(f"pass#{FP}", "attempts_left") == 0
     assert [c[1]["UpdateExpression"] for c in table.writes()] == [
-        "SET attempts_left = attempts_left - :one", "REMOVE migration_spent_at"]
+        "SET attempts_left = attempts_left - :one", "REMOVE migration_spent_at",
+        "SET attempts_left = attempts_left - :one"]
+
+
+def _cover_lost_between_spend_and_removal(table: FakeTable) -> None:
+    table.before_update = lambda t: setattr(
+        t, "before_update", lambda t2: t2.items[f"pass#{FP}"].pop("migration_spent_at"))
+
+
+def test_pre_auth_that_loses_the_cover_spends_an_attempt_left(fakes):
+    table, _, mapit = fakes
+    table.put(f"pass#{FP}", attempts_left=2, issued_at=NOW - 60, expires_at=NOW + 240,
+              migration_spent_at=NOW - 1)
+    _cover_lost_between_spend_and_removal(table)
+    assert identity.handler(_pre_auth(False), Context())["response"] == {}
+    assert table.n(f"pass#{FP}", "attempts_left") == 1 and mapit.calls == []
+    last = table.writes()[-1][1]
+    assert last["ConditionExpression"] == "attempts_left > :zero AND expires_at > :now"
+
+
+def test_two_pre_auths_reading_one_cover_spend_one_attempt_between_them(fakes):
+    table, _, _ = fakes
+    identity.handler(_migration(), Context())        # 3 -> 2, cover set
+    identity.handler(_pre_auth(False), Context())    # uses the cover: 2
+    # A second pre-authentication read the cover before the first removed it.
+    table.put(f"pass#{FP}", attempts_left=2, issued_at=NOW - 60, expires_at=NOW + 240,
+              migration_spent_at=NOW)
+    _cover_lost_between_spend_and_removal(table)
+    identity.handler(_pre_auth(False), Context())
+    assert table.n(f"pass#{FP}", "attempts_left") == 1
+
+
+def test_unexpected_error_removing_the_cover_fails_closed(fakes, caplog):
+    table, _, _ = fakes
+    table.put(f"pass#{FP}", attempts_left=2, issued_at=NOW - 60, expires_at=NOW + 240,
+              migration_spent_at=NOW - 1)
+
+    def boom(_t: FakeTable) -> None:
+        raise ClientError("InternalServerError")
+
+    table.before_update = lambda t: setattr(t, "before_update", boom)
+    with caplog.at_level(logging.WARNING, logger="mapit.public_identity"):
+        _fails(_pre_auth(False), public.MSG_GENERIC)
+    assert [json.loads(r.getMessage())["step"] for r in caplog.records] == ["pass_spend_failed"]
+    assert json.loads(caplog.records[0].getMessage())["provider_code"] == "InternalServerError"
+    assert table.n(f"pass#{FP}", "attempts_left") == 2
+    assert table.items[f"pass#{FP}"]["migration_spent_at"] == {"N": str(NOW - 1)}
+    assert len(table.writes()) == 2  # no fallback spend after a fault
 
 
 @pytest.mark.parametrize("attempts", [3, 1])

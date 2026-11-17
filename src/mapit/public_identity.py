@@ -397,7 +397,9 @@ def _spend_for_pre_auth(env: str, email_fp: str, now: int, deadline: float) -> N
     ``MIGRATION_SPEND_GRACE_SECONDS`` ago covers one pre-authentication, once:
     the cover is used by removing ``migration_spent_at`` on the condition that
     it still holds the value read, so of several pre-authentications only one
-    goes through without spending.
+    goes through without spending. One that loses that write spends an attempt
+    with the plain conditional decrement, or is refused when none is left: at
+    most three writes.
     """
     try:
         _call("pass_spend", deadline, base._dynamodb().update_item,
@@ -424,6 +426,18 @@ def _spend_for_pre_auth(env: str, email_fp: str, now: int, deadline: float) -> N
               UpdateExpression="REMOVE migration_spent_at",
               ConditionExpression="migration_spent_at = :spent AND expires_at > :now",
               ExpressionAttributeValues={":spent": _num(spent), ":now": _num(now)})
+        return
+    except _Stop as exc:
+        if exc.provider_code != "ConditionalCheckFailedException":
+            raise
+    # Another pre-authentication used the cover first: spend an attempt like
+    # any other sign-in, once, conditionally (no cover is looked for again).
+    try:
+        _call("pass_spend", deadline, base._dynamodb().update_item,
+              TableName=web.web_table_name(env), Key=web.pass_key(email_fp),
+              UpdateExpression="SET attempts_left = attempts_left - :one",
+              ConditionExpression="attempts_left > :zero AND expires_at > :now",
+              ExpressionAttributeValues={":one": _num(1), ":zero": _num(0), ":now": _num(now)})
     except _Stop as exc:
         if exc.provider_code == "ConditionalCheckFailedException":
             raise _Stop("pass_missing", MSG_START_FROM_WEB) from None

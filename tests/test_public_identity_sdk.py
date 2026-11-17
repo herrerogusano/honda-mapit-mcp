@@ -137,6 +137,13 @@ def test_modelled_used_cover_refuses(stubs):
     dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
                             modeled_fields={"Item": old})
     dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400)
+    dynamo.add_client_error("update_item", "ConditionalCheckFailedException", http_status_code=400,
+                            expected_params={
+                                "TableName": TABLE, "Key": web.pass_key(FP),
+                                "UpdateExpression": "SET attempts_left = attempts_left - :one",
+                                "ConditionExpression": "attempts_left > :zero AND expires_at > :now",
+                                "ExpressionAttributeValues": {":one": {"N": "1"}, ":zero": {"N": "0"},
+                                                              ":now": {"N": str(NOW)}}})
     with pytest.raises(identity.IdentityError, match="^" + public.MSG_START_FROM_WEB + "$"):
         identity.handler(_pre_auth(False), Context())
 

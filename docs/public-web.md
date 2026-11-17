@@ -208,7 +208,9 @@ this document before every stack creation:
    runs and the pass attempt is spent here. An attempt that a migration of the
    same email spent in the last 10 seconds covers one pre-authentication, once:
    using it removes `migration_spent_at` with a conditional write, and every
-   later pre-authentication spends its own attempt. The email comes from the
+   later pre-authentication spends its own attempt. One that read the cover
+   but lost that write to another spends an attempt with the plain
+   conditional decrement, or is refused when none is left. The email comes from the
    user's `email` attribute, never from `userName`. For an absent user
    (`userNotFound`, sent because the client has `PreventUserExistenceErrors`
    on) it applies only the refusals that need no email (closed or paused,
