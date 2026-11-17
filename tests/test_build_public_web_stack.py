@@ -566,9 +566,12 @@ def test_filter_patterns_fit_cloudwatch_limits(env):
 _ASSET_EXTENSIONS = {"FORM_LOGO": {"PNG", "SVG", "JPEG"}, "PAGE_BACKGROUND": {"PNG", "SVG", "JPEG"},
                      "FAVICON_SVG": {"SVG"}}
 # Subset of the SVG elements and attributes that guide lists as supported.
-_SVG_ELEMENTS = {"svg", "g", "path", "polygon", "rect", "title"}
+_SVG_ELEMENTS = {"svg", "g", "path", "polygon", "rect", "title", "text"}
 _SVG_ATTRIBUTES = {"xmlns", "viewBox", "width", "height", "preserveAspectRatio", "points", "fill", "fill-opacity",
-                   "fill-rule", "d", "transform"}
+                   "fill-rule", "d", "transform", "x", "y", "text-anchor", "textLength", "lengthAdjust",
+                   "font-family", "font-size", "font-weight"}
+# The approved text under the wordmark of the login form (exact wording).
+_LOGIN_HINT = "Usa tu correo y contraseña de MAPIT"
 # CloudFormation quota for a template sent as TemplateBody (the deploy script sends it so).
 _TEMPLATE_BODY_LIMIT = 51_200
 
@@ -639,8 +642,9 @@ def test_login_style_assets_are_small_own_svgs(env):
         assert asset["Extension"] in _ASSET_EXTENSIONS[asset["Category"]]
         assert len(asset["Bytes"]) <= 1_000_000
         svg = base64.b64decode(asset["Bytes"], validate=True).decode("utf-8")
-        lowered = svg.lower()
-        # Nothing fetched at run time, no script, no third-party name.
+        # Nothing fetched at run time, no script, no third-party name (MAPIT only in the
+        # approved hint, which names the account to use).
+        lowered = svg.replace(_LOGIN_HINT, "").lower()
         for banned in ("href", "url(", "http:", "<script", "<image", "<style", "@import", "honda", "mapit"):
             assert banned not in lowered.replace('xmlns="http://www.w3.org/2000/svg"', ""), banned
         root = ElementTree.fromstring(svg)
@@ -695,6 +699,38 @@ def test_login_style_assets_within_cognito_limits(env):
         assert width > 0 and height > 0, category
         if category in _LOGO_CATEGORIES:
             assert _LOGO_RATIO[0] <= width / height <= _LOGO_RATIO[1], (category, width, height)
+
+
+def _form_logo(env):
+    import base64
+    import xml.etree.ElementTree as ElementTree
+
+    (logo,) = [a for a in _branding(env)["Assets"] if a["Category"] == "FORM_LOGO"]
+    return ElementTree.fromstring(base64.b64decode(logo["Bytes"]))
+
+
+def test_login_form_logo_tells_to_use_the_mapit_account(env):
+    root = _form_logo(env)
+    texts = [e for e in root.iter() if e.tag == "{http://www.w3.org/2000/svg}text"]
+    assert [e.text for e in texts] == [_LOGIN_HINT]
+    hint = texts[0]
+    left, top, width, height = (float(part) for part in root.attrib["viewBox"].split())
+    size, length, centre, baseline = (float(hint.attrib[name]) for name in ("font-size", "textLength", "x", "y"))
+    # Fitted to a fixed width whatever system font draws it, and inside the image.
+    assert hint.attrib["lengthAdjust"] == "spacingAndGlyphs" and hint.attrib["text-anchor"] == "middle"
+    assert left <= centre - length / 2 and centre + length / 2 <= left + width
+    # Below the 28-unit wordmark, above the bottom edge (descenders included).
+    assert baseline - size >= 28 and baseline + 0.25 * size <= top + height
+    # Big enough to read: at least 14 px at the image's own size.
+    assert size * float(root.attrib["width"]) / width >= 14
+
+
+def test_login_form_hint_reads_on_the_form_in_both_modes(env):
+    hint = [e for e in _form_logo(env).iter() if e.tag == "{http://www.w3.org/2000/svg}text"][0]
+    colour = hint.attrib["fill"].removeprefix("#")
+    form = _branding(env)["Settings"]["components"]["form"]
+    for mode in ("darkMode", "lightMode"):
+        assert _contrast(colour, form[mode]["backgroundColor"][:6]) >= 4.5, mode
 
 
 def _leaf_paths(value, prefix=()):
