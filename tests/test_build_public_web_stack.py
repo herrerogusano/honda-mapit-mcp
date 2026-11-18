@@ -198,13 +198,14 @@ def test_sweep_schedule_timeout_and_no_retries(env):
 def test_no_parameter_resource_and_no_secret_or_private_literal(env):
     template = stack.build_public_web_template(env)
     assert not [r for r in template["Resources"].values() if r["Type"] == "AWS::SSM::Parameter"]
-    for name in ("MapitConfigJson", "AlarmEmail"):
+    for name in ("MapitConfigJson", "AlarmEmail") if env == "prod" else ("MapitConfigJson",):
         assert template["Parameters"][name]["NoEcho"] is True and "Default" not in template["Parameters"][name]
     text = json.dumps(template)
     assert not re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]", text)
     assert not re.search(r"[0-9]{12}", text)
-    assert template["Resources"]["AlarmTopic"]["Properties"]["Subscription"] == [
-        {"Protocol": "email", "Endpoint": {"Ref": "AlarmEmail"}}]
+    if env == "prod":
+        assert template["Resources"]["AlarmTopic"]["Properties"]["Subscription"] == [
+            {"Protocol": "email", "Endpoint": {"Ref": "AlarmEmail"}}]
 
 
 # --- environment contract with the modules ---------------------------------------
@@ -378,7 +379,8 @@ def _alarms(env):
             if item["Type"] == "AWS::CloudWatch::Alarm"}
 
 
-def test_alarm_set_and_thresholds(env):
+def test_alarm_set_and_thresholds():
+    env = "prod"  # the DEV stack has no alarms or filters
     alarms = _alarms(env)
     assert set(alarms) == {"FaultsAlarm", "OldestItemAgeAlarm", "McpDailyCeilingAlarm"}
     assert {alarm["AlarmName"] for alarm in alarms.values()} == {
@@ -397,6 +399,42 @@ def test_alarm_set_and_thresholds(env):
         "Sum", 1, "GreaterThanOrEqualToThreshold")
     assert (faults["Period"], faults["EvaluationPeriods"], faults["TreatMissingData"]) == (300, 1, "notBreaching")
     assert "Dimensions" not in faults
+
+
+# Prod-only observability: removed from DEV, unchanged in prod.
+_PROD_ONLY_RESOURCES = {
+    "AlarmTopic": "AWS::SNS::Topic",
+    "FaultsAlarm": "AWS::CloudWatch::Alarm", "OldestItemAgeAlarm": "AWS::CloudWatch::Alarm",
+    "McpDailyCeilingAlarm": "AWS::CloudWatch::Alarm",
+    **{name: "AWS::Logs::MetricFilter" for name in (
+        "IdentityFaultsFilter", "PassFaultsFilter", "SweepFaultsFilter", "McpTimeoutFilter", "PassTimeoutFilter",
+        "SweepTimeoutFilter", "McpDailyCeilingFilter")},
+}
+# SHA-256 of the prod template (sorted keys, compact). A deliberate prod change
+# updates it in the same PR; an accidental one fails here.
+_PROD_TEMPLATE_SHA256 = "db75aaf772e0f4e74cfcff7faa64d76b021c39fd34637a37551e11306937c05e"
+
+
+def test_dev_stack_creates_no_alarm_topic_or_metric_filter():
+    template = stack.build_public_web_template("dev")
+    types = {item["Type"] for item in template["Resources"].values()}
+    assert not types & {"AWS::CloudWatch::Alarm", "AWS::SNS::Topic", "AWS::SNS::Subscription",
+                        "AWS::Logs::MetricFilter"}
+    assert "AlarmEmail" not in template["Parameters"] and "AlarmTopicArn" not in template["Outputs"]
+    assert "AlarmTopic" not in json.dumps(template) and "AlarmEmail" not in json.dumps(template)
+
+
+def test_dev_resources_are_the_prod_resources_without_the_observability():
+    dev, prod = _resources("dev"), _resources("prod")
+    assert {name: prod[name]["Type"] for name in set(prod) - set(dev)} == _PROD_ONLY_RESOURCES
+    assert set(dev) <= set(prod)
+
+
+def test_prod_template_is_unchanged():
+    import hashlib
+
+    text = json.dumps(stack.build_public_web_template("prod"), sort_keys=True, separators=(",", ":"))
+    assert hashlib.sha256(text.encode("utf-8")).hexdigest() == _PROD_TEMPLATE_SHA256
 
 
 def _filters(env):
@@ -429,17 +467,21 @@ def test_both_stacks_together_fit_the_cloudwatch_free_tier():
             assert "Metrics" not in alarm and "MetricName" in alarm  # no metric math, no Metrics Insights
             alarm_metrics += 1
         custom |= _custom_metrics(env)
-    assert alarm_metrics == 6 and len(custom) == 6
+    # Prod: three alarms and three custom metrics. DEV: no alarm and no filter; only
+    # the sweep's own EMF metric, which the code writes whatever the template holds.
+    assert alarm_metrics == 3 and len(custom) == 4
     assert alarm_metrics <= 10 and len(custom) <= 10
-    for env in ("dev", "prod"):
-        assert _custom_metrics(env) == {
-            (stack.log_metric_namespace(env), "WebFaults", ()),
-            (stack.log_metric_namespace(env), "McpDailyCeilingReached", ()),
-            (public_sweep.METRIC_NAMESPACE, "OldestItemAgeSeconds", ((public_sweep.METRIC_DIMENSION, env),)),
-        }
+    assert _custom_metrics("prod") == {
+        (stack.log_metric_namespace("prod"), "WebFaults", ()),
+        (stack.log_metric_namespace("prod"), "McpDailyCeilingReached", ()),
+        (public_sweep.METRIC_NAMESPACE, "OldestItemAgeSeconds", ((public_sweep.METRIC_DIMENSION, "prod"),)),
+    }
+    assert _custom_metrics("dev") == {
+        (public_sweep.METRIC_NAMESPACE, "OldestItemAgeSeconds", ((public_sweep.METRIC_DIMENSION, "dev"),))}
 
 
-def test_fault_filters_feed_the_one_faults_alarm(env):
+def test_fault_filters_feed_the_one_faults_alarm():
+    env = "prod"  # the DEV stack has no alarms or filters
     filters, resources = _filters(env), _resources(env)
     fault_filters = {name for name, item in filters.items()
                      if item["MetricTransformations"][0]["MetricName"] == "WebFaults"}
@@ -460,7 +502,8 @@ def test_fault_filters_feed_the_one_faults_alarm(env):
     assert stack.log_metric_namespace("dev") != stack.log_metric_namespace("prod")
 
 
-def test_sweep_fault_filter_reads_fields_of_the_sweep_line(env):
+def test_sweep_fault_filter_reads_fields_of_the_sweep_line():
+    env = "prod"  # the DEV stack has no alarms or filters
     pattern = _filters(env)["SweepFaultsFilter"]["FilterPattern"]
     assert pattern == stack.SWEEP_FAULT_PATTERN
     fields = set(re.findall(r"\$\.([A-Za-z_]+)", pattern))
@@ -476,7 +519,8 @@ def test_sweep_fault_filter_reads_fields_of_the_sweep_line(env):
     assert (matches(ok), matches(failed), matches(invalid)) == (False, True, True)
 
 
-def test_filter_codes_are_codes_the_modules_write(env):
+def test_filter_codes_are_codes_the_modules_write():
+    env = "prod"  # the DEV stack has no alarms or filters
     filters = _filters(env)
     pass_source = (ROOT / "src/mapit/public_pass.py").read_text(encoding="utf-8")
     identity_source = (ROOT / "src/mapit/public_identity.py").read_text(encoding="utf-8")
@@ -511,7 +555,8 @@ def test_filter_codes_are_codes_the_modules_write(env):
         assert refusal in refusals
 
 
-def test_daily_ceiling_alarm_counts_the_fixed_event_of_the_service(env):
+def test_daily_ceiling_alarm_counts_the_fixed_event_of_the_service():
+    env = "prod"  # the DEV stack has no alarms or filters
     filters, alarms = _filters(env), _alarms(env)
     ceiling = filters["McpDailyCeilingFilter"]
     assert ceiling["LogGroupName"] == {"Ref": "McpLogGroup"}
@@ -529,8 +574,9 @@ def test_daily_ceiling_alarm_counts_the_fixed_event_of_the_service(env):
     assert ceiling["MetricTransformations"][0]["MetricName"] == "McpDailyCeilingReached"
 
 
-def test_daily_ceiling_filter_matches_the_line_the_service_writes(env):
+def test_daily_ceiling_filter_matches_the_line_the_service_writes():
     """The JSON line the gate logs, parsed as CloudWatch would for ``{ $.event = "..." }``."""
+    env = "prod"  # the DEV stack has no filters
     import json as _json
 
     from mapit.public_web_service import PublicSessionGate
@@ -554,7 +600,8 @@ def test_daily_ceiling_filter_matches_the_line_the_service_writes(env):
     assert _json.loads(line)["event"] == wanted.group(1)
 
 
-def test_filter_patterns_fit_cloudwatch_limits(env):
+def test_filter_patterns_fit_cloudwatch_limits():
+    env = "prod"  # the DEV stack has no filters
     for item in _filters(env).values():
         assert 0 < len(item["FilterPattern"]) <= 1024
 
