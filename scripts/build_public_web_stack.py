@@ -2,7 +2,8 @@
 
 Separate from the invitation-only stack (``scripts/build_multiuser_stack.py``,
 whose output must not change): its own user pool, login domain, web client,
-HTTP API, table, four functions, sweep schedule, alarm topic and alarms. The
+HTTP API, table, four functions, sweep schedule and, in prod only, an alarm
+topic and alarms. The
 same code ZIP runs here with ``MAPIT_WEB_MODE=public``. No I/O, no private
 value: deployment values are parameters supplied by
 ``scripts/deploy_public_web.py``.
@@ -19,7 +20,8 @@ Not created here on purpose:
 * the Turnstile secret ``/honda-mapit-mcp/{env}/web/turnstile-secret``: stored
   by hand with a command that does not echo it; the pass role may only read it.
 
-Three alarms (``faults``, ``oldest-item-age``, ``daily-ceiling``). The log-based
+Prod only: three alarms (``faults``, ``oldest-item-age``, ``daily-ceiling``),
+their topic and the log metric filters behind them; DEV has none. The log-based
 ones use metric filters over the fixed codes the modules write: the pass prints
 one JSON line per request (``web_pass_outcome``), the sweep prints one
 embedded-metric JSON line per run, the service one JSON line at the daily
@@ -140,10 +142,12 @@ def _parameters(env: str) -> dict[str, Any]:
                          "Description": "Cognito managed-login domain prefix of the web pool (private config)."},
         "MapitConfigJson": {"Type": "String", "NoEcho": True, "MinLength": 2, "MaxLength": 2048,
                             "Description": "Public MAPIT identifiers as JSON (discovery disabled)."},
-        "AlarmEmail": {"Type": "String", "NoEcho": True, "AllowedPattern": EMAIL_PATTERN,
-                       "Description": "Recipient of the alarm notifications (confirmed by email)."},
+
     }
     if env == "prod":
+        # Alarms and their topic exist only in prod (see _observability).
+        params["AlarmEmail"] = {"Type": "String", "NoEcho": True, "AllowedPattern": EMAIL_PATTERN,
+                       "Description": "Recipient of the alarm notifications (confirmed by email)."}
         params["WebCallbackUrl"] = {"Type": "String", "AllowedPattern": PROD_CALLBACK_PATTERN,
                                     "Description": "Exact HTTPS URL of the published web (sign-in and sign-out)."}
     for role in ("identity", "mcp", "pass", "sweep"):
@@ -268,12 +272,12 @@ def _alarm(env: str, name: str, description: str, *, namespace: str, metric: str
 
 
 def _observability(env: str) -> dict[str, Any]:
-    """Topic, three alarms and the log filters behind them.
+    """Topic, three alarms and the log filters behind them (prod stack only).
 
     Kept small on purpose: every alarm lists one metric directly (no metric
     math, which is charged per listed metric) and the stack produces three
-    custom metrics, so two stacks (DEV and prod) stay within the CloudWatch
-    free tier of alarm metrics and custom metrics. Every fault of the four
+    custom metrics, within the CloudWatch free tier of alarm metrics and custom
+    metrics. The DEV stack creates none of these resources. Every fault of the four
     functions feeds one common metric (``WebFaults``, no dimensions) through
     one filter per log group and log format; the email then says only "fault",
     and the function logs say which one.
@@ -521,7 +525,8 @@ def build_public_web_template(env: str) -> dict[str, Any]:
                            "Principal": "events.amazonaws.com", "SourceAccount": {"Ref": "AWS::AccountId"},
                            "SourceArn": {"Fn::GetAtt": ["SweepSchedule", "Arn"]}},
         },
-        **_observability(env),
+        # DEV has no alarms, topic or log metric filters: they exist only to notify about prod.
+        **(_observability(env) if prod else {}),
     }
 
     def output(value: Any) -> dict[str, Any]:
@@ -545,7 +550,7 @@ def build_public_web_template(env: str) -> dict[str, Any]:
             "IssuerUrl": output(_ISSUER),
             "TableName": output({"Ref": "WebStateTable"}),
             "LoginDomain": output({"Fn::Sub": "https://${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com"}),
-            "AlarmTopicArn": output({"Ref": "AlarmTopic"}),
+            **({"AlarmTopicArn": output({"Ref": "AlarmTopic"})} if prod else {}),
         },
     }
 
