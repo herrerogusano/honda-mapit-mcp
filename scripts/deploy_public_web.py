@@ -23,8 +23,10 @@ Turnstile secret without echoing it and stores it once (``Overwrite=False``);
 nothing else runs. The template never creates that parameter.
 
 The private config is a JSON object with ``domain_prefix`` (web pool login
-domain), ``mapit_config`` (object), ``alarm_email``, ``web_callback_url`` (prod
-only; dev always uses ``http://localhost:5173/``) and optional
+domain), ``mapit_config`` (object), ``alarm_email`` and ``web_callback_url``
+(both prod only: the DEV stack has no alarms, and dev always uses
+``http://localhost:5173/``; an ``alarm_email`` in a dev config is accepted and
+not sent) and optional
 ``reserved_concurrency`` (object with any of ``identity``, ``mcp``, ``pass``,
 ``sweep``: integers 1-999; absent means nothing reserved). ``MapitConfigJson``
 and the alarm email are never printed.
@@ -70,7 +72,7 @@ PROTECTED_RESOURCES = frozenset({"UserPool", "UserPoolDomain", "WebStateTable", 
 class WebConfig:
     domain_prefix: str
     mapit_config_json: str
-    alarm_email: str
+    alarm_email: str | None
     web_callback_url: str | None
     reserved_concurrency: tuple[tuple[str, int], ...] = ()
 
@@ -98,16 +100,18 @@ def load_web_config(path: Path, env: str) -> WebConfig:
         value = json.loads(raw.decode("utf-8"))
     except (UnicodeError, json.JSONDecodeError):
         raise DeployError("private config is not valid JSON") from None
-    required = {"domain_prefix", "mapit_config", "alarm_email"} | ({"web_callback_url"} if env == "prod" else set())
-    allowed = required | {"reserved_concurrency"}
+    required = {"domain_prefix", "mapit_config"} | ({"alarm_email", "web_callback_url"} if env == "prod" else set())
+    # DEV: the return URL is fixed (refused); an alarm email is accepted and never sent.
+    allowed = required | {"alarm_email", "reserved_concurrency"}
     if not isinstance(value, dict) or not required <= set(value) or not set(value) <= allowed:
         raise DeployError("private config fields invalid")
     domain = value["domain_prefix"]
     if type(domain) is not str or not _DOMAIN.fullmatch(domain) or any(w in domain for w in ("aws", "amazon", "cognito")):
         raise DeployError("domain_prefix invalid")
     mapit_json = validate_mapit_config(value["mapit_config"])
-    email = value["alarm_email"]
-    if type(email) is not str or not _EMAIL.fullmatch(email) or len(email) > 254:
+    email = value.get("alarm_email")
+    if (env == "prod" or email is not None) and (
+            type(email) is not str or not _EMAIL.fullmatch(email) or len(email) > 254):
         raise DeployError("alarm_email invalid")
     callback = value.get("web_callback_url")
     if env == "prod" and (type(callback) is not str or not re.fullmatch(PROD_CALLBACK_PATTERN, callback)):
@@ -116,7 +120,7 @@ def load_web_config(path: Path, env: str) -> WebConfig:
     if not isinstance(reservations, dict) or not set(reservations) <= set(ROLES) or any(
             type(item) is not int or not 1 <= item <= 999 for item in reservations.values()):
         raise DeployError("reserved_concurrency invalid (identity, mcp, pass, sweep: integers 1-999)")
-    return WebConfig(domain, mapit_json, email, callback,
+    return WebConfig(domain, mapit_json, email if env == "prod" else None, callback,
                      tuple((role, reservations[role]) for role in ROLES if role in reservations))
 
 
@@ -125,9 +129,10 @@ def stack_parameters(env: str, config: WebConfig, artifact_key: str) -> list[dic
         "ArtifactKey": artifact_key,
         "DomainPrefix": config.domain_prefix,
         "MapitConfigJson": config.mapit_config_json,
-        "AlarmEmail": config.alarm_email,
     }
     if validate_environment(env) == "prod":
+        # Same parameter order as the template: AlarmEmail, then WebCallbackUrl.
+        params["AlarmEmail"] = str(config.alarm_email)
         params["WebCallbackUrl"] = str(config.web_callback_url)
     reserved = dict(config.reserved_concurrency)
     for role in ROLES:

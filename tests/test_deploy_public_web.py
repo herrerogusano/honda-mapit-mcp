@@ -93,7 +93,7 @@ class ReviewedCfn(FakeCfn):
     def execute_change_set(self, StackName, ChangeSetName):
         self.log.append(("execute", StackName, ChangeSetName))
         self.stacks[StackName] = ("CREATE_COMPLETE", {
-            "AlarmTopicArn": "arn:aws:sns:eu-west-1:123456789012:honda-mapit-mcp-dev-web-alarms"})
+            "TableArn": "arn:aws:dynamodb:eu-west-1:123456789012:table/honda-mapit-mcp-dev-web-state"})
 
 
 def _review(tmp_path, *, env="dev", ssm=None, existing=ARTIFACTS, out=None):
@@ -150,6 +150,28 @@ def test_prod_parameters_and_private_values_never_printed(tmp_path):
     assert EMAIL not in text and "MapitClient1" not in text
 
 
+def test_dev_parameters_match_the_dev_template_without_alarm_email(tmp_path):
+    # The DEV stack has no alarms: no AlarmEmail parameter, even with an email in the config.
+    code, lines, cfn, _ssm, _s3 = _review(tmp_path)
+    assert code == 0
+    params = {p["ParameterKey"]: p["ParameterValue"] for p in cfn.change_sets[(STACK, CHANGE_SET)]["Parameters"]}
+    assert "AlarmEmail" not in params and EMAIL not in json.dumps(params)
+    assert set(params) == set(web_stack.build_public_web_template("dev")["Parameters"])
+
+
+def test_dev_config_without_alarm_email_loads_and_prod_requires_it(tmp_path):
+    for env in ("dev", "prod"):
+        path = _config(tmp_path, env)
+        value = json.loads(path.read_text(encoding="utf-8"))
+        del value["alarm_email"]
+        path.write_text(json.dumps(value), encoding="utf-8")
+        if env == "dev":
+            assert deploy.load_web_config(path, "dev").alarm_email is None
+        else:
+            with pytest.raises(deploy.DeployError, match="fields invalid"):
+                deploy.load_web_config(path, "prod")
+
+
 # --- execute by name -------------------------------------------------------------
 
 def test_execute_runs_the_reviewed_change_set_by_name_after_creating_the_key():
@@ -175,7 +197,7 @@ def test_the_key_value_never_reaches_stdout_or_stderr(capsys):
 def test_printed_outputs_mask_the_account_id():
     _code, lines, _cfn, _ssm = _execute()
     assert not any("123456789012" in line for line in lines)
-    assert any("********9012" in line and "AlarmTopicArn" in line for line in lines)
+    assert any("********9012" in line and "TableArn" in line for line in lines)
 
 
 # Pinned here, not read from the module: pool, login domain, web client and table.

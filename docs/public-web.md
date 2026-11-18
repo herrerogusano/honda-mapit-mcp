@@ -36,8 +36,8 @@ to know.
 | Fingerprint key | `/honda-mapit-mcp/{env}/web/fingerprint-key` (SecureString, 32 random bytes, base64) |
 | Turnstile secret | `/honda-mapit-mcp/{env}/web/turnstile-secret` (SecureString) |
 | Sweep metrics | namespace `honda-mapit-mcp/web`, dimension `Environment` |
-| Log metrics | namespace `honda-mapit-mcp/web-logs/{env}` (metric filters on fixed log codes) |
-| Alarm topic | `honda-mapit-mcp-{env}-web-alarms` (SNS, one email subscription that must be confirmed from that inbox) |
+| Log metrics | prod only: namespace `honda-mapit-mcp/web-logs/prod` (metric filters on fixed log codes) |
+| Alarm topic | prod only: `honda-mapit-mcp-prod-web-alarms` (SNS, one email subscription that must be confirmed from that inbox) |
 | Log groups | `/aws/lambda/<function>`, 14 days |
 
 HTTP routes of the web API: `POST /pase` (pass function), `GET /estado`
@@ -142,15 +142,22 @@ it, store the Turnstile secret if it is absent, then create the row:
 
 ### Alarms
 
-Three CloudWatch alarms per stack, all notifying the alarm topic on alarm and
-on recovery. Each one is a standard-resolution alarm on one metric listed
-directly (no metric math), and each stack produces three custom metrics, so
-the DEV and prod stacks together stay within the CloudWatch free tier of
-alarm metrics and custom metrics (CloudWatch pricing counts a metric alarm
-once per metric it lists, and every metric-filter or EMF metric name and
-dimension combination as one custom metric).
+Three CloudWatch alarms in the prod stack, all notifying the alarm topic on
+alarm and on recovery. Each one is a standard-resolution alarm on one metric
+listed directly (no metric math), and the prod stack produces three custom
+metrics, within the CloudWatch free tier of alarm metrics and custom metrics
+(CloudWatch pricing counts a metric alarm once per metric it lists, and every
+metric-filter or EMF metric name and dimension combination as one custom
+metric).
 
-| Alarm (`honda-mapit-mcp-{env}-web-...`) | Metric | Fires when |
+The DEV stack has no alarms, no alarm topic or subscription and no log metric
+filters, and takes no `AlarmEmail` parameter (an `alarm_email` in the DEV
+private config is accepted and not sent). Its only custom metric is the sweep's
+own `OldestItemAgeSeconds` (EMF, written by the code, dimension `dev`). DEV
+faults are found in the function logs and with `web-status`, which flags
+anything one hour old or older.
+
+| Alarm (`honda-mapit-mcp-prod-web-...`) | Metric | Fires when |
 |---|---|---|
 | `faults` | `WebFaults` (log filters, namespace `honda-mapit-mcp/web-logs/{env}`) | at least one of the events below in a 5-minute period |
 | `oldest-item-age` | `OldestItemAgeSeconds` (sweep EMF, namespace `honda-mapit-mcp/web`, dimension `Environment`) | the maximum is above 3600 in 10 minutes, or the sweep reported nothing (missing data counts as breaching: a sweep that does not run, crashes or times out every run) |
@@ -200,7 +207,7 @@ this document before every stack creation:
   recreating the key, resets every person and attempt row: everybody becomes
   "new" and seats are recounted. The deploy script creates the key; if it is
   missing at a sign-in, the identity function creates one and logs
-  `fingerprint_key_created`, which fires the `faults` alarm.
+  `fingerprint_key_created`, which fires the `faults` alarm (prod).
 - **Retained resources in prod**: the pool and the table have deletion
   protection and are retained if the stack is deleted, so a new stack with
   the same names cannot be created until they are removed by hand.
@@ -348,7 +355,7 @@ Five independent mechanisms:
    access token (60 minutes) cannot be extended.
 5. **Alarm.** Each sweep run writes one EMF log line with the metric
    `OldestItemAgeSeconds` and the fields `SweepFailed`, `SweepIncomplete` and
-   `InvalidDates`. The `oldest-item-age` alarm fires above 3600 seconds or
+   `InvalidDates`. In prod, the `oldest-item-age` alarm fires above 3600 seconds or
    when the sweep reports nothing, and `faults` on a failed run or unreadable
    dates (see "Alarms"). `web-status`
    flags 3600 seconds or more, one second earlier than the alarm.
