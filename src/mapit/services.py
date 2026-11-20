@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from calendar import monthrange
 from dataclasses import dataclass, field
@@ -202,7 +201,7 @@ class VehicleStatus(OutputModel):
 
 
 VEHICLE_ID_DESCRIPTION = (
-    "Optional MAPIT vehicle_id from list_vehicles or from a vehicle_selection_required error. "
+    "Optional MAPIT vehicle_id from list_vehicles. "
     "Omit it when the account has one vehicle; with several vehicles it is required. "
     "Keep using the chosen vehicle_id for the rest of the conversation."
 )
@@ -540,8 +539,6 @@ def _translate_error(exc: Exception) -> ServiceError:
 
 
 MAX_VEHICLE_ID_LENGTH = 256
-MAX_LISTED_VEHICLES = 10
-_MAX_LISTED_TEXT = 64
 _VEHICLE_NOT_FOUND_MESSAGE = (
     "vehicle_id is not one of the account's vehicles; call list_vehicles to see the valid vehicle_id values"
 )
@@ -578,29 +575,14 @@ def _requested_vehicle_id(value: Any) -> str | None:
     return value
 
 
-def _listed_text(value: Any) -> str:
-    text = _string(value)
-    if text is None:
-        return "unknown"
-    printable = "".join(character for character in text if character.isprintable())
-    if len(printable) > _MAX_LISTED_TEXT:
-        printable = printable[: _MAX_LISTED_TEXT - 1] + "…"
-    return json.dumps(printable, ensure_ascii=False)
-
-
 def _selection_required_message(vehicles: list[Mapping[str, Any]]) -> str:
-    listed = [
-        f"vehicle_id={_listed_text(vehicle.get('id'))} "
-        f"(model {_listed_text(vehicle.get('model'))}, registration {_listed_text(vehicle.get('registrationNumber'))}"
-        f"{', cancelled' if vehicle.get('cancelled') is True else ''})"
-        for vehicle in vehicles[:MAX_LISTED_VEHICLES]
-    ]
-    more = len(vehicles) - len(listed)
-    suffix = f"; and {more} more (call list_vehicles)" if more > 0 else ""
+    # Only the count: MCP server frameworks log tool error text, so the message
+    # carries no vehicle identifier, model or registration. list_vehicles
+    # returns those in its structured result instead.
     return (
-        f"the MAPIT account has {len(vehicles)} vehicles; ask the user which one, or pick one, and retry with "
-        f"vehicle_id set to one of: {'; '.join(listed)}{suffix}. Keep using the chosen vehicle_id for the rest "
-        "of the conversation."
+        f"the MAPIT account has {len(vehicles)} vehicles and this tool needs one; call list_vehicles, ask the "
+        "user which vehicle they mean unless it is obvious, and retry with its vehicle_id. Keep using the chosen "
+        "vehicle_id for the rest of the conversation."
     )
 
 
@@ -609,7 +591,8 @@ def select_vehicle(vehicles: list[Mapping[str, Any]], vehicle_id: str | None) ->
 
     ``vehicle_id`` given: it must be one of ``vehicles`` (else
     ``vehicle_not_found``). Not given: exactly one vehicle is used as before;
-    several raise ``vehicle_selection_required`` listing each choice.
+    several raise ``vehicle_selection_required`` (count only; the choices
+    come from ``list_vehicles``).
     """
     if vehicle_id is not None:
         requested = _requested_vehicle_id(vehicle_id)

@@ -69,7 +69,7 @@ def create_server(
             "prefer explicitly returned *_km presentation fields, preserve conversion_basis and native-unit metadata, "
             "and never label a native distance as kilometres. Route inference flags are descriptive only, not GPS "
             "accuracy guarantees. An account may have several vehicles: on a vehicle_selection_required error, call "
-            "list_vehicles or pick from the error, ask the user when it is unclear, and keep passing the chosen "
+            "list_vehicles, ask the user which vehicle they mean when it is unclear, and keep passing the chosen "
             "vehicle_id for the rest of the conversation."
         ),
         version="0.4.0",

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 
 import pydantic_core
 import pytest
@@ -18,7 +19,6 @@ from mapit.client import set_read_meter_sink
 from mapit.mcp_server import create_server
 from mapit.services import (
     CANCELLED_STATE_WARNING,
-    MAX_LISTED_VEHICLES,
     DateRangeInput,
     MapitServices,
     ServiceError,
@@ -185,32 +185,22 @@ def test_several_vehicles_without_vehicle_id_require_selection(fixture, tool):
         VEHICLE_TOOLS[tool](service)
     assert error.value.code == "vehicle_selection_required"
     assert client.route_vehicle_ids() == []  # no route or detail read for a guessed vehicle
-    for vehicle in getattr(fx, fixture)["vehicles"]:
-        assert json.dumps(vehicle["id"]) in error.value.public_message
-        assert json.dumps(vehicle["model"]) in error.value.public_message
-        assert json.dumps(vehicle["registrationNumber"]) in error.value.public_message
-
-
-def test_selection_message_disambiguates_same_model_and_marks_cancelled():
-    service, _ = services(fx.SAME_MODEL)
-    with pytest.raises(ServiceError) as error:
-        service.get_vehicle_status()
+    # MCP frameworks log tool error text: no identifier, model or registration in it.
     message = error.value.public_message
-    assert '"1111SYN"' in message and '"2222SYN"' in message
-    assert "Keep using the chosen vehicle_id" in message
-    service, _ = services(fx.ACTIVE_AND_CANCELLED)
-    with pytest.raises(ServiceError) as error:
-        service.get_vehicle_status()
-    assert 'vehicle_id="veh-cancelled" (model "SYNTH-300", registration "0003SYN", cancelled)' in error.value.public_message
+    for vehicle in getattr(fx, fixture)["vehicles"]:
+        assert vehicle["id"] not in message
+        assert vehicle["model"] not in message
+        assert vehicle["registrationNumber"] not in message
 
 
-def test_selection_message_is_bounded():
-    service, _ = services(fx.many(MAX_LISTED_VEHICLES + 3))
+def test_selection_message_gives_count_and_points_to_list_vehicles():
+    service, _ = services(fx.many(13))
     with pytest.raises(ServiceError) as error:
         service.get_distance(*PERIOD)
     message = error.value.public_message
-    assert message.count("vehicle_id=") == MAX_LISTED_VEHICLES
-    assert "and 3 more (call list_vehicles)" in message
+    assert "13 vehicles" in message and "list_vehicles" in message
+    assert "Keep using the chosen vehicle_id" in message
+    assert "vehicle_id=" not in message
     long_text = fx.summary(
         fx.vehicle("veh-1", model="M" * 500 + "\n\x1b", registration="R" * 500),
         fx.vehicle("veh-2"),
@@ -218,8 +208,25 @@ def test_selection_message_is_bounded():
     service, _ = services(long_text)
     with pytest.raises(ServiceError) as error:
         service.get_distance(*PERIOD)
-    assert len(error.value.public_message) < 600
+    assert "MMM" not in error.value.public_message and "RRR" not in error.value.public_message
     assert "\n" not in error.value.public_message and "\x1b" not in error.value.public_message
+
+
+def test_null_device_id_is_excluded_when_another_vehicle_is_eligible():
+    # device object present but device.id null, with a valid subscription:
+    # the dashboard filter drops it, so the other vehicle is used without asking.
+    service, client = services(
+        fx.summary(
+            fx.vehicle("veh-nulldevice", device_id=None, registration="0009SYN"),
+            fx.vehicle("veh-ok", model="SYNTH-750", registration="0002SYN"),
+        )
+    )
+    assert [entry.vehicle_id for entry in service.list_vehicles().vehicles] == ["veh-ok"]
+    service.list_routes(*PERIOD)
+    assert client.route_vehicle_ids() == ["veh-ok"]
+    with pytest.raises(ServiceError) as error:
+        service.get_vehicle_status(vehicle_id="veh-nulldevice")
+    assert error.value.code == "vehicle_not_found"
 
 
 # --- explicit vehicle_id --------------------------------------------------------------------
@@ -308,7 +315,8 @@ def test_comparisons_read_both_periods_for_the_same_vehicle():
 
 
 @pytest.mark.anyio
-async def test_mcp_list_vehicles_and_vehicle_id_end_to_end():
+async def test_mcp_list_vehicles_and_vehicle_id_end_to_end(caplog):
+    caplog.set_level(logging.INFO)
     client_double = fx.FakeClient(fx.TWO_ACTIVE)
     provider = ServiceProvider(lambda: MapitServices(client_double))
     async with Client(create_server(provider), raise_exceptions=True) as client:
@@ -332,6 +340,11 @@ async def test_mcp_list_vehicles_and_vehicle_id_end_to_end():
         unknown = await client.call_tool("get_vehicle_status", {"vehicle_id": "veh-zzz"})
         assert unknown.is_error is True and "vehicle_not_found: " in unknown.content[0].text
     assert set(client_double.route_vehicle_ids()) == {"veh-b"}
+    # The SDK logs tool error text at INFO: the selection error must not leak vehicle data.
+    for vehicle in fx.TWO_ACTIVE["vehicles"]:
+        for value in (vehicle["model"], vehicle["registrationNumber"]):
+            assert value not in caplog.text
+    assert "vehicle_selection_required" in caplog.text
 
 
 @pytest.mark.anyio

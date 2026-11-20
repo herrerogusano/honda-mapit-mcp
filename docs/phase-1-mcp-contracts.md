@@ -61,11 +61,10 @@ Each vehicle-scoped tool reads `account-summary` once and works on one vehicle.
    - omitted with exactly one eligible vehicle: it is used, with output
      identical to the single-vehicle behaviour before this contract;
    - omitted with several: `vehicle_selection_required`, before any route or
-     detail read. The message lists up to 10 vehicles as
-     `vehicle_id="..." (model "...", registration "...")`, marks cancelled
-     ones, and says how many more there are. Values are quoted, stripped of
-     control characters and cut at 64 characters.
-4. **Agents** call `list_vehicles` or use the choices in the error, ask the
+     detail read. The message gives only the number of vehicles and points
+     to `list_vehicles`; it carries no vehicle identifier, model or
+     registration, because MCP server frameworks log tool error text.
+4. **Agents** call `list_vehicles`, ask the
    user when it is not obvious, and keep passing the chosen `vehicle_id` for
    the rest of the conversation. The tool descriptions and server
    instructions say so.

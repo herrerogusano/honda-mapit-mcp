@@ -421,7 +421,7 @@ The log line of each refusal carries a fixed step code (for example
 `service_unavailable`, `logout_failed`, `delete_failed`. Read tools can also
 return the service's own codes in the same form, among them
 `vehicle_selection_required` (several vehicles and no `vehicle_id`; the
-message lists each `vehicle_id` with model and registration) and
+message gives only the count, and the choices come from `list_vehicles`) and
 `vehicle_not_found` (the `vehicle_id` is not one of the account's vehicles).
 
 The `/mcp` gate, per tool call and before any MAPIT read: session age, the
