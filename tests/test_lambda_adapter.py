@@ -94,7 +94,7 @@ def test_handler_projects_valid_v2_requests_and_runs_all_synthetic_tools(signing
     listed = invoke(handler, event(config, body=rpc("tools/list", request_id=2), headers=auth))
     assert listed["statusCode"] == 200
     names = {tool["name"] for tool in json.loads(listed["body"])["result"]["tools"]}
-    assert len(names) == 10
+    assert len(names) == 11
     date_range = {"from_time": "2026-01-01", "to_time": "2026-02-01"}
     calls = (
         ("get_vehicle_status", {}),

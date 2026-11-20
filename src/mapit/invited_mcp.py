@@ -30,7 +30,7 @@ from .tenant_router import (
 )
 
 _METHODS = frozenset({
-    "get_vehicle_status", "get_vehicle_details", "list_routes", "get_route_detail",
+    "list_vehicles", "get_vehicle_status", "get_vehicle_details", "list_routes", "get_route_detail",
     "get_distance", "compare_distance_periods", "get_route_statistics",
     "get_distance_breakdown", "get_route_extremes", "compare_route_periods",
     "get_geographic_summary", "get_summer_geographic_summary",

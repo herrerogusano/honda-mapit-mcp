@@ -259,13 +259,13 @@ def test_valid_token_lists_tools_including_delete_tool(keys):
     harness = Harness(keys)
     tools = tool_result(harness.call(token(keys[0]), method="tools/list"))["tools"]
     names = {item["name"] for item in tools}
-    assert len(tools) == 11 and "borrar_mis_datos" in names and "get_vehicle_status" in names
+    assert len(tools) == 12 and "borrar_mis_datos" in names and "get_vehicle_status" in names
     assert harness.created == []
 
 
 def test_geography_opt_in_adds_two_tools(keys):
     harness = Harness(keys, geography=True)
-    assert len(tool_result(harness.call(token(keys[0]), method="tools/list"))["tools"]) == 13
+    assert len(tool_result(harness.call(token(keys[0]), method="tools/list"))["tools"]) == 14
 
 
 def test_valid_token_tool_call_uses_its_tenant(keys):
@@ -562,7 +562,7 @@ def test_entrypoint_web_origins_admit_the_browser(entrypoint, monkeypatch, keys)
     monkeypatch.setenv("MULTIUSER_WEB_ORIGINS", ",".join(WEB_ORIGINS))
     for origin in WEB_ORIGINS:
         tools = tool_result(entry.handler(browser_event(access, origin, method="tools/list"), Context()))["tools"]
-        assert len(tools) == 11
+        assert len(tools) == 12
     evil = browser_event(access, "https://evil.example", method="tools/list")
     assert entry.handler(evil, Context())["statusCode"] == 400
     monkeypatch.setenv("MULTIUSER_WEB_ORIGINS", "")

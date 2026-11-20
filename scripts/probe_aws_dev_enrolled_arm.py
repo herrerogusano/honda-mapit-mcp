@@ -108,8 +108,8 @@ try:
   try:return json.loads(response.get("body",""))
   except Exception:return {}
  listed=body(call("tools/list",token=p["token"])); names=[x.get("name") for x in listed.get("result",{}).get("tools",[])]
- expected={"get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"}
- out["tools_list_exactly_ten"]=len(names)==10 and set(names)==expected and not loads
+ expected={"list_vehicles","get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"}
+ out["tools_list_exactly_ten"]=len(names)==len(expected) and set(names)==expected and not loads
  anonymous=call("tools/list"); out["anonymous_denied"]=anonymous.get("statusCode") in (401,403) and not loads
  result=body(call("tools/call",{"name":"get_vehicle_status","arguments":{}},p["token"]))
  out["missing_session_denied"]=result.get("result",{}).get("isError") is True and len(loads)==1

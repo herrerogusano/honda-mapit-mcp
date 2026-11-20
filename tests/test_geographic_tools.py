@@ -64,16 +64,16 @@ def anyio_backend():
 
 
 @pytest.mark.anyio
-async def test_geographic_tools_are_opt_in_and_default_tool_contract_stays_ten():
+async def test_geographic_tools_are_opt_in_and_default_tool_contract_stays_eleven():
     async with Client(create_server(Provider())) as client:
         default = await client.list_tools()
-    assert len(default.tools) == 10
+    assert len(default.tools) == 11
     assert "geographic_summary" not in {item.name for item in default.tools}
 
     async with Client(create_server(Provider(), geographic_queries=True)) as client:
         enabled = await client.list_tools()
     names = {item.name for item in enabled.tools}
-    assert len(names) == 12
+    assert len(names) == 13
     assert {"geographic_summary", "summer_geographic_summary"} <= names
 
 

@@ -129,7 +129,7 @@ init=invoke(valid,rpc("initialize",{"protocolVersion":"2025-03-26","capabilities
 out["initialize"]=init.get("statusCode")==200 and idoc.get("jsonrpc")=="2.0" and "error" not in idoc and ir.get("protocolVersion")=="2025-03-26" and isinstance(ir.get("serverInfo"),dict)
 statuses={"initialize":init.get("statusCode",0)}
 listing=invoke(valid,rpc("tools/list")); doc=parsed(listing); names=[x.get("name") for x in doc.get("result",{}).get("tools",[])]
-expected=["get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"]
+expected=["list_vehicles","get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"]
 geo_enabled=manifest.get("geographic_queries") is True
 if geo_enabled: expected.extend(["geographic_summary","summer_geographic_summary"])
 out["tools_list_exactly_ten"]=listing.get("statusCode")==200 and len(names)==len(expected) and set(names)==set(expected)

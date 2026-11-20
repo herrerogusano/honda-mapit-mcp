@@ -191,7 +191,7 @@ def test_payload_v2_real_mcp_protocol_warm_requests_route_to_bound_tenant(signin
             session = await stack.enter_async_context(ClientSession(*streams))
             await session.initialize()
             listed = await session.list_tools()
-            assert len(listed.tools) == 10
+            assert len(listed.tools) == 11
             assert created == []
             first = await session.call_tool("get_vehicle_status", {})
             second = await session.call_tool("get_vehicle_status", {})

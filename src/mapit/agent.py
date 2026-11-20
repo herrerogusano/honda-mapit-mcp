@@ -22,6 +22,7 @@ AGENT_TIMEOUT_SECONDS = 60.0
 
 READ_ONLY_TOOL_NAMES = frozenset(
     {
+        "list_vehicles",
         "get_vehicle_status",
         "get_vehicle_details",
         "list_routes",
@@ -75,7 +76,12 @@ Ask for clarification when a period is not a deterministic date range, using
 the host-supplied current date and timezone. State when a capability is
 unavailable or a tool result is partial/error. For “where is the bike?”, use
 latest Core vehicle status only; do not use or imply Phase 3 realtime
-freshness. Return only the strict structured answer schema.
+freshness. An account may have several vehicles: if a tool fails with
+`vehicle_selection_required`, use `list_vehicles` or the choices in the error,
+ask the user which vehicle they mean unless it is obvious, and pass the chosen
+`vehicle_id` to every later vehicle-scoped tool call. A cancelled vehicle has no
+live state; report its status as last stored values. Return only the strict
+structured answer schema.
 """
 
 
