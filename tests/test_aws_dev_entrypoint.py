@@ -168,7 +168,7 @@ def test_entrypoint_loads_only_exact_dev_environment_and_valid_snapshot(isolated
     private, policy, _, _, _ = _fixture_bundle(tmp_path)
     response = _request(private, policy)
     assert response["statusCode"] == 200
-    assert len(json.loads(response["body"])["result"]["tools"]) == 10
+    assert len(json.loads(response["body"])["result"]["tools"]) == 11
     assert entrypoint._CACHED_RUNTIME is not None
 
 

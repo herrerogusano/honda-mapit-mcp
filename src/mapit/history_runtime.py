@@ -347,7 +347,7 @@ def import_current_month(*, directory: Path | None = None, secret_store=None,
                          refresh_store_factory=WindowsKeyringRefreshTokenStore) -> dict[str, Any]:
     """One month only; validation precedes the first private SQLite write."""
     from .ledger import DistanceLedger
-    from .services import MapitServices
+    from .services import MapitServices, ServiceError
     payload = None
     context = None
     ledger = None
@@ -360,7 +360,14 @@ def import_current_month(*, directory: Path | None = None, secret_store=None,
         if not isinstance(context, ManagedSession):
             raise HistoryRuntimeError("session_failed")
         client = (client_factory or _bounded_client)(context.config, context.session)
-        summary, selected_vehicle = MapitServices(client)._account_and_vehicle()
+        try:
+            summary, selected_vehicle = MapitServices(client)._account_and_vehicle()
+        except ServiceError as exc:
+            # The ledger has no vehicle argument: an account with several
+            # selectable vehicles stops with a clear category, nothing written.
+            if exc.code == "vehicle_selection_required":
+                raise HistoryRuntimeError("vehicle_selection_required") from None
+            raise
         account, vehicle = _selected_account_vehicle(summary, selected_vehicle)
         summary = None
         window_now = now if now is not None else datetime.now(timezone.utc)

@@ -246,7 +246,7 @@ def test_existing_invalid_profile_factories_reject_dev_policy(key_material):
         create_aws_dev_runtime(object(), json.dumps(jwks))
 
 
-def test_http_app_uses_real_sdk_and_all_ten_synthetic_tools(runtime, key_material):
+def test_http_app_uses_real_sdk_and_all_eleven_synthetic_tools(runtime, key_material):
     private, _ = key_material
     policy, app = runtime.policy, runtime.http_app
     bearer = _token(private, policy)
@@ -268,7 +268,7 @@ def test_http_app_uses_real_sdk_and_all_ten_synthetic_tools(runtime, key_materia
                     async with ClientSession(*streams) as session:
                         await session.initialize()
                         tools = await session.list_tools()
-                        assert len(tools.tools) == 10
+                        assert len(tools.tools) == 11
                         calls = (
                             ("get_vehicle_status", {}),
                             ("get_vehicle_details", {}),
@@ -289,7 +289,7 @@ def test_http_app_uses_real_sdk_and_all_ten_synthetic_tools(runtime, key_materia
     assert app.synthetic_services_provider.dispatch_count >= 14
 
 
-def test_lambda_composition_warm_calls_and_ten_tools(runtime, key_material):
+def test_lambda_composition_warm_calls_and_eleven_tools(runtime, key_material):
     private, _ = key_material
     policy = runtime.policy
     bearer = _token(private, policy)
@@ -299,7 +299,7 @@ def test_lambda_composition_warm_calls_and_ten_tools(runtime, key_material):
     assert init["statusCode"] == 200
     listed = _invoke_lambda(runtime, _lambda_event(policy, bearer, _rpc("tools/list", request_id=2)))
     assert listed["statusCode"] == 200
-    assert len(json.loads(listed["body"])["result"]["tools"]) == 10
+    assert len(json.loads(listed["body"])["result"]["tools"]) == 11
     date_range = {"from_time": "2026-01-01", "to_time": "2026-02-01"}
     calls = (
         ("get_vehicle_status", {}),

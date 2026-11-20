@@ -22,7 +22,8 @@ def test_container_contract_has_300_second_bounded_window_and_synthetic_only_cal
     assert 'out["missing_config_503"]' in code
     assert 'for index,(name,args) in enumerate(calls,1)' in code
     assert 'successes==10' in code
-    assert 'len(first_names)==10 and len(second_names)==10' in code
+    assert 'len(first_names)==len(expected) and len(second_names)==len(expected)' in code
+    assert '"list_vehicles","get_vehicle_status"' in code
     assert 'print(json.dumps(out,sort_keys=True,separators=(",",":")))' in code
     assert 'print(response' not in code and 'print(result' not in code
 

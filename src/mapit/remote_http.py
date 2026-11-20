@@ -33,9 +33,14 @@ from .services import (
     RouteDetail,
     RouteList,
     RouteSummary,
+    ServiceError,
     VehicleDetails,
+    VehicleList,
+    VehicleListEntry,
     VehicleStatus,
 )
+
+SYNTHETIC_VEHICLE_ID = "synthetic-vehicle"
 
 _MAX_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -301,19 +306,29 @@ class SyntheticServicesProvider:
     def get(self) -> SyntheticServicesProvider:
         return self
 
-    def _record(self) -> None:
+    def _record(self, vehicle_id: str | None = None) -> None:
+        # One fixed synthetic vehicle: any other explicit vehicle_id is unknown.
+        if vehicle_id is not None and vehicle_id != SYNTHETIC_VEHICLE_ID:
+            raise ServiceError("vehicle_not_found", "vehicle_id is not one of the account's vehicles")
         self.dispatch_count += 1
 
-    def get_vehicle_status(self) -> VehicleStatus:
+    def list_vehicles(self) -> VehicleList:
         self._record()
+        entry = VehicleListEntry(vehicle_id=SYNTHETIC_VEHICLE_ID, status=VehicleStatus(status="SYNTHETIC", position=Position()))
+        return VehicleList(
+            vehicles=[entry], vehicle_count=1, selection_required=False, selection_basis="mapit_dashboard_filter"
+        )
+
+    def get_vehicle_status(self, vehicle_id: str | None = None) -> VehicleStatus:
+        self._record(vehicle_id)
         return VehicleStatus(status="SYNTHETIC", position=Position())
 
-    def get_vehicle_details(self) -> VehicleDetails:
-        self._record()
+    def get_vehicle_details(self, vehicle_id: str | None = None) -> VehicleDetails:
+        self._record(vehicle_id)
         return VehicleDetails()
 
-    def list_routes(self, from_time: str, to_time: str) -> RouteList:
-        self._record()
+    def list_routes(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> RouteList:
+        self._record(vehicle_id)
         route = RouteSummary(route_id="synthetic-route", started_at="2026-01-01T00:00:00Z", distance=0.0)
         return RouteList(
             from_time=from_time,
@@ -324,16 +339,18 @@ class SyntheticServicesProvider:
             truncated=False,
         )
 
-    def get_route_detail(self, route_id: str) -> RouteDetail:
-        self._record()
+    def get_route_detail(self, route_id: str, vehicle_id: str | None = None) -> RouteDetail:
+        self._record(vehicle_id)
         return RouteDetail(route_id=route_id, geojson={"type": "FeatureCollection", "features": []})
 
-    def get_distance(self, from_time: str, to_time: str) -> DistanceResult:
-        self._record()
+    def get_distance(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> DistanceResult:
+        self._record(vehicle_id)
         return DistanceResult(from_time=from_time, to_time=to_time, distance=0.0, distance_km=0.0, route_count=0)
 
-    def compare_distance_periods(self, period_a: DateRangeInput, period_b: DateRangeInput) -> DistanceComparison:
-        self._record()
+    def compare_distance_periods(
+        self, period_a: DateRangeInput, period_b: DateRangeInput, vehicle_id: str | None = None
+    ) -> DistanceComparison:
+        self._record(vehicle_id)
         first = self.get_distance(period_a.from_time, period_a.to_time)
         second = self.get_distance(period_b.from_time, period_b.to_time)
         return DistanceComparison(
@@ -346,8 +363,8 @@ class SyntheticServicesProvider:
             percentage_difference=None,
         )
 
-    def get_route_statistics(self, from_time: str, to_time: str) -> RouteStatistics:
-        self._record()
+    def get_route_statistics(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> RouteStatistics:
+        self._record(vehicle_id)
         return RouteStatistics(
             from_time=from_time,
             to_time=to_time,
@@ -360,12 +377,14 @@ class SyntheticServicesProvider:
             maximum_speed=None,
         )
 
-    def get_distance_breakdown(self, from_time: str, to_time: str, group_by: str) -> DistanceBreakdown:
-        self._record()
+    def get_distance_breakdown(
+        self, from_time: str, to_time: str, group_by: str, vehicle_id: str | None = None
+    ) -> DistanceBreakdown:
+        self._record(vehicle_id)
         return DistanceBreakdown(from_time=from_time, to_time=to_time, group_by=group_by, buckets=[])
 
-    def get_route_extremes(self, from_time: str, to_time: str) -> RouteExtremes:
-        self._record()
+    def get_route_extremes(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> RouteExtremes:
+        self._record(vehicle_id)
         return RouteExtremes(
             from_time=from_time,
             to_time=to_time,
@@ -375,8 +394,10 @@ class SyntheticServicesProvider:
             maximum_speed=None,
         )
 
-    def compare_route_periods(self, period_a: DateRangeInput, period_b: DateRangeInput) -> RoutePeriodComparison:
-        self._record()
+    def compare_route_periods(
+        self, period_a: DateRangeInput, period_b: DateRangeInput, vehicle_id: str | None = None
+    ) -> RoutePeriodComparison:
+        self._record(vehicle_id)
         first = self.get_route_statistics(period_a.from_time, period_a.to_time)
         second = self.get_route_statistics(period_b.from_time, period_b.to_time)
         return RoutePeriodComparison(

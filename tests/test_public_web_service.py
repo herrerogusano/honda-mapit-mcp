@@ -41,7 +41,7 @@ FP = "c" * 64
 PREVIOUS_MONTH = 1_798_761_599  # 2026-12-31T23:59:59Z; NOW is in 2027-01
 USER = "user-a"
 WEB_TOOLS = ["borrar_mis_datos", "cerrar_sesion", "get_route_detail", "get_vehicle_details",
-             "get_vehicle_status", "list_routes"]
+             "get_vehicle_status", "list_routes", "list_vehicles"]
 
 
 def make_clients():

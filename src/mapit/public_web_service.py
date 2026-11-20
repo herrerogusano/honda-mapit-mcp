@@ -59,7 +59,9 @@ from .public_web import (
 
 # Tools the static web calls (src/service of the web client) plus the two
 # account tools. Geographic queries and period comparisons are not exposed.
-PUBLIC_READ_TOOLS = ("get_vehicle_status", "get_vehicle_details", "list_routes", "get_route_detail")
+PUBLIC_READ_TOOLS = (
+    "list_vehicles", "get_vehicle_status", "get_vehicle_details", "list_routes", "get_route_detail",
+)
 PUBLIC_ACCOUNT_TOOLS = ("cerrar_sesion", "borrar_mis_datos")
 PUBLIC_TOOLS = PUBLIC_READ_TOOLS + PUBLIC_ACCOUNT_TOOLS
 

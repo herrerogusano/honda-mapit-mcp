@@ -21,7 +21,7 @@ from .geography_engine import (
 )
 from .geography import GeographyError, summer_window_utc
 from .client import metered_tool_call
-from .services import GeographicRouteSummary, ServiceError, _validated_period
+from .services import GeographicRouteSummary, ServiceError, VehicleIdArgument, _validated_period, vehicle_kwargs as _vehicle
 
 AREA_SOURCE = "ign_menorca_municipalities_union_2026_10_03"
 _READ_ONLY_IDEMPOTENT = ToolAnnotations(readOnlyHint=True, idempotentHint=True)
@@ -157,6 +157,7 @@ def register_geographic_tools(server, provider) -> None:
         area_name: str,
         from_time: str,
         to_time: str,
+        vehicle_id: VehicleIdArgument = None,
     ) -> GeographicRouteSummary:
         """Classify bounded embedded route lines against Menorca, Barcelona municipality,
         the 36-municipality AMB union, or one of its 36 named municipalities.
@@ -175,6 +176,7 @@ def register_geographic_tools(server, provider) -> None:
                 to_time,
                 area,
                 area_source,
+                **_vehicle(vehicle_id),
             )
 
         return _safe_tool_call("geographic_summary", run)
@@ -183,6 +185,7 @@ def register_geographic_tools(server, provider) -> None:
     def summer_geographic_summary(
         area_name: str,
         year: int | None = None,
+        vehicle_id: VehicleIdArgument = None,
     ) -> GeographicRouteSummary:
         """Summarize June 1–September 1 (local Europe/Madrid, half-open) for a supported year.
 
@@ -196,6 +199,7 @@ def register_geographic_tools(server, provider) -> None:
                 area,
                 year,
                 area_source=area_source,
+                **_vehicle(vehicle_id),
             )
 
         return _safe_tool_call("summer_geographic_summary", run)

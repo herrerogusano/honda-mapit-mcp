@@ -151,8 +151,8 @@ try:
   except Exception:return {}
  def call(token,method,params=None,ident=1): return invoke(token,rpc(method,params,ident))
  listed=parsed(call(p["tokens"]["a"],"tools/list")); names=[x.get("name") for x in listed.get("result",{}).get("tools",[])]
- expected=["get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"]
- out["tools_list_exactly_ten"]=len(names)==10 and set(names)==set(expected)
+ expected=["list_vehicles","get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"]
+ out["tools_list_exactly_ten"]=len(names)==len(expected) and set(names)==set(expected)
  a=parsed(call(p["tokens"]["a"],"tools/call",{"name":"get_vehicle_status","arguments":{}},2)); out["tenant_a_success"]=a.get("result",{}).get("isError") is False
  b=parsed(call(p["tokens"]["b"],"tools/call",{"name":"get_vehicle_status","arguments":{}},3)); out["tenant_b_success"]=b.get("result",{}).get("isError") is False
  reader.status[p["keys"]["a"]]="revoked"

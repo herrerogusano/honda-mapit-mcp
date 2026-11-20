@@ -91,8 +91,8 @@ initialize_result=initialized.get("result",{})
 out["initialize"]=response.get("statusCode")==200 and initialized.get("jsonrpc")=="2.0" and "error" not in initialized and isinstance(initialize_result,dict) and initialize_result.get("protocolVersion")=="2025-03-26" and isinstance(initialize_result.get("serverInfo"),dict)
 response=invoke(token,rpc("tools/list")); document=parsed(response)
 names=[item.get("name") for item in document.get("result",{}).get("tools",[])]
-expected=["get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"]
-out["tools_list_exactly_ten"]=len(names)==10 and set(names)==set(expected)
+expected=["list_vehicles","get_vehicle_status","get_vehicle_details","list_routes","get_route_detail","get_distance","compare_distance_periods","get_route_statistics","get_distance_breakdown","get_route_extremes","compare_route_periods"]
+out["tools_list_exactly_ten"]=len(names)==len(expected) and set(names)==set(expected)
 rng={"from_time":"2026-01-01","to_time":"2026-02-01"}; period={"period_a":rng,"period_b":{"from_time":"2026-02-01","to_time":"2026-03-01"}}
 calls=[("get_vehicle_status",{}),("get_vehicle_details",{}),("list_routes",rng),("get_route_detail",{"route_id":"synthetic-route"}),("get_distance",rng),("compare_distance_periods",period),("get_route_statistics",rng),("get_distance_breakdown",dict(rng,group_by="day")),("get_route_extremes",rng),("compare_route_periods",period)]
 successes=0
@@ -103,7 +103,7 @@ out["tool_calls_all_succeeded"]=successes==10
 first=invoke(token,rpc("tools/list")); second=invoke(token,rpc("tools/list"))
 first_names=[item.get("name") for item in parsed(first).get("result",{}).get("tools",[])]
 second_names=[item.get("name") for item in parsed(second).get("result",{}).get("tools",[])]
-out["warm_repeat"]=first.get("statusCode")==200 and second.get("statusCode")==200 and len(first_names)==10 and len(second_names)==10 and set(first_names)==set(second_names)==set(expected)
+out["warm_repeat"]=first.get("statusCode")==200 and second.get("statusCode")==200 and len(first_names)==len(expected) and len(second_names)==len(expected) and set(first_names)==set(second_names)==set(expected)
 out["missing_auth_401"]=invoke(None,rpc("tools/list")).get("statusCode")==401
 out["unknown_kid_401"]=invoke(p["tokens"]["unknown_kid"],rpc("tools/list")).get("statusCode")==401
 out["wrong_audience_401"]=invoke(p["tokens"]["wrong_audience"],rpc("tools/list")).get("statusCode")==401
