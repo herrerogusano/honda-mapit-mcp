@@ -137,7 +137,7 @@ def test_sdk_protocol_lists_tools_without_provider_and_routes_two_tenants(signin
         session = await stack.enter_async_context(ClientSession(*streams))
         await session.initialize()
         tools = await session.list_tools()
-        assert len(tools.tools) == 10
+        assert len(tools.tools) == 11
         assert created == []
         return client, streams, session
 

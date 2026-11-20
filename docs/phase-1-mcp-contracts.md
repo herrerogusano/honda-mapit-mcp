@@ -36,12 +36,50 @@ separate authentication and privacy design in a later phase.
 
 - Every tool is annotated `readOnlyHint=true` and `idempotentHint=true`.
 - The service layer calls only `MapitClient.get_core()` and `get_geo()`.
-- The first vehicle with a non-empty string ID and a non-null device is used;
-  otherwise the first vehicle with a usable ID is used.
-- Multi-vehicle selection is not part of the Phase 1 input contract.
+- Vehicle selection follows "Vehicle selection" below.
 - IDs used in URL paths are encoded as one path segment.
 - Errors are stable categories with fixed public messages. MAPIT URLs, bodies,
   identifiers, headers, and exception text are discarded.
+
+## Vehicle selection
+
+Each vehicle-scoped tool reads `account-summary` once and works on one vehicle.
+
+1. **Eligible vehicles** are those the official dashboard shows: `id` is a
+   non-empty string, `device.id` is not null, `pending` is not set and
+   `subscription.id` is present. Repeated ids are kept once, in MAPIT order.
+2. **Fallback.** If no vehicle passes that filter, the previous rule picks one
+   vehicle (the first with a non-null `device`, else the first with a usable
+   `id`), so an account that worked before keeps working. With nothing at all
+   the tool fails with `vehicle_not_found`.
+3. **Optional `vehicle_id`** on every vehicle-scoped tool (all tools except
+   `list_vehicles`, including `geographic_summary` and
+   `summer_geographic_summary`):
+   - given and eligible: that vehicle is used;
+   - given but not eligible, unknown, blank or longer than 256 characters:
+     `vehicle_not_found` (a malformed value fails before any MAPIT read);
+   - omitted with exactly one eligible vehicle: it is used, with output
+     identical to the single-vehicle behaviour before this contract;
+   - omitted with several: `vehicle_selection_required`, before any route or
+     detail read. The message gives only the number of vehicles and points
+     to `list_vehicles`; it carries no vehicle identifier, model or
+     registration, because MCP server frameworks log tool error text.
+4. **Agents** call `list_vehicles`, ask the
+   user when it is not obvious, and keep passing the chosen `vehicle_id` for
+   the rest of the conversation. The tool descriptions and server
+   instructions say so.
+5. **Cancelled vehicles** (`cancelled: true`) stay selectable for routes,
+   distance and details. Their status keeps the last values MAPIT stored and
+   adds `vehicle_cancelled: true` and a fixed `state_warning` saying it is not
+   live state. Both fields are left out for every other vehicle, so
+   active-vehicle output is unchanged; the tool output schema gains them as
+   optional properties.
+6. **Logs** never carry `vehicle_id`, model or registration: the read meter
+   line keeps its four fixed fields.
+
+The local distance ledger has no vehicle argument: with several eligible
+vehicles its import stops with category `vehicle_selection_required` before
+any route read or local write.
 
 ## Time-range contract
 
@@ -58,6 +96,19 @@ unconfirmed, so duplicate route IDs across adjacent windows are removed and
 completeness is never inferred.
 
 ## Tools
+
+Every tool below except `list_vehicles` also takes the optional `vehicle_id`
+described in "Vehicle selection".
+
+### `list_vehicles()`
+
+One `account-summary` read and no other request. Returns `vehicles`, one entry
+per eligible vehicle (or the single fallback vehicle) with `vehicle_id` (the
+MAPIT vehicle `id`), `model`, `registration` (`registrationNumber`),
+`cancelled` and `status` (the same fields as `get_vehicle_status`, native
+units, `units_confirmed=false`); plus `vehicle_count`, `selection_required`
+(more than one vehicle), `selection_basis` (`mapit_dashboard_filter` or
+`legacy_single_vehicle_fallback`) and a fixed `selection_hint`.
 
 ### `get_vehicle_status()`
 
@@ -196,7 +247,7 @@ protocol):
 single auth-recovery retry; Cognito authentication calls are not counted.
 `outcome` is `ok` or `error`. The line carries no identifiers, parameters,
 dates, URLs or response content. When each period fits in one response the
-counts are: `get_vehicle_status` 1, `get_vehicle_details` 2,
+counts are: `list_vehicles` 1, `get_vehicle_status` 1, `get_vehicle_details` 2,
 `get_route_detail` 2, every single-period route tool (`list_routes`,
 `get_distance`, `get_route_statistics`, `get_distance_breakdown`,
 `get_route_extremes`, `geographic_summary`, `summer_geographic_summary`) 2, and

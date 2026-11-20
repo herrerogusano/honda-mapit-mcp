@@ -269,7 +269,7 @@ def test_sdk_metadata_and_auth_protocol_dispatch_only_after_valid_scope(signing_
                         async with ClientSession(*streams) as session:
                             await session.initialize()
                             tools = await session.list_tools()
-                            assert len(tools.tools) == 10
+                            assert len(tools.tools) == 11
                             common_range = {"from_time": "2026-01-01", "to_time": "2026-02-01"}
                             calls = (
                                 ("get_vehicle_status", {}),

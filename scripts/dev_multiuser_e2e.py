@@ -13,7 +13,7 @@ import time
 
 from scripts.dev_multiuser_managed_login import direct_https_transport
 
-TOOLS = frozenset({"get_vehicle_status", "get_vehicle_details", "list_routes",
+TOOLS = frozenset({"list_vehicles", "get_vehicle_status", "get_vehicle_details", "list_routes",
     "get_route_detail", "get_distance", "compare_distance_periods", "get_route_statistics",
     "get_distance_breakdown", "get_route_extremes", "compare_route_periods"})
 
@@ -149,7 +149,7 @@ def run_http_acceptance(*, api_id, token_a, token_b, revoke_a,
         status, result = rpc(token_a, "tools/list")
         tools = result.get("tools") if type(result) is dict else None
         names = [row.get("name") for row in tools] if isinstance(tools, list) and all(type(row) is dict for row in tools) else []
-        checks["tools_exact"] = status == 200 and isinstance(tools, list) and len(names) == 10 and set(names) == TOOLS
+        checks["tools_exact"] = status == 200 and isinstance(tools, list) and len(names) == len(TOOLS) and set(names) == TOOLS
         if not checks["tools_exact"]:
             bounded_failure("http_acceptance_failed", "tools_list", status)
         for slot, token, label, km in (("a", token_a, "synthetic-A", 11), ("b", token_b, "synthetic-B", 22)):

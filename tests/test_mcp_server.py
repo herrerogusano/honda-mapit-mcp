@@ -108,6 +108,7 @@ async def test_mcp_exposes_exact_read_only_tool_contract():
 
     tools = tools_result.tools
     assert [tool.name for tool in tools] == [
+        "list_vehicles",
         "get_vehicle_status",
         "get_vehicle_details",
         "list_routes",

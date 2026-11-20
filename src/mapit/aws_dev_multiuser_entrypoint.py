@@ -100,26 +100,26 @@ class _TenantServices(SyntheticServicesProvider):
         self._route = label + "-route"
         self._km = 11.0 if label == "synthetic-A" else 22.0
 
-    def get_vehicle_status(self):
-        self._record()
+    def get_vehicle_status(self, vehicle_id=None):
+        self._record(vehicle_id)
         return VehicleStatus(status=self._label, position=Position())
 
-    def get_distance(self, from_time, to_time):
-        self._record()
+    def get_distance(self, from_time, to_time, vehicle_id=None):
+        self._record(vehicle_id)
         return DistanceResult(from_time=from_time, to_time=to_time, distance=self._km * 1000,
                               distance_km=self._km, route_count=1)
 
-    def list_routes(self, from_time, to_time):
-        self._record()
+    def list_routes(self, from_time, to_time, vehicle_id=None):
+        self._record(vehicle_id)
         return RouteList(from_time=from_time, to_time=to_time,
                          routes=[RouteSummary(route_id=self._route, started_at=from_time,
                                               distance=self._km * 1000, distance_km=self._km)],
                          matched_routes=1, returned_routes=1, truncated=False)
 
-    def get_route_detail(self, route_id):
+    def get_route_detail(self, route_id, vehicle_id=None):
         if route_id != self._route:
             raise ValueError("synthetic_route_unauthorized")
-        self._record()
+        self._record(vehicle_id)
         return RouteDetail(route_id=self._route, geojson={"type": "FeatureCollection", "features": []})
 
 

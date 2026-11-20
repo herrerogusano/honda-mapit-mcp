@@ -155,7 +155,7 @@ def test_each_tool_invocation_has_fresh_provider_without_warm_secret_cache(keys)
     assert all(deadline <= time.monotonic() + 14 for deadline in upstream.deadlines)
 
 
-@pytest.mark.parametrize(("enabled", "expected_count"), [(False, 10), (True, 12)])
+@pytest.mark.parametrize(("enabled", "expected_count"), [(False, 11), (True, 13)])
 def test_production_geographic_tools_require_explicit_opt_in(keys, enabled, expected_count):
     upstream = Upstream()
     policy = CognitoProdPolicy(**POLICY)

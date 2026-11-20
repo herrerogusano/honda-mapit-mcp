@@ -291,9 +291,13 @@ this document before every stack creation:
    the person's next sign-in that month counts them. Then the tenant claim is
    added.
 6. **Calls.** Each `/mcp` tool call passes the session gate (below) before any
-   MAPIT read. Only six tools exist: `get_vehicle_status`,
+   MAPIT read. Only seven tools exist: `list_vehicles`, `get_vehicle_status`,
    `get_vehicle_details`, `list_routes`, `get_route_detail`, `cerrar_sesion`
-   and `borrar_mis_datos`.
+   and `borrar_mis_datos`. The four vehicle read tools accept the optional
+   `vehicle_id` (see "Vehicle selection" in `docs/phase-1-mcp-contracts.md`);
+   the web client is meant to call `list_vehicles` once per page load and pass
+   the chosen `vehicle_id` afterwards. That call counts against the session,
+   per-minute and daily limits like any other call.
 
 "Forgot password" never calls MAPIT and answers with a fixed text.
 
@@ -414,7 +418,11 @@ The log line of each refusal carries a fixed step code (for example
 
 `/mcp` tool errors are `"<code>: <message>"` with the code one of
 `session_expired`, `session_limit_reached`, `rate_limited`, `service_paused`,
-`service_unavailable`, `logout_failed`, `delete_failed`.
+`service_unavailable`, `logout_failed`, `delete_failed`. Read tools can also
+return the service's own codes in the same form, among them
+`vehicle_selection_required` (several vehicles and no `vehicle_id`; the
+message gives only the count, and the choices come from `list_vehicles`) and
+`vehicle_not_found` (the `vehicle_id` is not one of the account's vehicles).
 
 The `/mcp` gate, per tool call and before any MAPIT read: session age, the
 configuration row, the session's own counters, and then the day counter.

@@ -230,6 +230,53 @@ no se realizó una llamada protegida. Tampoco se ha confirmado si el backend
 requiere algún escape adicional del identificador más allá de la codificación
 normal del segmento URL.
 
+## Cuentas con varios vehículos
+
+Una cuenta MAPIT puede tener varios vehículos, a la vez o uno tras otro (al
+vender el vehículo o pasar el dispositivo MAPIT a otro). Todo lo que sigue sale
+de lectura pública (bundle de `app.mapit.me` y FAQ pública) y del esquema
+anonimizado `samples/anonymized/account-summary.schema.json`; no se hizo
+ninguna llamada a MAPIT para esta sección.
+
+**CONFIRMED_FRONTEND (bundle público):**
+
+- Al leer `account-summary`, la app conserva solo los vehículos con
+  `typeof v.id == "string"` y `v.device != null`.
+- El panel muestra solo los que cumplen `v.device?.id != null && !v.pending &&
+  v.subscription?.id`. Con exactamente uno lo selecciona solo; con varios no
+  selecciona ninguno hasta que el usuario elige.
+- Un vehículo con `cancelled: true` se sigue mostrando, con una marca, y sus
+  rutas se siguen listando; no muestra estado en vivo.
+- Las rutas se piden siempre por `vehicleId` (`/v1/routes?vehicleId=...` y
+  `/v1/vehicles/{vehicleId}/routes/{routeId}`).
+
+**CONFIRMED_SCHEMA_ONLY:** cada elemento de `vehicles` tiene, entre otros,
+`id`, `model`, `registrationNumber`, `cancelled`, `pending`, `km`,
+`subscription.{id,cancelled,autoRenew,retryingRenewal}` y
+`device.{id,imei,model,deadSim,state}`; `account.ownedVehicles` es una lista
+de objetos con `id`. El fixture es de una sola cuenta: no prueba qué valores
+toman esos campos en cuentas con varios vehículos.
+
+**Contrato del servicio (desde este cambio):** usa el mismo filtro que el panel
+oficial; si no deja ninguno, cae a la regla anterior (primer vehículo con
+`device`, si no el primero con `id`) como único vehículo. `list_vehicles` y el
+argumento `vehicle_id` están en `docs/phase-1-mcp-contracts.md`.
+
+**HYPOTHESIS / preguntas abiertas:**
+
+- Qué queda en `vehicles` tras una venta o un traspaso del dispositivo: si el
+  vehículo antiguo sigue con `device: null`, desaparece o queda `cancelled`.
+- Si las rutas antiguas de un vehículo sin dispositivo siguen siendo legibles
+  con su `vehicleId` (el filtro del panel lo oculta, así que la app no lo
+  muestra).
+- Si un `device.id` puede reaparecer en otro vehículo de la misma cuenta tras
+  un traspaso, y si las rutas siguen al vehículo o al dispositivo.
+- Si el orden de `vehicles` es estable entre lecturas; el servicio no depende
+  de él cuando se pasa `vehicle_id`.
+- Relación entre `account.ownedVehicles` y `vehicles` (no se usa).
+- Qué estado guarda `device.state` de un vehículo cancelado; el servicio lo
+  devuelve marcado como últimos valores guardados, no en vivo.
+
 ## Operación de escritura descubierta (no ejecutada)
 
 El bundle actual contiene una llamada:

@@ -7,7 +7,7 @@ from calendar import monthrange
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal, Mapping
+from typing import TYPE_CHECKING, Annotated, Any, Callable, Iterator, Literal, Mapping
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -175,6 +175,16 @@ class Position(OutputModel):
     gps_accuracy: float | None = None
 
 
+def _omitted_when_none(value: Any) -> bool:
+    return value is None
+
+
+CANCELLED_STATE_WARNING = (
+    "This vehicle's MAPIT subscription is cancelled: these are the last values MAPIT stored, "
+    "not live state. The official app shows no live state for a cancelled vehicle."
+)
+
+
 class VehicleStatus(OutputModel):
     status: str | None = None
     speed: float | None = None
@@ -185,6 +195,44 @@ class VehicleStatus(OutputModel):
     position: Position
     odometer: float | None = None
     units_confirmed: bool = False
+    # Present only for a cancelled vehicle, so active-vehicle output is unchanged.
+    vehicle_cancelled: bool | None = Field(default=None, exclude_if=_omitted_when_none)
+    state_warning: str | None = Field(default=None, exclude_if=_omitted_when_none)
+
+
+VEHICLE_ID_DESCRIPTION = (
+    "Optional MAPIT vehicle_id from list_vehicles. "
+    "Omit it when the account has one vehicle; with several vehicles it is required. "
+    "Keep using the chosen vehicle_id for the rest of the conversation."
+)
+VehicleIdArgument = Annotated[str | None, Field(description=VEHICLE_ID_DESCRIPTION)]
+
+
+def vehicle_kwargs(vehicle_id: str | None) -> dict[str, str]:
+    """Forward vehicle_id only when the caller gave one, so single-vehicle calls are unchanged."""
+    return {} if vehicle_id is None else {"vehicle_id": vehicle_id}
+
+
+SELECTION_HINT = (
+    "When more than one vehicle is listed, pass vehicle_id to every vehicle-scoped tool and keep "
+    "using the chosen vehicle_id for the rest of the conversation."
+)
+
+
+class VehicleListEntry(OutputModel):
+    vehicle_id: str = Field(description="MAPIT vehicle id; pass it as vehicle_id to vehicle-scoped tools.")
+    model: str | None = None
+    registration: str | None = None
+    cancelled: bool = False
+    status: VehicleStatus
+
+
+class VehicleList(OutputModel):
+    vehicles: list[VehicleListEntry]
+    vehicle_count: int
+    selection_required: bool
+    selection_basis: Literal["mapit_dashboard_filter", "legacy_single_vehicle_fallback"]
+    selection_hint: str = SELECTION_HINT
 
 
 class DealerContact(OutputModel):
@@ -490,52 +538,177 @@ def _translate_error(exc: Exception) -> ServiceError:
     return ServiceError("internal_error", "the request could not be completed")
 
 
+MAX_VEHICLE_ID_LENGTH = 256
+_VEHICLE_NOT_FOUND_MESSAGE = (
+    "vehicle_id is not one of the account's vehicles; call list_vehicles to see the valid vehicle_id values"
+)
+
+
+def _js_truthy(value: Any) -> bool:
+    """JavaScript truthiness for the scalar values MAPIT returns."""
+    if value is None or value is False:
+        return False
+    if isinstance(value, str):
+        return value != ""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == value and value != 0
+    return True
+
+
+def _dashboard_eligible(vehicle: Mapping[str, Any]) -> bool:
+    """The official dashboard filter: device.id != null, !pending, subscription?.id."""
+    device = vehicle.get("device")
+    subscription = vehicle.get("subscription")
+    return (
+        _string(vehicle.get("id")) is not None
+        and isinstance(device, Mapping)
+        and device.get("id") is not None
+        and not _js_truthy(vehicle.get("pending"))
+        and isinstance(subscription, Mapping)
+        and _js_truthy(subscription.get("id"))
+    )
+
+
+def _requested_vehicle_id(value: Any) -> str | None:
+    if type(value) is not str or not value.strip() or len(value) > MAX_VEHICLE_ID_LENGTH:
+        return None
+    return value
+
+
+def _selection_required_message(vehicles: list[Mapping[str, Any]]) -> str:
+    # Only the count: MCP server frameworks log tool error text, so the message
+    # carries no vehicle identifier, model or registration. list_vehicles
+    # returns those in its structured result instead.
+    return (
+        f"the MAPIT account has {len(vehicles)} vehicles and this tool needs one; call list_vehicles, ask the "
+        "user which vehicle they mean unless it is obvious, and retry with its vehicle_id. Keep using the chosen "
+        "vehicle_id for the rest of the conversation."
+    )
+
+
+def select_vehicle(vehicles: list[Mapping[str, Any]], vehicle_id: str | None) -> Mapping[str, Any]:
+    """Pick the vehicle for one tool call.
+
+    ``vehicle_id`` given: it must be one of ``vehicles`` (else
+    ``vehicle_not_found``). Not given: exactly one vehicle is used as before;
+    several raise ``vehicle_selection_required`` (count only; the choices
+    come from ``list_vehicles``).
+    """
+    if vehicle_id is not None:
+        requested = _requested_vehicle_id(vehicle_id)
+        for vehicle in vehicles:
+            if requested is not None and vehicle.get("id") == requested:
+                return vehicle
+        raise ServiceError("vehicle_not_found", _VEHICLE_NOT_FOUND_MESSAGE)
+    if len(vehicles) == 1:
+        return vehicles[0]
+    if not vehicles:
+        raise ServiceError("vehicle_not_found", "no eligible vehicle is available in the MAPIT account")
+    raise ServiceError("vehicle_selection_required", _selection_required_message(vehicles))
+
+
+def _vehicle_status(vehicle: Mapping[str, Any]) -> VehicleStatus:
+    state = _mapping(_mapping(vehicle.get("device")).get("state"))
+    state_odometer = _number(state.get("odometer"))
+    cancelled = vehicle.get("cancelled") is True
+    return VehicleStatus(
+        status=_string(state.get("status")),
+        speed=_number(state.get("speed")),
+        battery=_number(state.get("battery")),
+        voltage=_number(state.get("voltage")),
+        last_communication=_number(state.get("lastTs")),
+        last_coordinate_update=_number(state.get("lastCoordTs")),
+        position=Position(
+            latitude=_number(state.get("lat")),
+            longitude=_number(state.get("lng")),
+            label=_string(state.get("location")),
+            gps_accuracy=_number(state.get("hdop")),
+        ),
+        odometer=state_odometer if state_odometer is not None else _number(vehicle.get("km")),
+        vehicle_cancelled=True if cancelled else None,
+        state_warning=CANCELLED_STATE_WARNING if cancelled else None,
+    )
+
+
 class MapitServices:
     """Business logic used by MCP handlers; all upstream calls are GET-only."""
 
     def __init__(self, client: MapitClient) -> None:
         self.client = client
 
-    def _account_and_vehicle(self) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    def _account_vehicles(
+        self,
+    ) -> tuple[Mapping[str, Any], list[Mapping[str, Any]], Literal["mapit_dashboard_filter", "legacy_single_vehicle_fallback"]]:
+        """One account-summary read; the selectable vehicles and how they were chosen.
+
+        The filter is the official dashboard's: a non-empty string ``id``, a
+        non-null ``device.id``, not ``pending`` and a ``subscription.id``.
+        When it leaves nothing, the previous rule (first vehicle with a device,
+        else first with an id) supplies exactly one vehicle, so an account that
+        worked before keeps working.
+        """
         try:
             payload = self.client.get_core("/v1/account-summary", max_response_bytes=MAX_ROUTE_LIST_BYTES)
         except Exception as exc:
             raise _translate_error(exc) from None
         if not isinstance(payload, Mapping) or not isinstance(payload.get("vehicles"), list):
             raise ServiceError("invalid_response", "MAPIT account summary has an unexpected shape")
-        fallback: Mapping[str, Any] | None = None
+        eligible: list[Mapping[str, Any]] = []
+        seen: set[str] = set()
+        legacy_with_device: Mapping[str, Any] | None = None
+        legacy_any: Mapping[str, Any] | None = None
         for item in payload["vehicles"]:
-            if not isinstance(item, Mapping) or _string(item.get("id")) is None:
+            if not isinstance(item, Mapping):
                 continue
-            fallback = fallback or item
-            if item.get("device") is not None:
-                return payload, item
-        if fallback is not None:
-            return payload, fallback
+            vehicle_id = _string(item.get("id"))
+            if vehicle_id is None:
+                continue
+            legacy_any = legacy_any or item
+            if legacy_with_device is None and item.get("device") is not None:
+                legacy_with_device = item
+            if _dashboard_eligible(item) and vehicle_id not in seen:
+                seen.add(vehicle_id)
+                eligible.append(item)
+        if eligible:
+            return payload, eligible, "mapit_dashboard_filter"
+        legacy = legacy_with_device or legacy_any
+        if legacy is not None:
+            return payload, [legacy], "legacy_single_vehicle_fallback"
         raise ServiceError("vehicle_not_found", "no eligible vehicle is available in the MAPIT account")
 
-    def get_vehicle_status(self) -> VehicleStatus:
-        _, vehicle = self._account_and_vehicle()
-        state = _mapping(_mapping(vehicle.get("device")).get("state"))
-        state_odometer = _number(state.get("odometer"))
-        return VehicleStatus(
-            status=_string(state.get("status")),
-            speed=_number(state.get("speed")),
-            battery=_number(state.get("battery")),
-            voltage=_number(state.get("voltage")),
-            last_communication=_number(state.get("lastTs")),
-            last_coordinate_update=_number(state.get("lastCoordTs")),
-            position=Position(
-                latitude=_number(state.get("lat")),
-                longitude=_number(state.get("lng")),
-                label=_string(state.get("location")),
-                gps_accuracy=_number(state.get("hdop")),
-            ),
-            odometer=state_odometer if state_odometer is not None else _number(vehicle.get("km")),
+    def _account_and_vehicle(self, vehicle_id: str | None = None) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+        """Resolve the vehicle a tool call works on (see :func:`select_vehicle`)."""
+        if vehicle_id is not None and _requested_vehicle_id(vehicle_id) is None:
+            raise ServiceError("vehicle_not_found", _VEHICLE_NOT_FOUND_MESSAGE)
+        payload, vehicles, _ = self._account_vehicles()
+        return payload, select_vehicle(vehicles, vehicle_id)
+
+    def list_vehicles(self) -> VehicleList:
+        """Every selectable vehicle from one account-summary read, no detail reads."""
+        _, vehicles, basis = self._account_vehicles()
+        entries = [
+            VehicleListEntry(
+                vehicle_id=_string(vehicle.get("id")),
+                model=_string(vehicle.get("model")),
+                registration=_string(vehicle.get("registrationNumber")),
+                cancelled=vehicle.get("cancelled") is True,
+                status=_vehicle_status(vehicle),
+            )
+            for vehicle in vehicles
+        ]
+        return VehicleList(
+            vehicles=entries,
+            vehicle_count=len(entries),
+            selection_required=len(entries) > 1,
+            selection_basis=basis,
         )
 
-    def get_vehicle_details(self) -> VehicleDetails:
-        _, summary_vehicle = self._account_and_vehicle()
+    def get_vehicle_status(self, vehicle_id: str | None = None) -> VehicleStatus:
+        _, vehicle = self._account_and_vehicle(vehicle_id)
+        return _vehicle_status(vehicle)
+
+    def get_vehicle_details(self, vehicle_id: str | None = None) -> VehicleDetails:
+        _, summary_vehicle = self._account_and_vehicle(vehicle_id)
         vehicle_id = _string(summary_vehicle.get("id"))
         assert vehicle_id is not None
         try:
@@ -610,9 +783,10 @@ class MapitServices:
         *,
         include_geojson: bool = False,
         route_visitor: Callable[[_RouteFact], None] | None = None,
+        vehicle_id: str | None = None,
     ) -> tuple[str, str, list[_RouteFact]]:
         start, end = _validated_period(from_time, to_time)
-        _, vehicle = self._account_and_vehicle()
+        _, vehicle = self._account_and_vehicle(vehicle_id)
         vehicle_id = _string(vehicle.get("id"))
         assert vehicle_id is not None
         routes: dict[str, _RouteFact] = {}
@@ -694,8 +868,10 @@ class MapitServices:
         ordered = sorted(routes.values(), key=lambda item: (item.route.started_at or "", item.route.route_id))
         return _iso(start), _iso(end), ordered
 
-    def _all_routes(self, from_time: str, to_time: str) -> tuple[str, str, list[RouteSummary]]:
-        normalized_from, normalized_to, facts = self._collect_routes(from_time, to_time)
+    def _all_routes(
+        self, from_time: str, to_time: str, vehicle_id: str | None = None
+    ) -> tuple[str, str, list[RouteSummary]]:
+        normalized_from, normalized_to, facts = self._collect_routes(from_time, to_time, vehicle_id=vehicle_id)
         return normalized_from, normalized_to, [fact.route for fact in facts]
 
     def get_geographic_summary(
@@ -704,6 +880,8 @@ class MapitServices:
         to_time: str,
         area_geojson: Mapping[str, Any] | PreparedPublicArea,
         area_source: str = "caller_supplied_geojson",
+        *,
+        vehicle_id: str | None = None,
     ) -> GeographicRouteSummary:
         """Summarize routes against caller geometry without detail GETs or clipping."""
         try:
@@ -782,6 +960,7 @@ class MapitServices:
             to_time,
             include_geojson=True,
             route_visitor=visit_route,
+            vehicle_id=vehicle_id,
         )
         total_inside = sum(inside_distance_values)
         if not math.isfinite(total_inside):
@@ -813,16 +992,17 @@ class MapitServices:
         *,
         area_source: str = "caller_supplied_geojson",
         now: datetime | None = None,
+        vehicle_id: str | None = None,
     ) -> GeographicRouteSummary:
         """Use the bounded fixed-CEST June–September reporting window."""
         try:
             summer_from, summer_to = summer_window_utc(year, now=now)
         except GeographyError as exc:
             raise ServiceError(exc.category, "the selected summer window is unsupported") from None
-        return self.get_geographic_summary(summer_from, summer_to, area_geojson, area_source)
+        return self.get_geographic_summary(summer_from, summer_to, area_geojson, area_source, vehicle_id=vehicle_id)
 
-    def list_routes(self, from_time: str, to_time: str) -> RouteList:
-        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+    def list_routes(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> RouteList:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time, vehicle_id)
         returned = routes[:MAX_RETURNED_ROUTES]
         return RouteList(
             from_time=normalized_from,
@@ -833,11 +1013,11 @@ class MapitServices:
             truncated=len(returned) < len(routes),
         )
 
-    def get_route_detail(self, route_id: str) -> RouteDetail:
+    def get_route_detail(self, route_id: str, vehicle_id: str | None = None) -> RouteDetail:
         normalized_id = _string(route_id)
         if normalized_id is None or len(normalized_id) > 256:
             raise ServiceError("invalid_route_id", "route_id must be a non-empty string of at most 256 characters")
-        _, vehicle = self._account_and_vehicle()
+        _, vehicle = self._account_and_vehicle(vehicle_id)
         vehicle_id = _string(vehicle.get("id"))
         assert vehicle_id is not None
         try:
@@ -871,8 +1051,8 @@ class MapitServices:
         )
         return RouteDetail(**detail_data)
 
-    def get_distance(self, from_time: str, to_time: str) -> DistanceResult:
-        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+    def get_distance(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> DistanceResult:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time, vehicle_id)
         if any(route.distance is None or route.distance < 0 for route in routes):
             raise ServiceError("distance_unavailable", "one or more MAPIT routes do not provide distance")
         total_distance = sum(route.distance for route in routes)
@@ -890,30 +1070,34 @@ class MapitServices:
     def _analytics_error(exc: AnalyticsError) -> ServiceError:
         return ServiceError(exc.code, exc.public_message)
 
-    def get_route_statistics(self, from_time: str, to_time: str) -> RouteStatistics:
-        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+    def get_route_statistics(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> RouteStatistics:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time, vehicle_id)
         try:
             return route_statistics(routes, normalized_from, normalized_to)
         except AnalyticsError as exc:
             raise self._analytics_error(exc) from None
 
-    def get_distance_breakdown(self, from_time: str, to_time: str, group_by: GroupBy) -> DistanceBreakdown:
-        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+    def get_distance_breakdown(
+        self, from_time: str, to_time: str, group_by: GroupBy, vehicle_id: str | None = None
+    ) -> DistanceBreakdown:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time, vehicle_id)
         try:
             return distance_breakdown(routes, normalized_from, normalized_to, group_by)
         except AnalyticsError as exc:
             raise self._analytics_error(exc) from None
 
-    def get_route_extremes(self, from_time: str, to_time: str) -> RouteExtremes:
-        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time)
+    def get_route_extremes(self, from_time: str, to_time: str, vehicle_id: str | None = None) -> RouteExtremes:
+        normalized_from, normalized_to, routes = self._all_routes(from_time, to_time, vehicle_id)
         try:
             return route_extremes(routes, normalized_from, normalized_to)
         except AnalyticsError as exc:
             raise self._analytics_error(exc) from None
 
-    def compare_route_periods(self, period_a: DateRangeInput, period_b: DateRangeInput) -> RoutePeriodComparison:
-        normalized_a_from, normalized_a_to, routes_a = self._all_routes(period_a.from_time, period_a.to_time)
-        normalized_b_from, normalized_b_to, routes_b = self._all_routes(period_b.from_time, period_b.to_time)
+    def compare_route_periods(
+        self, period_a: DateRangeInput, period_b: DateRangeInput, vehicle_id: str | None = None
+    ) -> RoutePeriodComparison:
+        normalized_a_from, normalized_a_to, routes_a = self._all_routes(period_a.from_time, period_a.to_time, vehicle_id)
+        normalized_b_from, normalized_b_to, routes_b = self._all_routes(period_b.from_time, period_b.to_time, vehicle_id)
         try:
             return analytics_compare_route_periods(
                 routes_a,
@@ -926,9 +1110,11 @@ class MapitServices:
         except AnalyticsError as exc:
             raise self._analytics_error(exc) from None
 
-    def compare_distance_periods(self, period_a: DateRangeInput, period_b: DateRangeInput) -> DistanceComparison:
-        first = self.get_distance(period_a.from_time, period_a.to_time)
-        second = self.get_distance(period_b.from_time, period_b.to_time)
+    def compare_distance_periods(
+        self, period_a: DateRangeInput, period_b: DateRangeInput, vehicle_id: str | None = None
+    ) -> DistanceComparison:
+        first = self.get_distance(period_a.from_time, period_a.to_time, vehicle_id)
+        second = self.get_distance(period_b.from_time, period_b.to_time, vehicle_id)
         difference = second.distance - first.distance
         percentage = None if first.distance == 0 else difference / first.distance * 100.0
         difference_magnitude_km = native_distance_to_km(abs(difference))
