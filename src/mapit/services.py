@@ -636,18 +636,22 @@ def _log_vehicle_selection(
     Only bucketed counts and fixed words: no vehicle id, model, registration,
     device, subscription, account or MAPIT text. ``account`` is ``None`` when
     the account summary was not read (malformed ``vehicle_id``) or the read
-    failed.
+    failed. Any failure while preparing or recording the line is swallowed:
+    logging never changes a tool result or error.
     """
-    vehicles = account.vehicles if account is not None else []
-    log_tool_event("vehicle_selection", {
-        "vehicles": _bucket(len(vehicles), 3),
-        "cancelled": _bucket(sum(1 for item in vehicles if item.get("cancelled") is True), 2),
-        "excluded": _bucket(account.excluded if account is not None else 0, 2),
-        "basis": (_LOG_BASIS[account.basis] if account.basis is not None else "none")
-        if account is not None else "not_read",
-        "vehicle_id_given": vehicle_id_given,
-        "outcome": outcome,
-    })
+    try:
+        vehicles = account.vehicles if account is not None else []
+        log_tool_event("vehicle_selection", {
+            "vehicles": _bucket(len(vehicles), 3),
+            "cancelled": _bucket(sum(1 for item in vehicles if item.get("cancelled") is True), 2),
+            "excluded": _bucket(account.excluded if account is not None else 0, 2),
+            "basis": (_LOG_BASIS[account.basis] if account.basis is not None else "none")
+            if account is not None else "not_read",
+            "vehicle_id_given": vehicle_id_given,
+            "outcome": outcome,
+        })
+    except Exception:  # noqa: BLE001 - a log failure must never change a tool result.
+        pass
 
 
 def _vehicle_status(vehicle: Mapping[str, Any]) -> VehicleStatus:

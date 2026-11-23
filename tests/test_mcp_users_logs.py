@@ -125,7 +125,7 @@ def test_aws_failure_prints_only_the_code(capsys):
     code, out = run(["vehicle-stats"], FakeLogs(start_error=Denied()))
     assert code == 1 and out == []
     err = capsys.readouterr().err
-    assert "AccessDeniedException" in err and "arn:" not in err
+    assert err == "error: vehicle_stats_failed: AccessDeniedException\n"
 
 
 def test_failed_query_status_is_an_error(capsys, monkeypatch):
@@ -138,7 +138,42 @@ def test_documented_query_is_the_one_the_command_runs():
     from pathlib import Path
 
     doc = (Path(__file__).resolve().parents[1] / "docs" / "phase-1-mcp-contracts.md").read_text(encoding="utf-8")
-    assert log_stats.QUERY in doc
+    section = doc.split("## Vehicle selection log", 1)[1]
+    blocks = re.findall(r"```text\n(.*?)\n```", section, flags=re.S)
+    # The first text block of the section is exactly the query the command runs.
+    assert blocks and blocks[0] == log_stats.QUERY
+
+
+SECRET = "arn:aws:iam::000000000000:role/private-profile token=abc123"
+
+
+class LeakyClientError(Exception):
+    """Shaped like botocore's ClientError: a code plus a message with private text."""
+
+    def __init__(self, code):
+        super().__init__(f"An error occurred ({code}): {SECRET}")
+        self.response = {"Error": {"Code": code, "Message": SECRET}}
+
+
+@pytest.mark.parametrize(("error", "label"), [
+    (ValueError(f"Invalid endpoint {SECRET}"), "ValueError"),
+    (RuntimeError(SECRET), "RuntimeError"),
+    (LeakyClientError("AccessDeniedException"), "AccessDeniedException"),
+    (LeakyClientError(f"bad code {SECRET}"), "LeakyClientError"),
+])
+def test_external_errors_print_only_a_fixed_category(error, label, capsys):
+    code, out = run(["vehicle-stats"], FakeLogs(start_error=error))
+    assert code == 1 and out == []
+    err = capsys.readouterr().err
+    assert err == f"error: vehicle_stats_failed: {label}\n"
+    assert "private-profile" not in err and "abc123" not in err
+
+
+def test_unknown_query_status_is_not_echoed(capsys, monkeypatch):
+    monkeypatch.setattr(log_stats.time, "sleep", lambda _s: None)
+    code, _ = run(["vehicle-stats"], FakeLogs(statuses=(SECRET,)))
+    err = capsys.readouterr().err
+    assert code == 1 and err == "error: query ended with status ?\n"
 
 
 def test_query_parses_the_line_the_service_writes():

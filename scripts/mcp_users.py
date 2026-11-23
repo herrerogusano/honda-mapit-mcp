@@ -323,11 +323,13 @@ def main(argv: list[str] | None = None, *, clients: Clients | None = None,
             log_stats.VehicleLogStats(args.env, logs=(clients or default_clients()).logs, out=out,
                                       clock=clock).stats(args.days)
             return 0
-        except (log_stats.LogStatsError, MultiuserError, ValueError) as error:
+        except log_stats.LogStatsError as error:  # our own fixed messages only
             print(f"error: {error}", file=sys.stderr)
             return 1
-        except Exception as error:  # AWS failure: print only its code, never the message
-            print(f"error: AWS call failed ({_code(error) or type(error).__name__})", file=sys.stderr)
+        except Exception as error:  # noqa: BLE001 - external: never print its message
+            code = _code(error)
+            label = code if re.fullmatch(r"[A-Za-z0-9.]{1,64}", code) else type(error).__name__
+            print(f"error: vehicle_stats_failed: {label}", file=sys.stderr)
             return 1
     if args.command.startswith("web-"):
         try:

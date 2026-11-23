@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
@@ -41,10 +42,26 @@ _ACTIVE_METER: ContextVar[ReadMeter | None] = ContextVar("mapit_read_meter", def
 
 
 def _stderr_sink(line: str) -> None:
-    print(line, file=sys.stderr, flush=True)
+    # One complete write per line (``print`` writes the text and the newline
+    # separately), so concurrent tool calls cannot splice two lines together.
+    stream = sys.stderr
+    stream.write(line + "\n")
+    stream.flush()
 
 
 _meter_sink: Callable[[str], None] = _stderr_sink
+# Shared by the read count line and every ``log_tool_event`` line.
+_EMIT_LOCK = threading.Lock()
+
+
+def _emit(record: Mapping[str, Any]) -> None:
+    """Serialize and write one log line under the shared lock; never raises."""
+    try:
+        line = json.dumps(record, separators=(",", ":"))
+        with _EMIT_LOCK:
+            _meter_sink(line)
+    except Exception:  # noqa: BLE001 - a log failure must never change a tool result.
+        pass
 
 
 def set_read_meter_sink(sink: Callable[[str], None] | None) -> None:
@@ -87,19 +104,8 @@ def metered_tool_call(tool: str) -> Iterator[ReadMeter]:
     finally:
         _ACTIVE_METER.reset(token)
         for event, fields in meter.events.items():
-            try:
-                _meter_sink(json.dumps({"event": event, "tool": tool, **fields}, separators=(",", ":")))
-            except Exception:  # noqa: BLE001 - a log failure must never change a tool result.
-                pass
-        try:
-            _meter_sink(
-                json.dumps(
-                    {"event": "mapit_reads", "tool": tool, "reads": meter.reads, "outcome": outcome},
-                    separators=(",", ":"),
-                )
-            )
-        except Exception:  # noqa: BLE001 - a log failure must never change a tool result.
-            pass
+            _emit({"event": event, "tool": tool, **fields})
+        _emit({"event": "mapit_reads", "tool": tool, "reads": meter.reads, "outcome": outcome})
 
 
 class MapitHTTPError(RuntimeError):

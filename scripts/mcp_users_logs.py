@@ -114,7 +114,8 @@ class VehicleLogStats:
             if status == "Complete":
                 return _rows(response.get("results", []))
             if status not in ("Scheduled", "Running"):
-                raise LogStatsError(f"query ended with status {status if isinstance(status, str) else '?'}")
+                known = status in ("Failed", "Cancelled", "Timeout", "Unknown")
+                raise LogStatsError(f"query ended with status {status if known else '?'}")
             self.sleep(POLL_SECONDS)
         raise LogStatsError("query did not complete in time")
 

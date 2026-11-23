@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -208,6 +211,109 @@ def test_a_failing_log_sink_never_changes_the_result():
         set_read_meter_sink(None)
     assert result == expected_result
     assert error.value.code == "vehicle_selection_required"
+
+
+# --- bucket edges -------------------------------------------------------------------------------
+
+
+def _active(index, **kwargs):
+    return fx.vehicle(f"veh-e{index}", device_id=f"device-e{index}", subscription=f"sub-e{index}", **kwargs)
+
+
+def _sold(index):
+    return fx.vehicle(f"veh-s{index}", device=False)
+
+
+@pytest.mark.parametrize(("summary", "buckets"), [
+    (fx.summary(_active(0), _active(1)), ("2", "0", "0")),
+    (fx.summary(_active(0), _active(1), _active(2)), ("3+", "0", "0")),
+    (fx.summary(_active(0, cancelled=True), _active(1, cancelled=True)), ("2", "2+", "0")),
+    (fx.summary(*[_active(i, cancelled=True) for i in range(3)]), ("3+", "2+", "0")),
+    (fx.summary(_active(0), _sold(1), _sold(2)), ("1", "0", "2+")),
+    (fx.summary(_active(0), _sold(1), _sold(2), _sold(3)), ("1", "0", "2+")),
+    (fx.summary(_active(0), _sold(1), _active(2, pending=True)), ("1", "0", "2+")),
+], ids=["2 active", "3 active", "2 cancelled", "3 cancelled", "2 excluded", "3 excluded", "sold and pending"])
+def test_bucket_edges(lines, summary, buckets):
+    run_tool("list_vehicles", fx.FakeClient(summary), CALLS["list_vehicles"])
+    vehicles, cancelled, excluded = buckets
+    assert selection_lines(lines) == [
+        expected("list_vehicles", vehicles, cancelled, excluded, "dashboard_filter", False, "ok")
+    ]
+
+
+# --- logging failures never change results ------------------------------------------------------
+
+
+def test_a_failure_while_preparing_the_line_never_changes_the_result(lines, monkeypatch):
+    import mapit.services as services_module
+
+    expected_result = MapitServices(fx.FakeClient(fx.ONE)).list_vehicles()
+
+    def broken(*_args):
+        raise RuntimeError("bucket failed")
+
+    monkeypatch.setattr(services_module, "_bucket", broken)
+    result = run_tool("list_vehicles", fx.FakeClient(fx.ONE), CALLS["list_vehicles"])
+    assert result == expected_result
+    with pytest.raises(ServiceError) as error:
+        run_tool("get_distance", fx.FakeClient(fx.TWO_ACTIVE), CALLS["get_distance"])
+    assert error.value.code == "vehicle_selection_required"
+    with pytest.raises(ServiceError) as error:
+        run_tool("get_vehicle_status", fx.FakeClient(fx.TWO_ACTIVE), CALLS["get_vehicle_status"], vehicle_id=" ")
+    assert error.value.code == "vehicle_not_found"
+    # No selection line, but the read meter lines are still written.
+    assert selection_lines(lines) == []
+    assert [json.loads(line)["event"] for line in lines] == ["mapit_reads"] * 3
+
+
+# --- concurrent tool calls ----------------------------------------------------------------------
+
+
+class SlowStream:
+    """Records every write call; sleeps inside write so unlocked writers overlap."""
+
+    def __init__(self):
+        self.writes: list[str] = []
+        self.active = 0
+        self.overlaps = 0
+
+    def write(self, text):
+        self.active += 1
+        if self.active > 1:
+            self.overlaps += 1
+        time.sleep(0.0005)
+        self.writes.append(text)
+        self.active -= 1
+        return len(text)
+
+    def flush(self):
+        pass
+
+
+def test_concurrent_tool_calls_write_whole_lines_one_at_a_time(monkeypatch):
+    stream = SlowStream()
+    monkeypatch.setattr(sys, "stderr", stream)
+    set_read_meter_sink(None)  # the real stderr sink
+
+    def worker(fixture, tool):
+        for _ in range(20):
+            try:
+                run_tool(tool, fx.FakeClient(fixture), CALLS[tool])
+            except ServiceError:
+                pass
+
+    threads = [threading.Thread(target=worker, args=args)
+               for args in ((fx.ONE, "list_vehicles"), (fx.TWO_ACTIVE, "get_distance"))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert stream.overlaps == 0
+    # 2 threads x 20 calls x (selection line + read meter line), one write each.
+    assert len(stream.writes) == 80
+    for chunk in stream.writes:
+        assert chunk.endswith("\n") and chunk.count("\n") == 1
+        assert set(json.loads(chunk)) in (FIELDS, {"event", "tool", "reads", "outcome"})
 
 
 # --- no vehicle data anywhere in the logs -------------------------------------------------------
