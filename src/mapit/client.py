@@ -22,15 +22,19 @@ from .signing import SigV4Signer, canonical_uri
 # One line per tool call goes to stderr (stdout is the stdio MCP channel). The
 # line holds only the fixed tool name, the number of GETs sent to MAPIT Core/Geo
 # and a fixed outcome word: no identifiers, parameters, URLs, dates or content.
+# Other fixed-shape lines of the same tool call (``log_tool_event``) go to the
+# same sink, so they reach the same log stream.
 
 
 class ReadMeter:
     """Mutable read count for one tool call."""
 
-    __slots__ = ("reads",)
+    __slots__ = ("reads", "tool", "events")
 
-    def __init__(self) -> None:
+    def __init__(self, tool: str = "") -> None:
         self.reads = 0
+        self.tool = tool
+        self.events: dict[str, dict[str, str | bool]] = {}
 
 
 _ACTIVE_METER: ContextVar[ReadMeter | None] = ContextVar("mapit_read_meter", default=None)
@@ -56,10 +60,25 @@ def record_mapit_read() -> None:
         meter.reads += 1
 
 
+def log_tool_event(event: str, fields: Mapping[str, str | bool]) -> None:
+    """Record one fixed-shape event of the active tool call, if any.
+
+    At the end of the call (success or error) the event is logged once, just
+    before the read count line, as ``{"event": event, "tool": <tool name>,
+    **fields}``; when the call records the same event more than once (a
+    comparison resolves its vehicle per period) the last record is logged.
+    Callers pass only fixed words, bucketed counts and booleans. Outside a
+    tool call nothing is recorded.
+    """
+    meter = _ACTIVE_METER.get()
+    if meter is not None:
+        meter.events[event] = dict(fields)
+
+
 @contextmanager
 def metered_tool_call(tool: str) -> Iterator[ReadMeter]:
     """Count MAPIT reads made while the block runs and log one count line."""
-    meter = ReadMeter()
+    meter = ReadMeter(tool)
     token = _ACTIVE_METER.set(meter)
     outcome = "error"
     try:
@@ -67,6 +86,11 @@ def metered_tool_call(tool: str) -> Iterator[ReadMeter]:
         outcome = "ok"
     finally:
         _ACTIVE_METER.reset(token)
+        for event, fields in meter.events.items():
+            try:
+                _meter_sink(json.dumps({"event": event, "tool": tool, **fields}, separators=(",", ":")))
+            except Exception:  # noqa: BLE001 - a log failure must never change a tool result.
+                pass
         try:
             _meter_sink(
                 json.dumps(

@@ -173,7 +173,7 @@ def test_meter_counts_the_timeout_fallback_reads():
         set_read_meter_sink(None)
 
     assert meter.reads == len(calls) == 1 + 1 + 6
-    assert json.loads(lines[0]) == {"event": "mapit_reads", "tool": "list_routes", "reads": 8, "outcome": "ok"}
+    assert json.loads(lines[-1]) == {"event": "mapit_reads", "tool": "list_routes", "reads": 8, "outcome": "ok"}
 
 
 @pytest.mark.parametrize(

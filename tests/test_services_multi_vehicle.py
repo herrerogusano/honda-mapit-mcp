@@ -368,9 +368,13 @@ async def test_read_meter_lines_never_carry_vehicle_data():
             await client.call_tool("list_routes", {"from_time": PERIOD[0], "to_time": PERIOD[1], "vehicle_id": "veh-active"})
     finally:
         set_read_meter_sink(None)
-    assert len(lines) == 4
-    for line in lines:
+    meter_lines = [line for line in lines if json.loads(line)["event"] == "mapit_reads"]
+    assert len(meter_lines) == 4
+    for line in meter_lines:
         assert set(json.loads(line)) == {"event", "tool", "reads", "outcome"}
+    # The vehicle_selection lines share the sink; tests/test_vehicle_selection_log.py checks them.
+    assert len(lines) == 8
+    for line in lines:
         for secret in ("veh-", "SYNTH", "SYN", "device-", "sub-"):
             assert secret not in line
 

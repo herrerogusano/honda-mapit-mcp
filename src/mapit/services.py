@@ -31,6 +31,7 @@ from .client import (
     MapitResponseTooLarge,
     MapitTimeout,
     MapitTransportError,
+    log_tool_event,
 )
 from .distance_units import DISTANCE_CONVERSION_BASIS, native_distance_to_km
 from .geography import (
@@ -607,6 +608,48 @@ def select_vehicle(vehicles: list[Mapping[str, Any]], vehicle_id: str | None) ->
     raise ServiceError("vehicle_selection_required", _selection_required_message(vehicles))
 
 
+_SelectionBasis = Literal["mapit_dashboard_filter", "legacy_single_vehicle_fallback"]
+_LOG_BASIS = {"mapit_dashboard_filter": "dashboard_filter", "legacy_single_vehicle_fallback": "legacy_fallback"}
+_LOG_OUTCOME = {"vehicle_selection_required": "selection_required", "vehicle_not_found": "not_found"}
+
+
+@dataclass(frozen=True)
+class _AccountVehicles:
+    """One account-summary read: the selectable vehicles and how many were left out."""
+
+    payload: Mapping[str, Any]
+    vehicles: list[Mapping[str, Any]]
+    basis: _SelectionBasis | None
+    excluded: int
+
+
+def _bucket(count: int, top: int) -> str:
+    """``"0"`` .. ``str(top - 1)``, then ``"<top>+"``: never an exact large count."""
+    return str(count) if count < top else f"{top}+"
+
+
+def _log_vehicle_selection(
+    account: _AccountVehicles | None, *, vehicle_id_given: bool, outcome: str
+) -> None:
+    """One ``vehicle_selection`` line per vehicle resolution (see the Read meter docs).
+
+    Only bucketed counts and fixed words: no vehicle id, model, registration,
+    device, subscription, account or MAPIT text. ``account`` is ``None`` when
+    the account summary was not read (malformed ``vehicle_id``) or the read
+    failed.
+    """
+    vehicles = account.vehicles if account is not None else []
+    log_tool_event("vehicle_selection", {
+        "vehicles": _bucket(len(vehicles), 3),
+        "cancelled": _bucket(sum(1 for item in vehicles if item.get("cancelled") is True), 2),
+        "excluded": _bucket(account.excluded if account is not None else 0, 2),
+        "basis": (_LOG_BASIS[account.basis] if account.basis is not None else "none")
+        if account is not None else "not_read",
+        "vehicle_id_given": vehicle_id_given,
+        "outcome": outcome,
+    })
+
+
 def _vehicle_status(vehicle: Mapping[str, Any]) -> VehicleStatus:
     state = _mapping(_mapping(vehicle.get("device")).get("state"))
     state_odometer = _number(state.get("odometer"))
@@ -636,9 +679,24 @@ class MapitServices:
     def __init__(self, client: MapitClient) -> None:
         self.client = client
 
-    def _account_vehicles(
-        self,
-    ) -> tuple[Mapping[str, Any], list[Mapping[str, Any]], Literal["mapit_dashboard_filter", "legacy_single_vehicle_fallback"]]:
+    def _account_vehicles(self, *, vehicle_id_given: bool = False) -> _AccountVehicles:
+        """One account-summary read; the selectable vehicles and how they were chosen.
+
+        A read failure or an account with no vehicle logs its
+        ``vehicle_selection`` line here, before raising; on success the caller
+        logs it once the selection outcome is known.
+        """
+        try:
+            account = self._read_account_vehicles()
+        except ServiceError:
+            _log_vehicle_selection(None, vehicle_id_given=vehicle_id_given, outcome="read_failed")
+            raise
+        if account.basis is None:
+            _log_vehicle_selection(account, vehicle_id_given=vehicle_id_given, outcome="not_found")
+            raise ServiceError("vehicle_not_found", "no eligible vehicle is available in the MAPIT account")
+        return account
+
+    def _read_account_vehicles(self) -> _AccountVehicles:
         """One account-summary read; the selectable vehicles and how they were chosen.
 
         The filter is the official dashboard's: a non-empty string ``id``, a
@@ -655,6 +713,7 @@ class MapitServices:
             raise ServiceError("invalid_response", "MAPIT account summary has an unexpected shape")
         eligible: list[Mapping[str, Any]] = []
         seen: set[str] = set()
+        all_ids: set[str] = set()
         legacy_with_device: Mapping[str, Any] | None = None
         legacy_any: Mapping[str, Any] | None = None
         for item in payload["vehicles"]:
@@ -663,6 +722,7 @@ class MapitServices:
             vehicle_id = _string(item.get("id"))
             if vehicle_id is None:
                 continue
+            all_ids.add(vehicle_id)
             legacy_any = legacy_any or item
             if legacy_with_device is None and item.get("device") is not None:
                 legacy_with_device = item
@@ -670,22 +730,33 @@ class MapitServices:
                 seen.add(vehicle_id)
                 eligible.append(item)
         if eligible:
-            return payload, eligible, "mapit_dashboard_filter"
+            return _AccountVehicles(payload, eligible, "mapit_dashboard_filter", len(all_ids) - len(eligible))
         legacy = legacy_with_device or legacy_any
         if legacy is not None:
-            return payload, [legacy], "legacy_single_vehicle_fallback"
-        raise ServiceError("vehicle_not_found", "no eligible vehicle is available in the MAPIT account")
+            return _AccountVehicles(payload, [legacy], "legacy_single_vehicle_fallback", len(all_ids) - 1)
+        return _AccountVehicles(payload, [], None, len(all_ids))
 
     def _account_and_vehicle(self, vehicle_id: str | None = None) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
         """Resolve the vehicle a tool call works on (see :func:`select_vehicle`)."""
-        if vehicle_id is not None and _requested_vehicle_id(vehicle_id) is None:
+        given = vehicle_id is not None
+        if given and _requested_vehicle_id(vehicle_id) is None:
+            _log_vehicle_selection(None, vehicle_id_given=True, outcome="not_found")
             raise ServiceError("vehicle_not_found", _VEHICLE_NOT_FOUND_MESSAGE)
-        payload, vehicles, _ = self._account_vehicles()
-        return payload, select_vehicle(vehicles, vehicle_id)
+        account = self._account_vehicles(vehicle_id_given=given)
+        try:
+            vehicle = select_vehicle(account.vehicles, vehicle_id)
+        except ServiceError as exc:
+            _log_vehicle_selection(account, vehicle_id_given=given, outcome=_LOG_OUTCOME.get(exc.code, "error"))
+            raise
+        _log_vehicle_selection(account, vehicle_id_given=given, outcome="ok")
+        return account.payload, vehicle
 
     def list_vehicles(self) -> VehicleList:
         """Every selectable vehicle from one account-summary read, no detail reads."""
-        _, vehicles, basis = self._account_vehicles()
+        account = self._account_vehicles()
+        _log_vehicle_selection(account, vehicle_id_given=False, outcome="ok")
+        vehicles, basis = account.vehicles, account.basis
+        assert basis is not None
         entries = [
             VehicleListEntry(
                 vehicle_id=_string(vehicle.get("id")),
