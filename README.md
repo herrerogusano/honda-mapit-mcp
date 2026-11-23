@@ -1,6 +1,97 @@
 # Honda MAPIT read-only MCP
 
-## Portfolio checkpoint — 2026-10-07
+The MAPIT app that comes with some Honda motorcycles shows your rides one at a
+time: no yearly totals, no kilometres per month, no comparisons. This project
+is an [MCP](https://modelcontextprotocol.io/) server that reads your own MAPIT
+data, read-only, so an AI assistant such as Claude or Codex can answer those
+questions for you. It started as a personal tool and now runs as a small
+hosted service on AWS, where each person signs in with their own MAPIT account
+and sees only their own data.
+
+Personal project, not affiliated with Honda or MAPIT. It uses an unofficial
+MAPIT interface: using it with your account is your decision, and MAPIT could
+block or cancel accounts under its terms.
+
+## Who can use it
+
+| Way in | Who | What you get |
+|---|---|---|
+| [Ride Log](https://my-ride-log.pages.dev/) (web) | Anyone with a MAPIT account, without an invitation, while places last (the service admits a limited number of people) | Charts and maps of your rides in the browser; no assistant needed. Source: [honda-ride-log](https://github.com/herrerogusano/honda-ride-log) |
+| Hosted MCP in Claude or Codex | **By invitation only**, a small group (at most 10 people) | The tools listed below, from your assistant |
+| Run it yourself | Anyone with a MAPIT account who can run Python; the local setup is built and tested on Windows | The same read tools, as a local stdio MCP server |
+
+**Hosted MCP (invitation only).** There is no self-service signup for the
+assistant connector. An invited person gets a personal link, reads and accepts
+the privacy notice, and the page then shows how to add the service to Claude
+(claude.ai or Desktop custom connector, Claude Code) or Codex. The first call
+opens the service's sign-in page, where you enter your MAPIT email and
+password. The service's code never writes your password; it keeps your MAPIT
+session encrypted, and the sign-in service (Amazon Cognito) keeps its own hash
+of the password. No ride history is stored.
+`borrar_mis_datos` deletes your account with the service at any time.
+Open access, without an invitation, exists only for the Ride Log web, which
+uses a separate sign-in and cannot be used from Claude or Codex.
+
+**Run it yourself.** Clone the repository and, on Windows:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[windows-auth]"
+$env:PYTHONPATH = (Join-Path (Get-Location) "src")
+py scripts\session_setup_gui.py   # signs in once; stores only a refresh token in Windows Credential Manager
+mapit-mcp                          # stdio MCP server; add it to your MCP client as a local command
+```
+
+Add `geography` to the extras and start `mapit-mcp --geographic-queries` for
+the geographic summaries. Details are in the technical sections below.
+
+## What you can ask
+
+- "How many kilometres did I ride in October?"
+- "Compare this summer with last summer: distance and number of rides."
+- "What was my longest ride this year, and when was it?"
+- "Show my kilometres per month for 2026."
+- "How much of my riding this summer was inside Menorca?" (geographic
+  summaries cover Menorca, the city of Barcelona and the 36 municipalities of
+  the Barcelona metropolitan area)
+- "What is the current status of my bike?"
+
+Distances are MAPIT's GPS route totals, shown in kilometres next to the
+original values; they are not the motorcycle's odometer.
+
+## Tools
+
+The hosted service (invitation only) exposes 14 tools. Thirteen are read-only
+and carry the MCP `readOnlyHint` annotation; none of them changes anything in
+MAPIT:
+
+- Vehicles: `list_vehicles`, `get_vehicle_status`, `get_vehicle_details`
+- Routes: `list_routes`, `get_route_detail`
+- Distance and statistics: `get_distance`, `compare_distance_periods`,
+  `get_distance_breakdown`, `get_route_statistics`, `get_route_extremes`,
+  `compare_route_periods`
+- Geography: `geographic_summary`, `summer_geographic_summary`
+
+The fourteenth, `borrar_mis_datos` ("delete my data"), removes your own
+account and stored session from the service, never anything in MAPIT. An
+account with several motorcycles picks one with `vehicle_id`. The local server
+has the same read tools (the two geographic ones only with
+`--geographic-queries`). The Ride Log web uses its own smaller set: the five
+vehicle and route tools plus sign-out and delete.
+
+# Technical details
+
+Everything below is the engineering record: design, phases, tests and
+operational history. Design documents for the hosted service:
+[invitation-only multiuser service](docs/multiuser-production.md),
+[onboarding](docs/multiuser-onboarding.md) and
+[open web mode](docs/public-web.md).
+
+## Portfolio checkpoint — 2026-10-07 (historical)
+
+This checkpoint predates the multiuser service and the open web mode; the
+sections above describe the current access model.
 
 The current development includes a retained private, single-owner AWS MCP,
 with twelve tools when geographic queries are enabled. Public IGN boundaries
