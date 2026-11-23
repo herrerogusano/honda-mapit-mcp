@@ -5,6 +5,7 @@
     python -m scripts.mcp_users --env dev revoke friend@example.com
     python -m scripts.mcp_users --env dev relink friend@example.com
     python -m scripts.mcp_users --env dev web-status | web-stats | web-config ...
+    python -m scripts.mcp_users --env dev vehicle-stats [--days 7]
 
 The ``web-*`` commands act on the public web stack and live in
 :mod:`scripts.mcp_users_web`; see ``docs/public-web.md``.
@@ -35,6 +36,7 @@ from mapit.multiuser_common import (
     normalize_email, session_parameter_name, stack_name, validate_environment, validate_tenant_id,
 )
 
+from scripts import mcp_users_logs as log_stats
 from scripts import mcp_users_web as web_admin
 
 MAX_INVITE_DAYS = 60
@@ -52,6 +54,7 @@ class Clients:
     dynamodb: Any
     cognito: Any
     ssm: Any
+    logs: Any = None
 
 
 @dataclass(frozen=True)
@@ -262,7 +265,7 @@ def default_clients() -> Clients:  # pragma: no cover - real AWS only
 
     session = boto3.session.Session(region_name=REGION)
     return Clients(cloudformation=session.client("cloudformation"), dynamodb=session.client("dynamodb"),
-                   cognito=session.client("cognito-idp"), ssm=session.client("ssm"))
+                   cognito=session.client("cognito-idp"), ssm=session.client("ssm"), logs=session.client("logs"))
 
 
 def _add_web_commands(commands: Any) -> None:
@@ -312,7 +315,22 @@ def main(argv: list[str] | None = None, *, clients: Clients | None = None,
     for name in ("revoke", "relink"):
         commands.add_parser(name).add_argument("email")
     _add_web_commands(commands)
+    vehicles = commands.add_parser("vehicle-stats", help="read-only vehicle selection counts from the MCP logs")
+    vehicles.add_argument("--days", type=int, default=7)
     args = parser.parse_args(argv)
+    if args.command == "vehicle-stats":
+        try:
+            log_stats.VehicleLogStats(args.env, logs=(clients or default_clients()).logs, out=out,
+                                      clock=clock).stats(args.days)
+            return 0
+        except log_stats.LogStatsError as error:  # our own fixed messages only
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        except Exception as error:  # noqa: BLE001 - external: never print its message
+            code = _code(error)
+            label = code if re.fullmatch(r"[A-Za-z0-9.]{1,64}", code) else type(error).__name__
+            print(f"error: vehicle_stats_failed: {label}", file=sys.stderr)
+            return 1
     if args.command.startswith("web-"):
         try:
             return _run_web(args.env, args, clients or default_clients(), out, clock)
