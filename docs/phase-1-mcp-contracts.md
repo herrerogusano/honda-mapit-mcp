@@ -274,7 +274,7 @@ before its read meter line:
 | `excluded` | `0`, `1`, `2+` | distinct vehicle ids in `account-summary` that are not selectable (no device, null `device.id`, `pending`, no subscription): a sold or transferred vehicle shows here |
 | `basis` | `dashboard_filter`, `legacy_fallback`, `none`, `not_read` | how the vehicles were chosen; `none`: nothing usable; `not_read`: `account-summary` was not read (malformed `vehicle_id`) or its read failed |
 | `vehicle_id_given` | `true`, `false` | whether the call passed a `vehicle_id` (never its value) |
-| `outcome` | `ok`, `selection_required`, `not_found`, `read_failed` | the resolution result |
+| `outcome` | `ok`, `selection_required`, `not_found`, `read_failed`, `error` | the resolution result; `error` is a defensive value for any other selection error and is not expected today |
 
 Rules:
 

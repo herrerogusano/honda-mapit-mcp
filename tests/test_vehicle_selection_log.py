@@ -34,7 +34,7 @@ ENUMS = {
     "excluded": {"0", "1", "2+"},
     "basis": {"dashboard_filter", "legacy_fallback", "none", "not_read"},
     "vehicle_id_given": {True, False},
-    "outcome": {"ok", "selection_required", "not_found", "read_failed"},
+    "outcome": {"ok", "selection_required", "not_found", "read_failed", "error"},
 }
 
 VEHICLE_TOOLS = {
