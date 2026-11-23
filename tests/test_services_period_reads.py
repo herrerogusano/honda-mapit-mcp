@@ -352,7 +352,9 @@ class WireMapit:
 @pytest.fixture
 def log_lines():
     lines: list[str] = []
-    set_read_meter_sink(lines.append)
+    # Only the read meter lines; vehicle_selection lines share the sink and
+    # are checked in tests/test_vehicle_selection_log.py.
+    set_read_meter_sink(lambda line: lines.append(line) if json.loads(line)["event"] == "mapit_reads" else None)
     yield lines
     set_read_meter_sink(None)
 

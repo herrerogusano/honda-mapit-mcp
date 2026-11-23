@@ -167,6 +167,13 @@ the existing `CloudServicesProvider`/`CloudDirectTransport`.
 The ten existing read-only tools (and geography tools when enabled) are
 unchanged.
 
+Each tool call writes its read meter line and, when it resolves a vehicle, one
+`vehicle_selection` line with bucketed counts only (no vehicle, tenant or user
+data) to stderr, which reaches the function's log group
+`/aws/lambda/honda-mapit-mcp-<env>-mcp`. The fields, the read-only Logs
+Insights query and the `vehicle-stats` command that summarises them are in
+`docs/phase-1-mcp-contracts.md` ("Vehicle selection log").
+
 ## Web client (Honda Ride Log)
 
 The public web mode, a separate stack without invitations, is described in `docs/public-web.md`.
