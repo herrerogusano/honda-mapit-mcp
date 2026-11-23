@@ -75,7 +75,8 @@ Each vehicle-scoped tool reads `account-summary` once and works on one vehicle.
    active-vehicle output is unchanged; the tool output schema gains them as
    optional properties.
 6. **Logs** never carry `vehicle_id`, model or registration: the read meter
-   line keeps its four fixed fields.
+   line keeps its four fixed fields, and the selection line ("Vehicle
+   selection log" below) holds only bucketed counts and fixed words.
 
 The local distance ledger has no vehicle argument: with several eligible
 vehicles its import stops with category `vehicle_selection_required` before
@@ -254,6 +255,61 @@ counts are: `list_vehicles` 1, `get_vehicle_status` 1, `get_vehicle_details` 2,
 each two-period comparison 4. Before this change a single-period route tool
 cost one account-summary read plus one read per calendar month (7 for a
 semester, up to 15 for 366 days).
+
+## Vehicle selection log
+
+Each tool call that resolves a vehicle (`list_vehicles` and every
+vehicle-scoped tool, on success and on the `vehicle_selection_required` /
+`vehicle_not_found` error paths) writes one more line to the same sink, just
+before its read meter line:
+
+```json
+{"event":"vehicle_selection","tool":"get_distance","vehicles":"2","cancelled":"0","excluded":"1","basis":"dashboard_filter","vehicle_id_given":false,"outcome":"selection_required"}
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `vehicles` | `0`, `1`, `2`, `3+` | selectable vehicles (after the dashboard filter, or the one fallback vehicle) |
+| `cancelled` | `0`, `1`, `2+` | selectable vehicles with `cancelled: true` |
+| `excluded` | `0`, `1`, `2+` | distinct vehicle ids in `account-summary` that are not selectable (no device, null `device.id`, `pending`, no subscription): a sold or transferred vehicle shows here |
+| `basis` | `dashboard_filter`, `legacy_fallback`, `none`, `not_read` | how the vehicles were chosen; `none`: nothing usable; `not_read`: `account-summary` was not read (malformed `vehicle_id`) or its read failed |
+| `vehicle_id_given` | `true`, `false` | whether the call passed a `vehicle_id` (never its value) |
+| `outcome` | `ok`, `selection_required`, `not_found`, `read_failed` | the resolution result |
+
+Rules:
+
+- Exactly one line per tool call. A two-period comparison resolves the
+  vehicle once per period with the same arguments; the last resolution is
+  logged.
+- Only bucketed counts, fixed words and one boolean: no vehicle id, model,
+  registration, device or subscription id, tenant, user, email, coordinates,
+  vehicle timestamps or MAPIT text.
+- Nothing is logged outside a tool call (the local ledger import, tests).
+- A log failure never changes a tool result; tool outputs and error texts
+  are unchanged.
+- In the Lambda functions (invitation-only multiuser `…-mcp` and public web
+  `…-web-mcp`) the line, like the read meter line, is a plain `print` to
+  stderr. The functions use the default text log format with no
+  `LoggingConfig`, so every stderr line becomes one CloudWatch log event
+  regardless of log level; the Python `logging` level does not apply.
+
+Read-only Logs Insights query over one log group (`/aws/lambda/<function>`)
+and a chosen period:
+
+```text
+filter @message like /"event":"vehicle_selection"/
+| parse @message /"vehicles":"(?<vehicles>[0-9+]+)","cancelled":"(?<cancelled>[0-9+]+)","excluded":"(?<excluded>[0-9+]+)","basis":"(?<basis>[a-z_]+)","vehicle_id_given":(?<vehicle_id_given>true|false),"outcome":"(?<outcome>[a-z_]+)"/
+| stats count(*) as events by vehicles, excluded, cancelled, basis, outcome, vehicle_id_given
+```
+
+The `parse` step relies on the fixed key order of the line, so it does not
+depend on Logs Insights discovering JSON fields. For one dimension only,
+replace the last line with, for example, `| stats count(*) by outcome`, or
+add `| filter excluded != "0"` before it for the events with excluded
+vehicles. `python -m scripts.mcp_users --env dev|prod vehicle-stats
+[--days 7]` runs this query on both MCP log groups of the environment and
+prints only the counts per field value (see `docs/public-web.md`, "Operation
+commands").
 
 These fields must not be relabelled as kilometres or complete history without
 new primary evidence and a separately reviewed contract change.

@@ -5,6 +5,7 @@
     python -m scripts.mcp_users --env dev revoke friend@example.com
     python -m scripts.mcp_users --env dev relink friend@example.com
     python -m scripts.mcp_users --env dev web-status | web-stats | web-config ...
+    python -m scripts.mcp_users --env dev vehicle-stats [--days 7]
 
 The ``web-*`` commands act on the public web stack and live in
 :mod:`scripts.mcp_users_web`; see ``docs/public-web.md``.
@@ -35,6 +36,7 @@ from mapit.multiuser_common import (
     normalize_email, session_parameter_name, stack_name, validate_environment, validate_tenant_id,
 )
 
+from scripts import mcp_users_logs as log_stats
 from scripts import mcp_users_web as web_admin
 
 MAX_INVITE_DAYS = 60
@@ -52,6 +54,7 @@ class Clients:
     dynamodb: Any
     cognito: Any
     ssm: Any
+    logs: Any = None
 
 
 @dataclass(frozen=True)
@@ -262,7 +265,7 @@ def default_clients() -> Clients:  # pragma: no cover - real AWS only
 
     session = boto3.session.Session(region_name=REGION)
     return Clients(cloudformation=session.client("cloudformation"), dynamodb=session.client("dynamodb"),
-                   cognito=session.client("cognito-idp"), ssm=session.client("ssm"))
+                   cognito=session.client("cognito-idp"), ssm=session.client("ssm"), logs=session.client("logs"))
 
 
 def _add_web_commands(commands: Any) -> None:
@@ -312,7 +315,20 @@ def main(argv: list[str] | None = None, *, clients: Clients | None = None,
     for name in ("revoke", "relink"):
         commands.add_parser(name).add_argument("email")
     _add_web_commands(commands)
+    vehicles = commands.add_parser("vehicle-stats", help="read-only vehicle selection counts from the MCP logs")
+    vehicles.add_argument("--days", type=int, default=7)
     args = parser.parse_args(argv)
+    if args.command == "vehicle-stats":
+        try:
+            log_stats.VehicleLogStats(args.env, logs=(clients or default_clients()).logs, out=out,
+                                      clock=clock).stats(args.days)
+            return 0
+        except (log_stats.LogStatsError, MultiuserError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        except Exception as error:  # AWS failure: print only its code, never the message
+            print(f"error: AWS call failed ({_code(error) or type(error).__name__})", file=sys.stderr)
+            return 1
     if args.command.startswith("web-"):
         try:
             return _run_web(args.env, args, clients or default_clients(), out, clock)

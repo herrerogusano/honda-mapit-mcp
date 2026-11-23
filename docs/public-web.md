@@ -475,6 +475,21 @@ failed AWS call exits with code 1 and prints only its error code.
   `--pause-until` must be in the future and in UTC (`Z` or `+00:00`); `none`
   lifts a pause.
 
+- `vehicle-stats [--days 7]` (read only, `scripts/mcp_users_logs.py`): runs
+  the Logs Insights query of `docs/phase-1-mcp-contracts.md` ("Vehicle
+  selection log") on the two MCP log groups of the environment, the
+  invitation-only multiuser `honda-mapit-mcp-<env>-mcp` and the public web
+  `honda-mapit-mcp-<env>-web-mcp`, over the last `--days` days (1 to 14, the
+  log retention). It prints, per log group, the number of `vehicle_selection`
+  events and their count per value of `vehicles`, `excluded`, `cancelled`,
+  `basis`, `outcome` and `vehicle_id_given` (a value outside the documented
+  set counts as `other`); never a raw log line. A log group that does not
+  exist prints "log group not present". It answers whether accounts with
+  several vehicles use the service (`vehicles` 2 or `3+`), whether they get
+  stuck (`outcome` `selection_required` or `not_found` with
+  `vehicle_id_given` true) and whether vehicles drop out of the dashboard
+  filter (`excluded` above 0).
+
 Changing the configuration is a write in the environment's table: in
 production it is a production change.
 
@@ -489,6 +504,8 @@ value, so no KMS permission is needed):
 | `cognito-idp:ListUserPools` | `*` (no resource-level permissions) | `web-status` |
 | `cognito-idp:ListUsers` | the web user pool | `web-status` |
 | `ssm:DescribeParameters` | `*` (no resource-level permissions; metadata only) | `web-status` |
+| `logs:StartQuery` | the two MCP log groups | `vehicle-stats` |
+| `logs:GetQueryResults` | `*` (no resource-level permissions) | `vehicle-stats` |
 
 The commands do not read the stack outputs (`UserPoolId`, `TableName`); they
 derive the same names from the code. If two pools carry the web pool name (for
